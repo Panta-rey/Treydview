@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="de-CH">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TreydView</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Archivo:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://unpkg.com/klinecharts@9.8.12/dist/umd/klinecharts.min.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="brand-mark">ᴪ</span><span class="brand-name">TreydView</span></div>
+
+  <!-- Asset-Dropdown -->
+  <div class="dropdown" id="assetDropdown">
+    <button class="dd-trigger" id="assetTrigger">
+      <span id="assetLabel">BTC/USDT</span>
+      <span class="dd-arrow">▾</span>
+    </button>
+    <div class="dd-panel" id="assetPanel">
+      <input class="dd-search" id="assetSearch" placeholder="Suchen… z.B. TAO" autocomplete="off">
+      <div class="dd-list" id="assetList"></div>
+    </div>
+  </div>
+
+  <!-- Timeframe-Dropdown -->
+  <div class="dropdown" id="tfDropdown">
+    <button class="dd-trigger" id="tfTrigger">
+      <span id="tfLabel">1D</span>
+      <span class="dd-arrow">▾</span>
+    </button>
+    <div class="dd-panel" id="tfPanel">
+      <div class="dd-list" id="tfList"></div>
+    </div>
+  </div>
+
+  <!-- Indikatoren-Dropdown -->
+  <div class="dropdown" id="indDropdown">
+    <button class="dd-trigger" id="indTrigger">
+      <span>Indikatoren</span>
+      <span class="dd-arrow">▾</span>
+    </button>
+    <div class="dd-panel dd-panel--wide" id="indPanel">
+      <div class="dd-list" id="indList"></div>
+    </div>
+  </div>
+
+  <div class="live-badge" id="liveBadge">
+    <span class="dot"></span><span id="liveText">–</span>
+  </div>
+</header>
+
+<div class="workspace">
+  <!-- Zeichenwerkzeuge -->
+  <aside class="drawbar" id="drawbar"></aside>
+
+  <div class="chart-col">
+    <!-- Preis-Header -->
+    <div class="price-header">
+      <span class="ph-symbol" id="phSymbol">–</span>
+      <span class="ph-price" id="phPrice">–</span>
+      <span class="ph-change" id="phChange">–</span>
+    </div>
+
+    <!-- Haupt-Chart (RSI/VOL laufen als synchronisierte Panes darin) -->
+    <div id="mainChart" class="main-chart"></div>
+
+    <div class="statusline" id="statusline">Lade …</div>
+  </div>
+</div>
+
+<!-- Indikator-Einstellungs-Panel -->
+<div class="settings-overlay hidden" id="settingsOverlay">
+  <div class="settings-panel" id="settingsPanel">
+    <div class="settings-header">
+      <span id="settingsTitle">Einstellungen</span>
+      <button class="settings-close" id="settingsClose">✕</button>
+    </div>
+    <div class="settings-body" id="settingsBody"></div>
+    <div class="settings-footer">
+      <button class="btn-apply" id="settingsApply">Übernehmen</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/indicators.js"></script>
+<script src="js/overlays.js"></script>
+<script src="js/data.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
