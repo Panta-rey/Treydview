@@ -1,9 +1,18 @@
 // ============================================================
-// TreydView v0.3 — Custom-Indikatoren
-// MNOODLE, BMSB (fix), HULL, RVWAP, GC, VRVP
+// TreydView v0.4 — Custom-Indikatoren
+// Darstellung (Farbe/Deckkraft/Stärke/Sichtbarkeit) kommt aus
+// indicator.extendData.plots — gesetzt von app.js aus Settings.
 // ============================================================
 (function () {
 "use strict";
+
+// Plot-Style aus extendData holen; unsichtbar → transparent
+function plotStyle(indicator, key, fallbackColor, fallbackWidth) {
+  const p = indicator?.extendData?.plots?.[key];
+  if (!p) return { color: fallbackColor, size: fallbackWidth || 1 };
+  if (p.visible === false) return { color: "rgba(0,0,0,0)", size: 1 };
+  return { color: p.color, size: p.width || fallbackWidth || 1 };
+}
 
 // ---------- Mathe-Helfer ----------
 function emaSeries(values, period) {
@@ -12,15 +21,8 @@ function emaSeries(values, period) {
   let ema = null, n = 0;
   for (let i = 0; i < values.length; i++) {
     if (values[i] == null) continue;
-    if (ema === null) {
-      n++;
-      if (n === 1) ema = values[i];
-      else ema = values[i] * k + ema * (1 - k);
-      if (n >= period) out[i] = ema;
-    } else {
-      ema = values[i] * k + ema * (1 - k);
-      out[i] = ema;
-    }
+    if (ema === null) { n++; ema = values[i]; if (n >= period) out[i] = ema; }
+    else { ema = values[i] * k + ema * (1 - k); n++; if (n >= period) out[i] = ema; }
   }
   return out;
 }
@@ -42,7 +44,7 @@ function atrSeries(dataList, period) {
     const pc = dataList[i - 1].close;
     return Math.max(d.high - d.low, Math.abs(d.high - pc), Math.abs(d.low - pc));
   });
-  return emaSeries(tr, period); // Wilder: EMA mit period=atrLen
+  return emaSeries(tr, period);
 }
 
 // ---------- MONEY NOODLE ----------
@@ -52,10 +54,11 @@ klinecharts.registerIndicator({
   precision: 2,
   calcParams: [12, 21, 35, 20, 0.0125],
   figures: [
-    { key: "med",   title: "EMA Med: ",  type: "line", styles: () => ({ color: "#00ff88", size: 2 }) },
-    { key: "main",  title: "EMA Main: ", type: "line", styles: () => ({ color: "#ffffff", size: 3 }) },
-    { key: "upper", title: "Upper: ",    type: "line", styles: () => ({ color: "rgba(150,150,150,0.5)", size: 1 }) },
-    { key: "lower", title: "Lower: ",    type: "line", styles: () => ({ color: "rgba(150,150,150,0.5)", size: 1 }) },
+    { key: "fast",  title: "Fast: ",  type: "line", styles: (d, ind) => plotStyle(ind, "fast",  "#00c8dc", 1) },
+    { key: "med",   title: "Med: ",   type: "line", styles: (d, ind) => plotStyle(ind, "med",   "#00ff88", 2) },
+    { key: "main",  title: "Main: ",  type: "line", styles: (d, ind) => plotStyle(ind, "main",  "#ffffff", 3) },
+    { key: "upper", title: "Upper: ", type: "line", styles: (d, ind) => plotStyle(ind, "upper", "rgba(150,150,150,0.5)", 1) },
+    { key: "lower", title: "Lower: ", type: "line", styles: (d, ind) => plotStyle(ind, "lower", "rgba(150,150,150,0.5)", 1) },
   ],
   calc: (dataList, indicator) => {
     const [fp, mp, sp, atrLen, mult] = indicator.calcParams;
@@ -69,41 +72,36 @@ klinecharts.registerIndicator({
       if (s == null || a == null) return {};
       const offset = a * mult * 40;
       return {
-        med:   emaM[i] ?? undefined,
-        main:  s,
-        upper: s + offset,
-        lower: s - offset,
+        fast: emaF[i] ?? undefined,
+        med:  emaM[i] ?? undefined,
+        main: s, upper: s + offset, lower: s - offset,
       };
     });
   },
 });
 
-// ---------- BULL MARKET SUPPORT BAND (Chart-TF, Close) ----------
+// ---------- BULL MARKET SUPPORT BAND ----------
 klinecharts.registerIndicator({
   name: "BMSB",
   shortName: "BMSB",
   precision: 2,
   calcParams: [20, 21],
   figures: [
-    { key: "sma20", title: "20 SMA: ", type: "line", styles: () => ({ color: "#3fb68b", size: 2 }) },
-    { key: "ema21", title: "21 EMA: ", type: "line", styles: () => ({ color: "#d05e5e", size: 2 }) },
+    { key: "sma20", title: "20 SMA: ", type: "line", styles: (d, ind) => plotStyle(ind, "sma20", "#3fb68b", 2) },
+    { key: "ema21", title: "21 EMA: ", type: "line", styles: (d, ind) => plotStyle(ind, "ema21", "#d05e5e", 2) },
   ],
   calc: (dataList, indicator) => {
-    const [smaPeriod, emaPeriod] = indicator.calcParams;
+    const [smaP, emaP] = indicator.calcParams;
     const closes = dataList.map(d => d.close);
-    const emaArr = emaSeries(closes, emaPeriod);
+    const emaArr = emaSeries(closes, emaP);
     return dataList.map((_, i) => {
-      // SMA20
       let sma = null;
-      if (i >= smaPeriod - 1) {
+      if (i >= smaP - 1) {
         let s = 0;
-        for (let j = i - smaPeriod + 1; j <= i; j++) s += closes[j];
-        sma = s / smaPeriod;
+        for (let j = i - smaP + 1; j <= i; j++) s += closes[j];
+        sma = s / smaP;
       }
-      return {
-        sma20: sma ?? undefined,
-        ema21: emaArr[i] ?? undefined,
-      };
+      return { sma20: sma ?? undefined, ema21: emaArr[i] ?? undefined };
     });
   },
 });
@@ -116,7 +114,10 @@ klinecharts.registerIndicator({
   calcParams: [55],
   figures: [{
     key: "hull", title: "Hull: ", type: "line",
-    styles: (data) => ({ color: data.current?.up ? "#3fb68b" : "#d05e5e", size: 2 }),
+    styles: (d, ind) => {
+      const key = d.current?.up ? "up" : "down";
+      return plotStyle(ind, key, d.current?.up ? "#3fb68b" : "#d05e5e", 2);
+    },
   }],
   calc: (dataList, indicator) => {
     const n = indicator.calcParams[0];
@@ -140,7 +141,7 @@ klinecharts.registerIndicator({
   shortName: "RVWAP",
   precision: 2,
   calcParams: [365],
-  figures: [{ key: "rvwap", title: "RVWAP: ", type: "line", styles: () => ({ color: "#e8b64c", size: 2 }) }],
+  figures: [{ key: "rvwap", title: "RVWAP: ", type: "line", styles: (d, ind) => plotStyle(ind, "line", "#e8b64c", 2) }],
   calc: (dataList, indicator) => {
     const days = indicator.calcParams[0];
     if (dataList.length < 2) return dataList.map(() => ({}));
@@ -169,23 +170,26 @@ klinecharts.registerIndicator({
   precision: 2,
   calcParams: [144, 1.414, 4],
   figures: [
-    { key: "gcUpper", title: "Upper: ", type: "line", styles: () => ({ color: "rgba(232,182,76,0.55)", size: 1 }) },
+    { key: "gcUpper", title: "Upper: ", type: "line", styles: (d, ind) => plotStyle(ind, "upper", "rgba(232,182,76,0.55)", 1) },
     { key: "gcMid",   title: "Mid: ",   type: "line",
-      styles: (d) => ({ color: d.current?.gcUp ? "#3fb68b" : "#d05e5e", size: 2 }) },
-    { key: "gcLower", title: "Lower: ", type: "line", styles: () => ({ color: "rgba(232,182,76,0.55)", size: 1 }) },
+      styles: (d, ind) => {
+        const key = d.current?.gcUp ? "midUp" : "midDown";
+        return plotStyle(ind, key, d.current?.gcUp ? "#3fb68b" : "#d05e5e", 2);
+      } },
+    { key: "gcLower", title: "Lower: ", type: "line", styles: (d, ind) => plotStyle(ind, "lower", "rgba(232,182,76,0.55)", 1) },
   ],
   calc: (dataList, indicator) => {
     const [period, mult, poles] = indicator.calcParams;
     const beta  = (1 - Math.cos(2 * Math.PI / period)) / (Math.pow(2, 1/poles) - 1);
     const alpha = -beta + Math.sqrt(beta * beta + 2 * beta);
-    const gaussCascade = (src) => {
-      let stages = new Array(poles).fill(null);
+    const cascade = (src) => {
+      let st = new Array(poles).fill(null);
       return src.map(x => {
         if (x == null) return null;
         let inp = x;
         for (let p = 0; p < poles; p++) {
-          stages[p] = stages[p] === null ? inp : alpha * inp + (1 - alpha) * stages[p];
-          inp = stages[p];
+          st[p] = st[p] === null ? inp : alpha * inp + (1 - alpha) * st[p];
+          inp = st[p];
         }
         return inp;
       });
@@ -196,86 +200,17 @@ klinecharts.registerIndicator({
       const pc = dataList[i-1].close;
       return Math.max(d.high - d.low, Math.abs(d.high - pc), Math.abs(d.low - pc));
     });
-    const mid  = gaussCascade(hlc3);
-    const band = gaussCascade(tr);
-    const wu   = Math.min(period, dataList.length);
+    const mid = cascade(hlc3), band = cascade(tr);
+    const wu = Math.min(period, dataList.length);
     return dataList.map((_, i) => {
       if (i < wu || mid[i] == null || band[i] == null) return {};
       return {
-        gcMid:   mid[i],
+        gcMid: mid[i],
         gcUpper: mid[i] + band[i] * mult,
         gcLower: mid[i] - band[i] * mult,
         gcUp: i > 0 && mid[i-1] != null ? mid[i] > mid[i-1] : true,
       };
     });
-  },
-});
-
-// ---------- VRVP (Volume-at-Price Histogramm als Overlay) ----------
-// KLineCharts hat kein natives VRVP — wir implementieren es als
-// custom Indicator mit type="bar" auf der Preisachse (rechts).
-// Die Bars werden als horizontale Rechtecke via createPointFigures
-// gerendert. Wir nutzen den "figure"-Trick: ein einzelner
-// unsichtbarer Datenpunkt, der in attrs die Box-Daten trägt.
-klinecharts.registerIndicator({
-  name: "VRVP",
-  shortName: "VRVP",
-  precision: 0,
-  shouldOhlc: false,
-  calcParams: [500, 70, 15], // rows, valueAreaPct, widthPct
-  figures: [],  // Keine Standard-Figures — Rendering via createTooltipDataSource
-  calc: (dataList, indicator) => {
-    const [rows, vaPct] = indicator.calcParams;
-    if (dataList.length < 2) return dataList.map(() => ({}));
-
-    const prices = dataList.flatMap(d => [d.high, d.low]);
-    const pMin = Math.min(...prices), pMax = Math.max(...prices);
-    const rowH = (pMax - pMin) / rows;
-    if (rowH === 0) return dataList.map(() => ({}));
-
-    // Volumen pro Row akkumulieren
-    const upVol   = new Float64Array(rows);
-    const downVol = new Float64Array(rows);
-
-    for (const d of dataList) {
-      const vol = d.volume || 0;
-      const isUp = d.close >= d.open;
-      // Preis-Range der Candle über die betroffenen Rows verteilen
-      const rLow  = Math.max(0, Math.floor((d.low  - pMin) / rowH));
-      const rHigh = Math.min(rows - 1, Math.floor((d.high - pMin) / rowH));
-      const n = rHigh - rLow + 1;
-      for (let r = rLow; r <= rHigh; r++) {
-        if (isUp) upVol[r]   += vol / n;
-        else      downVol[r] += vol / n;
-      }
-    }
-
-    // POC = Row mit höchstem Gesamtvolumen
-    const totalVol = upVol.map((u, i) => u + downVol[i]);
-    const pocRow = totalVol.indexOf(Math.max(...totalVol));
-    const pocPrice = pMin + (pocRow + 0.5) * rowH;
-
-    // Value Area: 70% des Gesamtvolumens um POC
-    const totalAll = totalVol.reduce((s, v) => s + v, 0);
-    const vaTarget = totalAll * (vaPct / 100);
-    let vaVol = totalVol[pocRow], vaLow = pocRow, vaHigh = pocRow;
-    while (vaVol < vaTarget && (vaLow > 0 || vaHigh < rows - 1)) {
-      const addHigh = vaHigh < rows - 1 ? totalVol[vaHigh + 1] : 0;
-      const addLow  = vaLow  > 0        ? totalVol[vaLow  - 1] : 0;
-      if (addHigh >= addLow) { vaHigh++; vaVol += addHigh; }
-      else                   { vaLow--;  vaVol += addLow;  }
-    }
-    const vahPrice = pMin + (vaHigh + 1) * rowH;
-    const valPrice = pMin + vaLow * rowH;
-    const maxVol = Math.max(...totalVol.filter(v => v > 0));
-
-    // Metadaten im letzten Bar speichern — app.js liest sie für das Rendering
-    const result = dataList.map(() => ({}));
-    result[dataList.length - 1].__vrvp = {
-      rows, pMin, pMax, rowH, upVol, downVol, totalVol, maxVol,
-      pocPrice, vahPrice, valPrice,
-    };
-    return result;
   },
 });
 

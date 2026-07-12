@@ -1,4 +1,4 @@
-# TreydView — Chart-Cockpit (v0.3)
+# TreydView — Chart-Cockpit (v0.4)
 
 TradingView-artiges Chart-Cockpit als rein statische Web-App. Engine: **KLineCharts v9** (Apache 2.0, kein Attributions-Branding). Krypto live via Binance, Gold (XAU/USD, Daily) über den bestehenden Cloudflare Worker.
 

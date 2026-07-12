@@ -1,14 +1,14 @@
 // ============================================================
-// TreydView v0.3 — Konfiguration
+// TreydView v0.4 — Konfiguration
 // ============================================================
 const CONFIG = {
 
+  // >>> HIER deine Cloudflare-Worker-Basis-URL eintragen <<<
   WORKER_BASE_URL: "https://DEIN-WORKER.workers.dev",
   GOLD_ENDPOINT:   "/goldhistory",
   BINANCE_REST:    "https://api.binance.com/api/v3",
   BINANCE_WS:      "wss://stream.binance.com:9443/ws",
 
-  // Fixe Symbole (Worker-Quellen + Binance-Defaults)
   DEFAULT_SYMBOLS: [
     { id: "BTCUSDT",  label: "BTC/USDT",  type: "binance" },
     { id: "ETHUSDT",  label: "ETH/USDT",  type: "binance" },
@@ -27,91 +27,122 @@ const CONFIG = {
 
   CANDLE_LIMIT: 1000,
 
-  // Indikator-Registry
-  // pane: "main" = Overlay | "sub" = eigenes Sub-Chart
-  // settings: wird im Einstellungs-Panel angezeigt
+  // ------------------------------------------------------------
+  // Indikator-Registry mit zweistufigem Settings-Schema:
+  //   inputs: Berechnungs-Parameter (Tab "Inputs")
+  //   plots:  Darstellung pro Linie (Tab "Style"):
+  //           visible, Farbe, Deckkraft (0–100), Linienstärke
+  //   Plot-Flags: noVisible / noWidth blenden die Controls aus.
+  // ------------------------------------------------------------
   INDICATORS: [
     {
       key: "mnoodle", name: "MNOODLE", pane: "main", label: "Money Noodle",
-      settings: [
-        { key: "fastPeriod",   label: "Fast EMA",       type: "number", default: 12    },
-        { key: "medPeriod",    label: "Medium EMA",     type: "number", default: 21    },
-        { key: "slowPeriod",   label: "Main EMA",       type: "number", default: 35    },
-        { key: "atrLength",    label: "ATR Länge",      type: "number", default: 20    },
-        { key: "bandMult",     label: "Band Multiplier",type: "number", default: 0.0125, step: 0.001 },
-        { key: "colorMed",     label: "Medium EMA",     type: "color",  default: "#00ff88" },
-        { key: "colorMain",    label: "Main EMA",       type: "color",  default: "#ffffff" },
-        { key: "colorBand",    label: "Band Fill",      type: "color",  default: "rgba(150,150,150,0.15)" },
+      inputs: [
+        { key: "fastPeriod", label: "Fast EMA",         default: 12 },
+        { key: "medPeriod",  label: "Medium EMA",       default: 21 },
+        { key: "slowPeriod", label: "Main EMA",         default: 35 },
+        { key: "atrLength",  label: "ATR Länge",        default: 20 },
+        { key: "bandMult",   label: "Band Multiplier",  default: 0.0125, step: 0.001 },
+      ],
+      plots: [
+        { key: "fast",  label: "Fast EMA",   color: "#00c8dc", opacity: 100, width: 1, visible: false },
+        { key: "med",   label: "Medium EMA", color: "#00ff88", opacity: 100, width: 2, visible: true },
+        { key: "main",  label: "Main EMA",   color: "#ffffff", opacity: 100, width: 3, visible: true },
+        { key: "upper", label: "Upper Band", color: "#969696", opacity: 50,  width: 1, visible: true },
+        { key: "lower", label: "Lower Band", color: "#969696", opacity: 50,  width: 1, visible: true },
       ],
     },
     {
       key: "bmsb", name: "BMSB", pane: "main", label: "Bull Market Support Band",
-      settings: [
-        { key: "colorSma", label: "20 SMA Farbe", type: "color", default: "#3fb68b" },
-        { key: "colorEma", label: "21 EMA Farbe", type: "color", default: "#d05e5e" },
+      inputs: [],
+      plots: [
+        { key: "sma20", label: "20 SMA", color: "#3fb68b", opacity: 100, width: 2, visible: true },
+        { key: "ema21", label: "21 EMA", color: "#d05e5e", opacity: 100, width: 2, visible: true },
       ],
     },
     {
-      key: "ema",  name: "EMA",  pane: "main", label: "EMA 21 / 100 / 200",
-      calcParams: [21, 100, 200],
-      settings: [
-        { key: "p1", label: "Periode 1", type: "number", default: 21  },
-        { key: "p2", label: "Periode 2", type: "number", default: 100 },
-        { key: "p3", label: "Periode 3", type: "number", default: 200 },
+      key: "ema", name: "EMA", pane: "main", label: "EMA 21 / 100 / 200",
+      inputs: [
+        { key: "p1", label: "Periode 1", default: 21  },
+        { key: "p2", label: "Periode 2", default: 100 },
+        { key: "p3", label: "Periode 3", default: 200 },
+      ],
+      plots: [
+        { key: "e1", label: "EMA 1", color: "#5aa9e6", opacity: 100, width: 1, visible: true },
+        { key: "e2", label: "EMA 2", color: "#e8b64c", opacity: 100, width: 1, visible: true },
+        { key: "e3", label: "EMA 3", color: "#c792ea", opacity: 100, width: 2, visible: true },
       ],
     },
     {
-      key: "boll", name: "BOLL", pane: "main", label: "Bollinger 20/2",
-      calcParams: [20, 2],
-      settings: [
-        { key: "period", label: "Periode", type: "number", default: 20 },
-        { key: "stddev", label: "StdDev",  type: "number", default: 2  },
+      key: "boll", name: "BOLL", pane: "main", label: "Bollinger",
+      inputs: [
+        { key: "period", label: "Periode", default: 20 },
+        { key: "stddev", label: "StdDev",  default: 2  },
+      ],
+      plots: [
+        { key: "up",  label: "Oberes Band",  color: "#7a8fa8", opacity: 60, width: 1, visible: true },
+        { key: "mid", label: "Mittellinie",  color: "#7a8fa8", opacity: 80, width: 1, visible: true },
+        { key: "dn",  label: "Unteres Band", color: "#7a8fa8", opacity: 60, width: 1, visible: true },
       ],
     },
     {
-      key: "gc",   name: "GC",   pane: "main", label: "Gaussian Channel",
-      calcParams: [144, 1.414, 4],
-      settings: [
-        { key: "period", label: "Periode",    type: "number", default: 144   },
-        { key: "mult",   label: "Multiplier", type: "number", default: 1.414, step: 0.001 },
-        { key: "poles",  label: "Pole",       type: "number", default: 4     },
+      key: "gc", name: "GC", pane: "main", label: "Gaussian Channel",
+      inputs: [
+        { key: "period", label: "Periode",    default: 144 },
+        { key: "mult",   label: "Multiplier", default: 1.414, step: 0.001 },
+        { key: "poles",  label: "Pole",       default: 4 },
+      ],
+      plots: [
+        { key: "upper",   label: "Oberes Band",     color: "#e8b64c", opacity: 55, width: 1, visible: true },
+        { key: "midUp",   label: "Mitte (steigend)", color: "#3fb68b", opacity: 100, width: 2, visible: true, noVisible: true },
+        { key: "midDown", label: "Mitte (fallend)",  color: "#d05e5e", opacity: 100, width: 2, visible: true, noVisible: true, noWidth: true },
+        { key: "lower",   label: "Unteres Band",    color: "#e8b64c", opacity: 55, width: 1, visible: true },
       ],
     },
     {
       key: "hull", name: "HULL", pane: "main", label: "Hull Suite",
-      calcParams: [55],
-      settings: [
-        { key: "period", label: "Periode", type: "number", default: 55 },
+      inputs: [
+        { key: "period", label: "Periode", default: 55 },
+      ],
+      plots: [
+        { key: "up",   label: "Trend aufwärts", color: "#3fb68b", opacity: 100, width: 2, visible: true, noVisible: true },
+        { key: "down", label: "Trend abwärts",  color: "#d05e5e", opacity: 100, width: 2, visible: true, noVisible: true, noWidth: true },
       ],
     },
     {
       key: "rvwap", name: "RVWAP", pane: "main", label: "Rolling VWAP 365d",
-      calcParams: [365],
-      settings: [
-        { key: "days", label: "Tage", type: "number", default: 365 },
+      inputs: [
+        { key: "days", label: "Tage", default: 365 },
+      ],
+      plots: [
+        { key: "line", label: "VWAP-Linie", color: "#e8b64c", opacity: 100, width: 2, visible: true },
       ],
     },
     {
       key: "vrvp", name: "VRVP", pane: "main", label: "VRVP",
-      settings: [
-        { key: "rows",      label: "Rows",        type: "number", default: 500  },
-        { key: "valueArea", label: "Value Area %", type: "number", default: 70   },
-        { key: "width",     label: "Breite %",    type: "number", default: 15   },
-        { key: "colorUp",   label: "Up-Farbe",    type: "color",  default: "rgba(63,182,139,0.6)"  },
-        { key: "colorDown", label: "Down-Farbe",  type: "color",  default: "rgba(208,94,94,0.6)"   },
-        { key: "colorVA",   label: "Value Area",  type: "color",  default: "rgba(232,182,76,0.35)" },
+      inputs: [
+        { key: "rows",      label: "Rows",         default: 500 },
+        { key: "valueArea", label: "Value Area %", default: 70  },
+        { key: "width",     label: "Breite %",     default: 15  },
+      ],
+      plots: [
+        { key: "up",   label: "Up-Volumen",   color: "#3fb68b", opacity: 60, width: 1, visible: true, noWidth: true },
+        { key: "down", label: "Down-Volumen", color: "#d05e5e", opacity: 60, width: 1, visible: true, noWidth: true },
+        { key: "va",   label: "Value Area",   color: "#e8b64c", opacity: 12, width: 1, visible: true, noWidth: true },
       ],
     },
     {
-      key: "rsi",  name: "RSI",  pane: "sub",  label: "RSI 14",
-      calcParams: [14],
-      settings: [
-        { key: "period", label: "Periode", type: "number", default: 14 },
+      key: "rsi", name: "RSI", pane: "sub", label: "RSI 14",
+      inputs: [
+        { key: "period", label: "Periode", default: 14 },
+      ],
+      plots: [
+        { key: "line", label: "RSI-Linie", color: "#c792ea", opacity: 100, width: 2, visible: true },
       ],
     },
     {
-      key: "vol",  name: "VOL",  pane: "sub",  label: "Volumen",
-      settings: [],
+      key: "vol", name: "VOL", pane: "sub", label: "Volumen",
+      inputs: [], plots: [],
     },
   ],
 
@@ -126,16 +157,23 @@ const CONFIG = {
     { overlay: "priceChannelLine",       icon: "⫽",  title: "Preiskanal" },
     { overlay: "parallelStraightLine",   icon: "∥",  title: "Parallele Linien" },
     { overlay: "fibonacciLine",          icon: "𝑓",  title: "Fibonacci" },
-    { overlay: "rectangle",             icon: "▭",  title: "Rechteck" },
+    { overlay: "rectangle",              icon: "▭",  title: "Rechteck" },
     { overlay: "priceRange",             icon: "↕",  title: "Price Range" },
     { overlay: "dateRange",              icon: "↔",  title: "Date Range" },
   ],
 
   THEME: {
-    up:     "#3fb68b",
-    down:   "#d05e5e",
-    accent: "#e8b64c",
-    text:   "#8fa3b8",
-    grid:   "rgba(143,163,184,0.07)",
+    up: "#3fb68b", down: "#d05e5e", accent: "#e8b64c",
+    text: "#8fa3b8", grid: "rgba(143,163,184,0.07)",
   },
 };
+
+// ---------- Farb-Helfer (global) ----------
+function hexToRgba(hex, opacityPct) {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  const a = Math.max(0, Math.min(100, opacityPct)) / 100;
+  return `rgba(${r},${g},${b},${a})`;
+}

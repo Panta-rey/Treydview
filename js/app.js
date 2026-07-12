@@ -19,6 +19,10 @@ const state = {
   vrvpCanvas:  null,
   tooltipsVisible: true,
   subPaneIds:  {},   // indKey -> paneId (von createIndicator zurückgegeben)
+  magnetMode:  "normal",   // normal | weak_magnet | strong_magnet
+  pinTool:     false,      // Werkzeug nach Zeichnung aktiv lassen
+  drawingId:   null,       // Overlay-ID während des Zeichnens (für ESC)
+  selectedOverlayId: null, // zuletzt selektiertes Overlay (für Entf)
 };
 
 // ---------- Chart-Init ----------
@@ -73,18 +77,29 @@ chart.setStyles(baseStyles());
 // ---------- Indikator-Params bauen ----------
 function buildCreate(ind) {
   const sv = Settings.get(ind.key);
-  const create = { name: ind.name };
+  const inp = sv.inputs;
+  const create = { name: ind.name, extendData: { plots: sv.plots } };
   switch (ind.key) {
-    case "ema":     create.calcParams = [sv.p1||21, sv.p2||100, sv.p3||200]; break;
-    case "boll":    create.calcParams = [sv.period||20, sv.stddev||2]; break;
-    case "gc":      create.calcParams = [sv.period||144, sv.mult||1.414, sv.poles||4]; break;
-    case "hull":    create.calcParams = [sv.period||55]; break;
-    case "rvwap":   create.calcParams = [sv.days||365]; break;
-    case "mnoodle": create.calcParams = [sv.fastPeriod||12, sv.medPeriod||21, sv.slowPeriod||35, sv.atrLength||20, sv.bandMult||0.0125]; break;
-    case "vrvp":    create.calcParams = [sv.rows||500, sv.valueArea||70, sv.width||15]; break;
+    case "ema":     create.calcParams = [inp.p1||21, inp.p2||100, inp.p3||200]; break;
+    case "boll":    create.calcParams = [inp.period||20, inp.stddev||2]; break;
+    case "gc":      create.calcParams = [inp.period||144, inp.mult||1.414, inp.poles||4]; break;
+    case "hull":    create.calcParams = [inp.period||55]; break;
+    case "rvwap":   create.calcParams = [inp.days||365]; break;
+    case "mnoodle": create.calcParams = [inp.fastPeriod||12, inp.medPeriod||21, inp.slowPeriod||35, inp.atrLength||20, inp.bandMult||0.0125]; break;
     case "bmsb":    create.calcParams = [20, 21]; break;
-    case "rsi":     create.calcParams = [sv.period||14]; break;
+    case "rsi":     create.calcParams = [inp.period||14]; break;
     default:        if (ind.calcParams) create.calcParams = ind.calcParams;
+  }
+  // Built-in-Indikatoren (EMA, BOLL, RSI): Linien-Styles direkt übergeben
+  const lineStyle = (p) => p
+    ? { color: p.visible === false ? "rgba(0,0,0,0)" : p.color, size: p.width || 1 }
+    : undefined;
+  if (ind.key === "ema") {
+    create.styles = { lines: [lineStyle(sv.plots.e1), lineStyle(sv.plots.e2), lineStyle(sv.plots.e3)].filter(Boolean) };
+  } else if (ind.key === "boll") {
+    create.styles = { lines: [lineStyle(sv.plots.up), lineStyle(sv.plots.mid), lineStyle(sv.plots.dn)].filter(Boolean) };
+  } else if (ind.key === "rsi") {
+    create.styles = { lines: [lineStyle(sv.plots.line)].filter(Boolean) };
   }
   return create;
 }
@@ -136,7 +151,7 @@ function computeVrvpMeta() {
   if (!data || data.length < 2) { state.vrvpMeta = null; return; }
   const sv = Settings.get("vrvp");
   // VRVP-Berechnung direkt (gleiche Logik wie im Indikator)
-  const rows = sv.rows || 500, vaPct = sv.valueArea || 70;
+  const rows = sv.inputs.rows || 500, vaPct = sv.inputs.valueArea || 70;
   const prices = data.flatMap(d => [d.high, d.low]);
   const pMin = Math.min(...prices), pMax = Math.max(...prices);
   const rowH = (pMax - pMin) / rows;
@@ -180,7 +195,7 @@ function drawVrvp() {
   }
   const canvas = ensureVrvpCanvas();
   const sv = Settings.get("vrvp");
-  const widthPct = (sv.width || 15) / 100;
+  const widthPct = ((sv.inputs.width || 15)) / 100;
   const { rowH, pMin, upVol, downVol, totalVol, maxVol, pocPrice, vahPrice, valPrice } = state.vrvpMeta;
   const rows = totalVol.length;
   const w = chartEl.clientWidth, h = chartEl.clientHeight;
@@ -202,11 +217,11 @@ function drawVrvp() {
     const downW = (downVol[r] / maxVol) * maxBarW;
     const inVA = pm >= valPrice && pm <= vahPrice;
     const isPoc = Math.abs(pm - pocPrice) < rowH;
-    ctx.fillStyle = sv.colorDown || "rgba(208,94,94,0.6)";
+    ctx.fillStyle = (sv.plots.down && sv.plots.down.visible !== false) ? sv.plots.down.color : "rgba(0,0,0,0)";
     ctx.fillRect(w - downW, yTop, downW, yH);
-    ctx.fillStyle = sv.colorUp || "rgba(63,182,139,0.6)";
+    ctx.fillStyle = (sv.plots.up && sv.plots.up.visible !== false) ? sv.plots.up.color : "rgba(0,0,0,0)";
     ctx.fillRect(w - barW, yTop, upW, yH);
-    if (inVA) { ctx.fillStyle = sv.colorVA || "rgba(232,182,76,0.12)"; ctx.fillRect(w - barW, yTop, barW, yH); }
+    if (inVA && sv.plots.va && sv.plots.va.visible !== false) { ctx.fillStyle = sv.plots.va.color; ctx.fillRect(w - barW, yTop, barW, yH); }
     if (isPoc) {
       ctx.strokeStyle = "rgba(232,182,76,0.8)"; ctx.lineWidth = 1.5; ctx.setLineDash([4,3]);
       ctx.beginPath(); ctx.moveTo(0, yTop + yH/2); ctx.lineTo(w - barW, yTop + yH/2); ctx.stroke();
@@ -383,26 +398,89 @@ function renderIndPanel() {
 }
 
 // ---------- Drawing-Toolbar ----------
+function startTool(overlayName) {
+  state.activeTool = overlayName;
+  const id = chart.createOverlay({
+    name: overlayName,
+    mode: state.magnetMode,
+    onDrawEnd: () => {
+      state.drawingId = null;
+      if (state.pinTool) {
+        // Werkzeug bleibt aktiv: direkt nächste Zeichnung starten
+        setTimeout(() => startTool(overlayName), 0);
+      } else {
+        state.activeTool = null;
+        renderDrawbar();
+      }
+      return false;
+    },
+    onSelected:   (e) => { state.selectedOverlayId = e.overlay.id; return false; },
+    onDeselected: () => { state.selectedOverlayId = null; return false; },
+  });
+  state.drawingId = Array.isArray(id) ? id[0] : id;
+  renderDrawbar();
+}
+
 function renderDrawbar() {
   const bar = document.getElementById("drawbar");
   bar.innerHTML = "";
+
   CONFIG.DRAW_TOOLS.forEach(tool => {
     const btn = document.createElement("button");
     btn.textContent = tool.icon; btn.title = tool.title;
     btn.className = "draw-btn" + (state.activeTool === tool.overlay ? " active" : "");
-    btn.addEventListener("click", () => {
-      state.activeTool = tool.overlay;
-      chart.createOverlay({ name: tool.overlay, onDrawEnd: () => { state.activeTool = null; renderDrawbar(); return false; } });
-      renderDrawbar();
-    });
+    btn.addEventListener("click", () => startTool(tool.overlay));
     bar.appendChild(btn);
   });
-  const sep = document.createElement("div"); sep.className = "draw-sep"; bar.appendChild(sep);
+
+  const sep1 = document.createElement("div"); sep1.className = "draw-sep"; bar.appendChild(sep1);
+
+  // Magnet-Modus (aus → schwach → stark)
+  const magnet = document.createElement("button");
+  const magnetLabels = { normal: "Magnet: aus", weak_magnet: "Magnet: schwach", strong_magnet: "Magnet: stark" };
+  magnet.textContent = "⌖";
+  magnet.title = magnetLabels[state.magnetMode] + " (klicken zum Wechseln)";
+  magnet.className = "draw-btn" + (state.magnetMode !== "normal" ? " active" : "");
+  magnet.addEventListener("click", () => {
+    state.magnetMode = state.magnetMode === "normal" ? "weak_magnet"
+                     : state.magnetMode === "weak_magnet" ? "strong_magnet" : "normal";
+    renderDrawbar();
+  });
+  bar.appendChild(magnet);
+
+  // Pin: Werkzeug aktiv lassen
+  const pin = document.createElement("button");
+  pin.textContent = "📌";
+  pin.title = state.pinTool ? "Werkzeug bleibt aktiv (an)" : "Werkzeug bleibt aktiv (aus)";
+  pin.className = "draw-btn" + (state.pinTool ? " active" : "");
+  pin.addEventListener("click", () => { state.pinTool = !state.pinTool; renderDrawbar(); });
+  bar.appendChild(pin);
+
+  const sep2 = document.createElement("div"); sep2.className = "draw-sep"; bar.appendChild(sep2);
+
   const clear = document.createElement("button");
-  clear.textContent = "✕"; clear.title = "Zeichnungen löschen"; clear.className = "draw-btn danger";
+  clear.textContent = "✕"; clear.title = "Alle Zeichnungen löschen"; clear.className = "draw-btn danger";
   clear.addEventListener("click", () => chart.removeOverlay());
   bar.appendChild(clear);
 }
+
+// Tastatur: ESC bricht Zeichnen ab, Entf löscht selektiertes Overlay
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (state.drawingId != null) {
+      chart.removeOverlay(state.drawingId);
+      state.drawingId = null;
+    }
+    state.activeTool = null;
+    renderDrawbar();
+  } else if ((e.key === "Delete" || e.key === "Backspace") && state.selectedOverlayId != null) {
+    // Nicht löschen wenn der Fokus in einem Eingabefeld liegt
+    const tag = document.activeElement?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    chart.removeOverlay(state.selectedOverlayId);
+    state.selectedOverlayId = null;
+  }
+});
 
 // ---------- Price-Header ----------
 function updatePriceHeader(last, prev) {

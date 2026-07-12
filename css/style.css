@@ -107,3 +107,20 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .brand-name{display:none;}
   .ph-price{font-size:16px;}
 }
+
+/* ---- Settings v0.4: Tabs + Plot-Blöcke ---- */
+.settings-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:-4px 0 4px;}
+.settings-tabs .tab, .settings-tabs button{background:transparent;border:none;color:var(--text-dim);font-family:var(--font-mono);font-size:12px;padding:7px 14px;cursor:pointer;border-bottom:2px solid transparent;}
+.settings-tabs .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.settings-page{display:flex;flex-direction:column;gap:10px;}
+.settings-empty{font-size:12px;color:var(--text-dim);padding:8px 0;}
+.plot-block{display:flex;flex-direction:column;gap:5px;padding:8px 0;border-bottom:1px solid rgba(143,163,184,.07);}
+.plot-head{display:flex;align-items:center;gap:8px;}
+.plot-head label{font-size:12px;color:var(--text);}
+.plot-head input[type=checkbox]{accent-color:var(--accent);}
+.plot-controls{display:flex;align-items:center;gap:10px;}
+.plot-color{width:36px;height:26px;padding:1px;border:1px solid var(--border);border-radius:4px;background:var(--bg);cursor:pointer;}
+.plot-opacity{display:flex;align-items:center;gap:6px;flex:1;}
+.plot-opacity input[type=range]{flex:1;accent-color:var(--accent);}
+.plot-opacity span{font-size:11px;color:var(--text-dim);width:36px;text-align:right;}
+.plot-width{width:48px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:4px 6px;outline:none;}
