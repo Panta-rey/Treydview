@@ -296,8 +296,12 @@ function drawVrvp() {
 // VRVP bei Zoom/Scroll neu zeichnen
 chart.subscribeAction("onVisibleRangeChange", (range) => {
   if (state.active.has("vrvp")) requestAnimationFrame(() => {
-    try { drawVrvp(); } catch (e) { /* Render-Fehler nie den Loop killen lassen */ }
+    try { drawVrvp(); } catch (e) {}
   });
+  if (state.compareAssets.length > 0) {
+    requestAnimationFrame(() => { try { drawCompare(); } catch (e) {} });
+  }
+});
   // Vergleichsmodus: linken sichtbaren Rand als neuen 0%-Referenzpunkt setzen.
   // Wir übergeben fromIdx als calcParams[0] — KLC erkennt die Parameteränderung
   // und ruft calc() neu auf (zuverlässiger als overrideIndicator ohne Änderung).
@@ -344,6 +348,7 @@ async function loadData() {
         updatePriceHeader(candle, chart.getDataList().at(-2));
         updateLegend();
         if (state.active.has("vrvp")) requestAnimationFrame(drawVrvp);
+        if (state.compareAssets.length > 0) requestAnimationFrame(() => { try { drawCompare(); } catch (e) {} });
       },
       s => setLive(s, s === "live" ? "Live" : "Reconnect …")
     );
@@ -497,42 +502,197 @@ async function refreshCompareData(entry) {
   }
 }
 
-// Compare-Indikator (COMPARE) auf dem Hauptchart an/aus/aktualisieren
-function applyCompareIndicator() {
-  window.__tvCompareAssets = state.compareAssets;
-  if (state.compareAssets.length > 0) {
-    // Referenzpunkt initial auf den aktuell linken sichtbaren Rand setzen
+// ---------- Compare: Canvas-basierter Relative-Performance-Modus ----------
+// Zeichnet alle Linien (Hauptasset + Vergleiche) selbst auf einem Canvas.
+// Eigene Y-Achse in %, reaktiv bei Scroll/Zoom. Keine KLC-Indikator-Abhängigkeit.
+
+let _compareCanvas = null;
+
+function ensureCompareCanvas() {
+  if (_compareCanvas) return _compareCanvas;
+  const c = document.createElement("canvas");
+  c.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;z-index:11;";
+  chartEl.style.position = "relative";
+  chartEl.appendChild(c);
+  _compareCanvas = c;
+  return c;
+}
+
+function drawCompare() {
+  if (state.compareAssets.length === 0) {
+    if (_compareCanvas) {
+      _compareCanvas.getContext("2d").clearRect(0, 0, _compareCanvas.width, _compareCanvas.height);
+    }
+    return;
+  }
+
+  const canvas = ensureCompareCanvas();
+  const w = chartEl.clientWidth, h = chartEl.clientHeight;
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, w, h);
+
+  // Pane-Grenzen (nur Preis-Pane, nicht Sub-Panes)
+  let paneTop = 0, paneH = h;
+  try {
+    const b = chart.getSize("candle_pane");
+    if (b && b.height) { paneTop = b.top || 0; paneH = b.height; }
+  } catch (e) {}
+
+  const dataList = chart.getDataList();
+  if (!dataList || dataList.length === 0) return;
+
+  // Sichtbarer Bereich
+  let fromIdx = 0, toIdx = dataList.length - 1;
+  try {
+    const vr = chart.getVisibleRange();
+    if (vr) {
+      fromIdx = Math.max(0, vr.realFrom != null ? vr.realFrom : vr.from);
+      toIdx   = Math.min(dataList.length - 1, vr.realTo != null ? vr.realTo : vr.to);
+    }
+  } catch (e) {}
+
+  // Referenzpreise: Kurs jedes Assets am ersten sichtbaren Bar (0%-Anker)
+  const mainRef = dataList[fromIdx]?.close;
+  if (!mainRef) return;
+
+  const assetRefs = state.compareAssets.map(a => {
+    const m = new Map((a.data || []).map(p => [p.timestamp, p.close]));
+    for (let i = fromIdx; i <= toIdx; i++) {
+      const v = m.get(dataList[i].timestamp);
+      if (v != null) return { m, ref: v };
+    }
+    return { m, ref: null };
+  });
+
+  // Alle sichtbaren Prozentwerte berechnen für Autoscaling
+  let pMin = Infinity, pMax = -Infinity;
+  for (let i = fromIdx; i <= toIdx; i++) {
+    const d = dataList[i];
+    if (d.close && mainRef) {
+      const pct = ((d.close - mainRef) / mainRef) * 100;
+      if (pct < pMin) pMin = pct;
+      if (pct > pMax) pMax = pct;
+    }
+    assetRefs.forEach(({ m, ref }) => {
+      if (!ref) return;
+      const v = m.get(d.timestamp);
+      if (v != null) {
+        const pct = ((v - ref) / ref) * 100;
+        if (pct < pMin) pMin = pct;
+        if (pct > pMax) pMax = pct;
+      }
+    });
+  }
+  if (!isFinite(pMin) || !isFinite(pMax)) return;
+  const pad = Math.max(5, (pMax - pMin) * 0.05);
+  pMin -= pad; pMax += pad;
+  const pRange = pMax - pMin || 1;
+
+  // Preis → Y-Pixel innerhalb des Pane
+  const pctToY = (pct) => paneTop + ((pMax - pct) / pRange) * paneH;
+
+  // Timestamp → X-Pixel via KLC (konvertiert bar-Index zu Pixel)
+  const tsToX = (ts) => {
+    const idx = dataList.findIndex(d => d.timestamp === ts);
+    if (idx < 0) return null;
     try {
-      const range = chart.getVisibleRange ? chart.getVisibleRange() : null;
-      window.__tvVisibleFrom = range && Number.isInteger(range.from) ? range.from : 0;
-    } catch (e) { window.__tvVisibleFrom = 0; }
+      const pt = chart.convertToPixel({ dataIndex: idx }, { paneId: "candle_pane", absolute: true });
+      return pt ? pt.x : null;
+    } catch (e) { return null; }
+  };
 
-    chart.createIndicator({ name: "COMPARE" }, true, { id: "candle_pane" });
+  // Clip auf Pane
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, paneTop, w, paneH);
+  ctx.clip();
 
-    // Im Vergleichsmodus: Chart auf Linien-Typ wechseln und Linie unsichtbar
-    // machen. So liefert KLineCharts nur noch Close-Werte an die Y-Achse
-    // (nicht OHLC), und die Achse skaliert auf die Prozentwerte des
-    // COMPARE-Indikators statt auf die BTC-Preiswerte (60'000+).
+  // Hauptasset-Linie (weiss)
+  drawLine(ctx, dataList, fromIdx, toIdx, (d) => {
+    if (!d.close || !mainRef) return null;
+    return { x: null, pct: ((d.close - mainRef) / mainRef) * 100 };
+  }, "#ffffff", 2, dataList, pctToY, chart);
+
+  // Vergleichs-Linien
+  state.compareAssets.forEach((asset, idx) => {
+    const { m, ref } = assetRefs[idx];
+    if (!ref) return;
+    drawLine(ctx, dataList, fromIdx, toIdx, (d) => {
+      const v = m.get(d.timestamp);
+      if (v == null) return null;
+      return { pct: ((v - ref) / ref) * 100 };
+    }, asset.color, 2, dataList, pctToY, chart);
+  });
+
+  // 0%-Linie
+  const y0 = pctToY(0);
+  ctx.strokeStyle = "rgba(143,163,184,0.35)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(0, y0); ctx.lineTo(w, y0); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Eigene Y-Achse rechts (Prozent-Beschriftung)
+  const axisX = w - 4;
+  ctx.fillStyle = T.text;
+  ctx.font = "11px 'IBM Plex Mono', monospace";
+  ctx.textAlign = "right";
+  const steps = 6;
+  for (let s = 0; s <= steps; s++) {
+    const pct = pMin + (pMax - pMin) * (s / steps);
+    const y = pctToY(pct);
+    if (y < paneTop + 8 || y > paneTop + paneH - 8) continue;
+    const label = (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%";
+    ctx.fillText(label, axisX, y + 4);
+  }
+
+  ctx.restore();
+}
+
+function drawLine(ctx, dataList, from, to, valFn, color, width, dl, pctToY, chart) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  let started = false;
+  for (let i = from; i <= to; i++) {
+    const r = valFn(dataList[i]);
+    if (!r) { started = false; continue; }
+    let x;
+    try {
+      const pt = chart.convertToPixel({ dataIndex: i }, { paneId: "candle_pane", absolute: true });
+      x = pt ? pt.x : null;
+    } catch (e) { x = null; }
+    if (x == null) { started = false; continue; }
+    const y = pctToY(r.pct);
+    if (!started) { ctx.moveTo(x, y); started = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+function applyCompareIndicator() {
+  if (state.compareAssets.length > 0) {
+    // Kerzen/Achse ausblenden: USD-Beschriftung transparent, Kerzen unsichtbar
     chart.setStyles({
       candle: {
         type: "area",
         area: {
-          lineColor:    "rgba(0,0,0,0)",
-          lineSize:     0,
-          value:        "close",
-          smooth:       false,
+          lineColor: "rgba(0,0,0,0)", lineSize: 0,
           backgroundColor: [{ offset: 0, color: "rgba(0,0,0,0)" }, { offset: 1, color: "rgba(0,0,0,0)" }],
         },
-        priceMark: { last: { show: false } },
+        priceMark: { last: { show: false }, high: { show: false }, low: { show: false } },
       },
+      yAxis: { tickText: { color: "rgba(0,0,0,0)" }, axisLine: { color: "rgba(0,0,0,0)" }, tickLine: { color: "rgba(0,0,0,0)" } },
     });
-    // Achse nach kurzer Verzögerung auf neuen Datenbereich ausrichten
-    setTimeout(() => { try { chart.setStyles({ yAxis: { type: "normal" } }); } catch (e) {} }, 150);
+    setTimeout(() => { try { drawCompare(); } catch (e) {} }, 80);
   } else {
-    chart.removeIndicator("candle_pane", "COMPARE");
-    window.__tvVisibleFrom = undefined;
-    // Kerzen wieder einblenden (Original-Theme wiederherstellen)
+    // Kerzen/Achse wiederherstellen, Canvas leeren
     chart.setStyles(baseStyles());
+    if (_compareCanvas) {
+      _compareCanvas.getContext("2d").clearRect(0, 0, _compareCanvas.width, _compareCanvas.height);
+    }
   }
   updateLegend();
 }
@@ -979,6 +1139,11 @@ function resize() {
     state.vrvpCanvas.height = chartEl.clientHeight;
     if (state.active.has("vrvp")) drawVrvp();
   }
+  if (_compareCanvas && state.compareAssets.length > 0) {
+    _compareCanvas.width  = chartEl.clientWidth;
+    _compareCanvas.height = chartEl.clientHeight;
+    try { drawCompare(); } catch (e) {}
+  }
 }
 new ResizeObserver(resize).observe(document.querySelector(".workspace"));
 
@@ -1021,5 +1186,3 @@ document.getElementById("screenshotBtn").addEventListener("click", takeScreensho
 document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 
 // Type-Dropdown öffnen/schliessen (zur bestehenden Dropdown-Logik hinzufügen)
-
-})();
