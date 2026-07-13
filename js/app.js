@@ -36,7 +36,6 @@ function tooltipStyle(show) {
   return show ? "standard" : "none";
 }
 
-JavaScript
 function baseStyles() {
   return {
     grid: { 
