@@ -302,22 +302,6 @@ chart.subscribeAction("onVisibleRangeChange", (range) => {
     requestAnimationFrame(() => { try { drawCompare(); } catch (e) {} });
   }
 });
-  // Vergleichsmodus: linken sichtbaren Rand als neuen 0%-Referenzpunkt setzen.
-  // Wir übergeben fromIdx als calcParams[0] — KLC erkennt die Parameteränderung
-  // und ruft calc() neu auf (zuverlässiger als overrideIndicator ohne Änderung).
-  if (state.compareAssets.length > 0 && range) {
-    const from = Number.isInteger(range.from) ? Math.max(0, range.from) : 0;
-    if (window.__tvVisibleFrom !== from) {
-      window.__tvVisibleFrom = from;
-      try {
-        chart.overrideIndicator(
-          { name: "COMPARE", calcParams: [from] },
-          "candle_pane"
-        );
-      } catch (e) {}
-    }
-  }
-});
 
 // ---------- Daten laden ----------
 async function loadData() {
@@ -1186,3 +1170,5 @@ document.getElementById("screenshotBtn").addEventListener("click", takeScreensho
 document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 
 // Type-Dropdown öffnen/schliessen (zur bestehenden Dropdown-Logik hinzufügen)
+
+})();
