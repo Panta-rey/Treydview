@@ -489,11 +489,11 @@ function applyCompareIndicator() {
     chart.createIndicator({ name: "COMPARE" }, true, { id: "candle_pane" });
     // Prozent-Achse: alle Linien starten bei 0% am linken sichtbaren Rand,
     // rechte Skala zeigt Gewinn/Verlust in Prozent (wie TradingView)
-    try { chart.setPaneOptions({ id: "candle_pane", axis: { name: "percentage" } }); } catch (e) {}
+    try { chart.setPaneOptions({ id: "candle_pane", axisOptions: { name: "percentage" } }); } catch (e) {}
   } else {
     chart.removeIndicator("candle_pane", "COMPARE");
     // Zurück zur normalen Preis-Achse
-    try { chart.setPaneOptions({ id: "candle_pane", axis: { name: "normal" } }); } catch (e) {}
+    try { chart.setPaneOptions({ id: "candle_pane", axisOptions: { name: "normal" } }); } catch (e) {}
   }
   updateLegend();
 }
@@ -641,7 +641,7 @@ function takeScreenshot() {
 
 function autoZoom() {
   // Y-Achse automatisch an sichtbaren Bereich anpassen
-  chart.setPaneOptions({ id: "candle_pane", axis: { name: "normal", scrollZoomEnabled: true } });
+  chart.setPaneOptions({ id: "candle_pane", axisOptions: { name: "normal", scrollZoomEnabled: true } });
   chart.resize();
   // Re-Fit: ganze Datenbreite zeigen
   chart.scrollToRealTime();
