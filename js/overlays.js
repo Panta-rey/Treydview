@@ -121,4 +121,97 @@
       ];
     },
   });
+
+  // ---------- FRVP — Fixed Range Volume Profile ----------
+  // Zwei Punkte spannen einen Zeitbereich auf; darin wird das Volumen
+  // pro Preis-Row berechnet und als Histogramm gezeichnet.
+  // Chart-Daten kommen über window.__tvGetDataList (in app.js gesetzt).
+  klinecharts.registerOverlay({
+    name: "frvp",
+    totalStep: 3,
+    needDefaultPointFigure: true,
+    needDefaultXAxisFigure: true,
+    needDefaultYAxisFigure: true,
+    createPointFigures: ({ coordinates, overlay, xAxis, yAxis }) => {
+      if (coordinates.length < 2) return [];
+      const getData = (typeof window !== "undefined" && window.__tvGetDataList) ? window.__tvGetDataList : null;
+      if (!getData) return [];
+      const dataList = getData();
+      if (!dataList || dataList.length === 0) return [];
+
+      const p0 = overlay.points[0], p1 = overlay.points[1];
+      const tStart = Math.min(p0.timestamp, p1.timestamp);
+      const tEnd   = Math.max(p0.timestamp, p1.timestamp);
+
+      // Candles im Zeitbereich sammeln
+      const slice = dataList.filter(d => d.timestamp >= tStart && d.timestamp <= tEnd);
+      if (slice.length < 2) return [];
+
+      const rows = (overlay.extendData && overlay.extendData.rows) || 150;
+      const vaPct = (overlay.extendData && overlay.extendData.valueArea) || 70;
+      const widthPct = (overlay.extendData && overlay.extendData.width) || 30;
+
+      let pMin = Infinity, pMax = -Infinity;
+      for (const d of slice) { if (d.low < pMin) pMin = d.low; if (d.high > pMax) pMax = d.high; }
+      const rowH = (pMax - pMin) / rows;
+      if (rowH === 0) return [];
+
+      const upVol = new Float64Array(rows), downVol = new Float64Array(rows);
+      for (const d of slice) {
+        const vol = d.volume || 0, isUp = d.close >= d.open;
+        const rLow = Math.max(0, Math.floor((d.low - pMin) / rowH));
+        const rHigh = Math.min(rows - 1, Math.floor((d.high - pMin) / rowH));
+        const n = rHigh - rLow + 1;
+        for (let r = rLow; r <= rHigh; r++) {
+          if (isUp) upVol[r] += vol / n; else downVol[r] += vol / n;
+        }
+      }
+      const totalVol = upVol.map((u, i) => u + downVol[i]);
+      const maxVol = Math.max(...totalVol.filter(v => v > 0));
+      if (!(maxVol > 0)) return [];
+      const pocRow = totalVol.indexOf(Math.max(...totalVol));
+      const pocPrice = pMin + (pocRow + 0.5) * rowH;
+
+      // Pixel-Koordinaten
+      const xLeft = Math.min(coordinates[0].x, coordinates[1].x);
+      const xRight = Math.max(coordinates[0].x, coordinates[1].x);
+      const boxWidth = xRight - xLeft;
+      const maxBarW = boxWidth * (widthPct / 100);
+
+      const figures = [];
+      // Rahmen der Box
+      figures.push({
+        type: "rect",
+        attrs: { x: xLeft, y: Math.min(coordinates[0].y, coordinates[1].y), width: boxWidth, height: Math.abs(coordinates[1].y - coordinates[0].y) },
+        styles: { style: "stroke", borderColor: "rgba(232,182,76,0.5)", borderSize: 1 },
+        ignoreEvent: true,
+      });
+
+      // Histogramm-Balken (Placement: Left — wachsen von xLeft nach rechts)
+      for (let r = 0; r < rows; r++) {
+        const tot = totalVol[r];
+        if (tot === 0) continue;
+        const pb = pMin + r * rowH, pt = pb + rowH;
+        const yb = yAxis.convertToPixel(pb), yt = yAxis.convertToPixel(pt);
+        const yTop = Math.min(yb, yt), yH = Math.max(1, Math.abs(yt - yb));
+        const upW = (upVol[r] / maxVol) * maxBarW;
+        const downW = (downVol[r] / maxVol) * maxBarW;
+        const isPoc = Math.abs((pb + pt) / 2 - pocPrice) < rowH;
+        // Up (grün) unten, Down (rot) darüber gestapelt
+        if (upW > 0) figures.push({
+          type: "rect",
+          attrs: { x: xLeft, y: yTop, width: upW, height: yH },
+          styles: { style: "fill", color: isPoc ? "rgba(232,182,76,0.7)" : "rgba(63,182,139,0.55)" },
+          ignoreEvent: true,
+        });
+        if (downW > 0) figures.push({
+          type: "rect",
+          attrs: { x: xLeft + upW, y: yTop, width: downW, height: yH },
+          styles: { style: "fill", color: isPoc ? "rgba(232,182,76,0.7)" : "rgba(208,94,94,0.55)" },
+          ignoreEvent: true,
+        });
+      }
+      return figures;
+    },
+  });
 })();

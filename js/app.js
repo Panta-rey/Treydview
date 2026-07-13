@@ -8,10 +8,23 @@
 
 const T = CONFIG.THEME;
 
+// ---------- Workspace-Persistenz ----------
+// Speichert Symbol, Timeframe, aktive Indikatoren, Chart-Typ in localStorage,
+// damit beim nächsten Öffnen die letzte Konfiguration wiederhergestellt wird.
+function loadWorkspace() {
+  try {
+    const raw = localStorage.getItem("tv_workspace");
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+const _ws = loadWorkspace();
+
 const state = {
-  symbol:      CONFIG.DEFAULT_SYMBOLS[0],
-  timeframe:   CONFIG.TIMEFRAMES.find(t => t.id === "1d"),
-  active:      new Set(CONFIG.DEFAULT_ACTIVE),
+  symbol:      _ws?.symbol || CONFIG.DEFAULT_SYMBOLS[0],
+  timeframe:   CONFIG.TIMEFRAMES.find(t => t.id === (_ws?.timeframeId || "1d")) || CONFIG.TIMEFRAMES.find(t => t.id === "1d"),
+  active:      new Set(_ws?.active || CONFIG.DEFAULT_ACTIVE),
   closeStream: null,
   allSymbols:  [...CONFIG.DEFAULT_SYMBOLS],
   activeTool:  null,
@@ -23,14 +36,21 @@ const state = {
   pinTool:     false,      // Werkzeug nach Zeichnung aktiv lassen
   drawingId:   null,       // Overlay-ID während des Zeichnens (für ESC)
   selectedOverlayId: null, // zuletzt selektiertes Overlay (für Entf)
-  chartType:   "candle_solid", // candle_solid | area
-  legendCollapsed: false,
-  drawStyle:   { color: "#e8b64c", lineStyle: "solid", opacity: 100, width: 1 },
+  chartType:   _ws?.chartType || "candle_solid", // candle_solid | area
+  legendCollapsed: _ws?.legendCollapsed || false,
+  drawStyle:   _ws?.drawStyle || { color: "#e8b64c", lineStyle: "solid", opacity: 100, width: 1 },
+  compareAssets: [],   // [{ id, label, color, data: [{timestamp, close}] }]
 };
+
+// Farbpalette für Vergleichs-Assets
+const COMPARE_COLORS = ["#5aa9e6", "#e8b64c", "#c792ea", "#3fb68b", "#ff6d00", "#ff5c8a"];
 
 // ---------- Chart-Init ----------
 const chartEl = document.getElementById("mainChart");
 const chart = klinecharts.init("mainChart");
+
+// Bridge: FRVP-Overlay (overlays.js) braucht Zugriff auf die Candle-Daten
+window.__tvGetDataList = () => chart.getDataList();
 
 function tooltipStyle(show) {
   return show ? "standard" : "none";
@@ -223,17 +243,20 @@ function drawVrvp() {
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, w, h);
 
-  // Untere Grenze des Preis-Panes bestimmen: VRVP darf NICHT über die
-  // Sub-Panes (RSI/VOL/Stoch) ragen. Wir ermitteln die Pixel-Y von pMin
-  // und pMax im candle_pane; alles ausserhalb wird geclippt.
-  const yOfMin = chart.convertToPixel({ value: pMin }, { paneId: "candle_pane", absolute: true });
-  const yOfMax = chart.convertToPixel({ value: state.vrvpMeta.pMax }, { paneId: "candle_pane", absolute: true });
-  const paneTop = (yOfMax && yOfMax.y != null) ? Math.max(0, yOfMax.y) : 0;
-  const paneBottom = (yOfMin && yOfMin.y != null) ? yOfMin.y : h;
-  // Clip-Region auf den Preis-Pane beschränken
+  // Clip auf die ECHTEN Grenzen des Preis-Panes (candle_pane).
+  // getSize liefert das Bounding inkl. top+height — so ragt VRVP nie in
+  // die Sub-Panes (RSI/VOL/Stoch), egal wie stark gezoomt/gescrollt wird.
+  let clipTop = 0, clipHeight = h;
+  try {
+    const b = chart.getSize("candle_pane");
+    if (b && b.height) {
+      clipTop = b.top != null ? b.top : 0;
+      clipHeight = b.height;
+    }
+  } catch (e) { /* Fallback: ganzes Canvas */ }
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, Math.min(paneTop, paneBottom) - 4, w, Math.abs(paneBottom - paneTop) + 8);
+  ctx.rect(0, clipTop, w, clipHeight);
   ctx.clip();
 
   // Abstand zur Preisachse: Balken enden mit grösserem Gap, damit die
@@ -321,8 +344,9 @@ function initDropdowns() {
       document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
     }
   });
-  ["assetDropdown", "tfDropdown", "indDropdown"].forEach(id => {
+  ["assetDropdown", "compareDropdown", "tfDropdown", "typeDropdown", "indDropdown"].forEach(id => {
     const dd = document.getElementById(id);
+    if (!dd) return;
     const trigger = dd.querySelector(".dd-trigger");
     const panel = dd.querySelector(".dd-panel");
     trigger.addEventListener("click", (e) => {
@@ -332,6 +356,10 @@ function initDropdowns() {
       if (!wasOpen) panel.classList.add("open");
       if (id === "assetDropdown" && !wasOpen) {
         setTimeout(() => document.getElementById("assetSearch").focus(), 30);
+      }
+      if (id === "compareDropdown" && !wasOpen) {
+        renderCompareActive();
+        setTimeout(() => document.getElementById("compareSearch").focus(), 30);
       }
     });
   });
@@ -350,11 +378,14 @@ function renderAssetList(filter = "") {
     item.textContent = sym.label;
     item.addEventListener("click", () => {
       state.symbol = sym;
+      saveWorkspace();
       document.getElementById("assetLabel").textContent = sym.label;
       document.getElementById("assetPanel").classList.remove("open");
       if (sym.type === "worker") state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
       renderTfList();
+      renderCompareList();
       loadData();
+      reloadAllCompareData();
     });
     list.appendChild(item);
   });
@@ -372,8 +403,104 @@ async function loadBinanceSymbols() {
     const existing = new Set(CONFIG.DEFAULT_SYMBOLS.map(s => s.id));
     state.allSymbols = [...CONFIG.DEFAULT_SYMBOLS, ...usdt.filter(s => !existing.has(s.id))];
     renderAssetList();
+    renderCompareList();
   } catch (_) { renderAssetList(); }
 }
+
+// ---------- Multi-Asset-Vergleich ----------
+function renderCompareList(filter = "") {
+  const list = document.getElementById("compareList");
+  if (!list) return;
+  list.innerHTML = "";
+  const f = filter.toUpperCase().trim();
+  // Nur Binance-Assets vergleichbar (brauchen Kline-Endpoint)
+  const items = state.allSymbols.filter(s => s.type === "binance" &&
+    (f ? (s.id.includes(f) || s.label.toUpperCase().includes(f)) : true) &&
+    s.id !== state.symbol.id &&
+    !state.compareAssets.some(c => c.id === s.id));
+  items.slice(0, 60).forEach(sym => {
+    const item = document.createElement("div");
+    item.className = "dd-item";
+    item.textContent = sym.label;
+    item.addEventListener("click", () => addCompareAsset(sym));
+    list.appendChild(item);
+  });
+  if (items.length === 0) list.innerHTML = '<div class="dd-empty">Kein Symbol</div>';
+}
+
+function renderCompareActive() {
+  const box = document.getElementById("compareActive");
+  if (!box) return;
+  box.innerHTML = "";
+  if (state.compareAssets.length === 0) {
+    box.innerHTML = '<div class="dd-empty">Noch keine Vergleiche</div>';
+    return;
+  }
+  state.compareAssets.forEach(a => {
+    const chip = document.createElement("div");
+    chip.className = "compare-chip";
+    chip.innerHTML = `<span class="cc-dot" style="background:${a.color}"></span>`
+      + `<span class="cc-label">${a.label}</span>`
+      + `<button class="cc-remove" title="Entfernen">✕</button>`;
+    chip.querySelector(".cc-remove").addEventListener("click", () => removeCompareAsset(a.id));
+    box.appendChild(chip);
+  });
+}
+
+async function addCompareAsset(sym) {
+  if (state.compareAssets.length >= COMPARE_COLORS.length) {
+    setStatus(`Maximal ${COMPARE_COLORS.length} Vergleichs-Assets`);
+    return;
+  }
+  const color = COMPARE_COLORS[state.compareAssets.length];
+  const entry = { id: sym.id, label: sym.label, color, data: [] };
+  state.compareAssets.push(entry);
+  renderCompareActive();
+  renderCompareList(document.getElementById("compareSearch")?.value || "");
+  await refreshCompareData(entry);
+  applyCompareIndicator();
+}
+
+function removeCompareAsset(id) {
+  state.compareAssets = state.compareAssets.filter(c => c.id !== id);
+  // Farben neu zuordnen, damit sie konsistent bleiben
+  state.compareAssets.forEach((a, i) => { a.color = COMPARE_COLORS[i]; });
+  window.__tvCompareAssets = state.compareAssets;
+  renderCompareActive();
+  renderCompareList(document.getElementById("compareSearch")?.value || "");
+  applyCompareIndicator();
+}
+
+// Kline-Daten eines Vergleichs-Assets im aktuellen Timeframe holen
+async function refreshCompareData(entry) {
+  try {
+    const candles = await DataLayer.fetchBinanceKlines(entry.id, state.timeframe.binanceInterval, CONFIG.CANDLE_LIMIT);
+    entry.data = candles.map(c => ({ timestamp: c.timestamp, close: c.close }));
+    window.__tvCompareAssets = state.compareAssets;
+  } catch (e) {
+    setStatus(`Vergleichsdaten ${entry.label} fehlgeschlagen`);
+  }
+}
+
+// Compare-Indikator (COMPARE) auf dem Hauptchart an/aus/aktualisieren
+function applyCompareIndicator() {
+  window.__tvCompareAssets = state.compareAssets;
+  if (state.compareAssets.length > 0) {
+    chart.createIndicator({ name: "COMPARE" }, true, { id: "candle_pane" });
+  } else {
+    chart.removeIndicator("candle_pane", "COMPARE");
+  }
+  updateLegend();
+}
+
+// Bei Symbol-/TF-Wechsel: alle Vergleichsdaten neu laden
+async function reloadAllCompareData() {
+  for (const entry of state.compareAssets) await refreshCompareData(entry);
+  applyCompareIndicator();
+}
+
+const _compareSearchEl = document.getElementById("compareSearch");
+if (_compareSearchEl) _compareSearchEl.addEventListener("input", e => renderCompareList(e.target.value));
 
 function renderTfList() {
   const list = document.getElementById("tfList");
@@ -386,10 +513,12 @@ function renderTfList() {
     item.textContent = tf.label;
     if (!disabled) item.addEventListener("click", () => {
       state.timeframe = tf;
+      saveWorkspace();
       document.getElementById("tfLabel").textContent = tf.label;
       document.getElementById("tfPanel").classList.remove("open");
       renderTfList();
       loadData();
+      reloadAllCompareData();
     });
     list.appendChild(item);
   });
@@ -407,6 +536,7 @@ function renderIndPanel() {
     check.addEventListener("change", () => {
       if (check.checked) { state.active.add(ind.key); applyIndicator(ind); }
       else { state.active.delete(ind.key); removeIndicator(ind); }
+      saveWorkspace();
       updateLegend();
       resize();
     });
@@ -460,6 +590,7 @@ function updateLegend(hoverData) {
 
 function toggleLegend() {
   state.legendCollapsed = !state.legendCollapsed;
+  saveWorkspace();
   const legend = document.getElementById("chartLegend");
   const btn = document.getElementById("legendToggle");
   legend.classList.toggle("collapsed", state.legendCollapsed);
@@ -480,6 +611,7 @@ function renderTypeList() {
     item.textContent = t.label;
     item.addEventListener("click", () => {
       state.chartType = t.id;
+      saveWorkspace();
       document.getElementById("typeLabel").textContent = t.label;
       document.getElementById("typePanel").classList.remove("open");
       chart.setStyles(baseStyles());
@@ -709,6 +841,19 @@ function resize() {
   }
 }
 new ResizeObserver(resize).observe(document.querySelector(".workspace"));
+
+// ---------- Workspace speichern ----------
+function saveWorkspace() {
+  try {
+    localStorage.setItem("tv_workspace", JSON.stringify({
+      symbol: state.symbol,
+      timeframeId: state.timeframe.id,
+      active: [...state.active],
+      chartType: state.chartType,
+      legendCollapsed: state.legendCollapsed,
+    }));
+  } catch (e) { /* localStorage voll oder blockiert — ignorieren */ }
+}
 
 // ---------- Start ----------
 initDropdowns();

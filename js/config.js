@@ -173,6 +173,7 @@ const CONFIG = {
     { overlay: "rectangle",              icon: "▭",  title: "Rechteck" },
     { overlay: "priceRange",             icon: "↕",  title: "Price Range" },
     { overlay: "dateRange",              icon: "↔",  title: "Date Range" },
+    { overlay: "frvp",                   icon: "▤",  title: "Fixed Range Volume Profile" },
   ],
 
   // Standard-Stil für neue Zeichnungen (im Draw-Stil-Popover änderbar)

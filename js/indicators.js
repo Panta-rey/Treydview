@@ -173,7 +173,9 @@ klinecharts.registerIndicator({
   },
 });
 
-// ---------- GAUSSIAN CHANNEL ----------
+// ---------- GAUSSIAN CHANNEL (gefüllt, trendgefärbt) ----------
+// Nach Donovan Wall [DW]: Fill zwischen hband/lband, Farbe grün wenn
+// Filter steigt, rot wenn er fällt. Fill via draw-Callback.
 klinecharts.registerIndicator({
   name: "GC",
   shortName: "Gauss",
@@ -184,10 +186,38 @@ klinecharts.registerIndicator({
     { key: "gcMid",   title: "Mid: ",   type: "line",
       styles: (d, ind) => {
         const key = d.current?.gcUp ? "midUp" : "midDown";
-        return plotStyle(ind, key, d.current?.gcUp ? "#3fb68b" : "#d05e5e", 2);
+        return plotStyle(ind, key, d.current?.gcUp ? "#0aff68" : "#ff0a5a", 3);
       } },
     { key: "gcLower", title: "Lower: ", type: "line", styles: (d, ind) => plotStyle(ind, "lower", "rgba(232,182,76,0.55)", 1) },
   ],
+  // Kanal-Füllung: eigener draw-Callback, damit die Fläche zwischen
+  // Upper/Lower je nach Trendrichtung grün/rot gefüllt wird.
+  draw: ({ ctx, kLineDataList, visibleRange, indicator, xAxis, yAxis }) => {
+    const result = indicator.result;
+    if (!result || result.length === 0) return false;
+    const { from, to } = visibleRange;
+    ctx.save();
+    for (let i = Math.max(1, from); i < to; i++) {
+      const cur = result[i], prev = result[i - 1];
+      if (!cur || !prev) continue;
+      if (cur.gcUpper == null || cur.gcLower == null || prev.gcUpper == null || prev.gcLower == null) continue;
+      const x0 = xAxis.convertToPixel(i - 1);
+      const x1 = xAxis.convertToPixel(i);
+      const u0 = yAxis.convertToPixel(prev.gcUpper), u1 = yAxis.convertToPixel(cur.gcUpper);
+      const l0 = yAxis.convertToPixel(prev.gcLower), l1 = yAxis.convertToPixel(cur.gcLower);
+      // Trapez zwischen den beiden Bar-Positionen füllen
+      ctx.beginPath();
+      ctx.moveTo(x0, u0);
+      ctx.lineTo(x1, u1);
+      ctx.lineTo(x1, l1);
+      ctx.lineTo(x0, l0);
+      ctx.closePath();
+      ctx.fillStyle = cur.gcUp ? "rgba(10,255,104,0.12)" : "rgba(255,10,90,0.12)";
+      ctx.fill();
+    }
+    ctx.restore();
+    return false; // Standard-Linien weiterhin zeichnen lassen
+  },
   calc: (dataList, indicator) => {
     const [period, mult, poles] = indicator.calcParams;
     const beta  = (1 - Math.cos(2 * Math.PI / period)) / (Math.pow(2, 1/poles) - 1);
@@ -295,5 +325,62 @@ klinecharts.registerIndicator({
     }));
   },
 });
+
+// ---------- COMPARE (Multi-Asset-Overlay, prozentual normalisiert) ----------
+// Zeichnet bis zu 6 Vergleichs-Assets als Linien, normalisiert auf den
+// ersten sichtbaren Wert (Prozent-Performance). Daten kommen über
+// window.__tvCompareAssets (in app.js gepflegt).
+klinecharts.registerIndicator({
+  name: "COMPARE",
+  shortName: "Compare",
+  precision: 2,
+  calcParams: [],
+  figures: [
+    { key: "c0", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 0) },
+    { key: "c1", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 1) },
+    { key: "c2", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 2) },
+    { key: "c3", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 3) },
+    { key: "c4", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 4) },
+    { key: "c5", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 5) },
+  ],
+  calc: (dataList) => {
+    const assets = (typeof window !== "undefined" && window.__tvCompareAssets) ? window.__tvCompareAssets : [];
+    if (!assets.length || dataList.length === 0) return dataList.map(() => ({}));
+
+    // Basis: erster Close des Haupt-Assets (für gemeinsame %-Skala)
+    const mainBase = dataList.find(d => d.close != null)?.close;
+    if (!mainBase) return dataList.map(() => ({}));
+
+    // Für jedes Compare-Asset: Timestamp->close Map + Basiswert
+    const maps = assets.map(a => {
+      const m = new Map();
+      (a.data || []).forEach(p => m.set(p.timestamp, p.close));
+      const base = (a.data || []).find(p => p.close != null)?.close;
+      return { m, base };
+    });
+
+    return dataList.map(d => {
+      const out = {};
+      maps.forEach((asset, idx) => {
+        if (!asset.base) return;
+        const close = asset.m.get(d.timestamp);
+        if (close == null) return;
+        // Prozent-Performance auf Haupt-Preisskala projizieren:
+        // mainBase * (1 + pct) — so liegen die Linien im Kerzen-Bereich
+        const pct = (close - asset.base) / asset.base;
+        out["c" + idx] = mainBase * (1 + pct);
+      });
+      return out;
+    });
+  },
+});
+
+function cmpStyle(indicator, idx) {
+  const assets = (typeof window !== "undefined" && window.__tvCompareAssets) ? window.__tvCompareAssets : [];
+  const a = assets[idx];
+  const base = { style: "solid", smooth: false, dashedValue: [2, 2], size: 1 };
+  if (!a) return { ...base, color: "rgba(0,0,0,0)" };
+  return { ...base, color: a.color };
+}
 
 })();

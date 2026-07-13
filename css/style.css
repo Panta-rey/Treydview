@@ -161,3 +161,13 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .dsp-row input[type=number]{width:50px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;}
 .dsp-row select{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;cursor:pointer;}
 .dsp-row span{font-size:11px;width:34px;text-align:right;}
+
+/* ---- Multi-Asset-Vergleich ---- */
+.dd-compare{color:var(--accent);border-color:rgba(232,182,76,.4);}
+.dd-compare:hover{background:rgba(232,182,76,.08);}
+.compare-active{border-top:1px solid var(--border);padding:6px;display:flex;flex-direction:column;gap:4px;}
+.compare-chip{display:flex;align-items:center;gap:7px;padding:4px 8px;background:var(--bg);border-radius:4px;font-size:12px;}
+.cc-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
+.cc-label{flex:1;color:var(--text);}
+.cc-remove{background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:12px;padding:0 3px;}
+.cc-remove:hover{color:var(--down);}
