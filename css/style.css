@@ -171,3 +171,16 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .cc-label{flex:1;color:var(--text);}
 .cc-remove{background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:12px;padding:0 3px;}
 .cc-remove:hover{color:var(--down);}
+
+/* ---- FRVP-Kontextmenü ---- */
+.frvp-menu{position:fixed;z-index:600;background:var(--bg-raised);border:1px solid var(--border);border-radius:6px;padding:10px;width:210px;box-shadow:0 8px 32px rgba(0,0,0,.6);display:flex;flex-direction:column;gap:8px;}
+.frvp-menu.hidden{display:none;}
+.frvp-menu-header{font-size:12px;font-weight:600;color:var(--text);border-bottom:1px solid var(--border);padding-bottom:6px;}
+.frvp-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.frvp-row label{font-size:12px;color:var(--text-dim);}
+.frvp-row input{width:70px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:4px 6px;outline:none;}
+.frvp-row input:focus{border-color:var(--accent);}
+.frvp-menu-actions{display:flex;justify-content:space-between;gap:6px;margin-top:2px;}
+.frvp-ok{flex:1;background:var(--accent);color:#0d1117;border:none;border-radius:4px;padding:6px;font-family:var(--font-mono);font-size:12px;font-weight:600;cursor:pointer;}
+.frvp-del{background:transparent;border:1px solid var(--border);color:var(--down);border-radius:4px;padding:6px 10px;font-family:var(--font-mono);font-size:12px;cursor:pointer;}
+.frvp-del:hover{border-color:var(--down);}

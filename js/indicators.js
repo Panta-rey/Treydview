@@ -347,28 +347,20 @@ klinecharts.registerIndicator({
     const assets = (typeof window !== "undefined" && window.__tvCompareAssets) ? window.__tvCompareAssets : [];
     if (!assets.length || dataList.length === 0) return dataList.map(() => ({}));
 
-    // Basis: erster Close des Haupt-Assets (für gemeinsame %-Skala)
-    const mainBase = dataList.find(d => d.close != null)?.close;
-    if (!mainBase) return dataList.map(() => ({}));
-
-    // Für jedes Compare-Asset: Timestamp->close Map + Basiswert
+    // Für jedes Compare-Asset: Timestamp->close Map.
+    // Im Percentage-Achsenmodus normalisiert KLineCharts selbst auf den
+    // ersten sichtbaren Wert — wir geben also die ECHTEN Kurse aus.
     const maps = assets.map(a => {
       const m = new Map();
       (a.data || []).forEach(p => m.set(p.timestamp, p.close));
-      const base = (a.data || []).find(p => p.close != null)?.close;
-      return { m, base };
+      return m;
     });
 
     return dataList.map(d => {
       const out = {};
-      maps.forEach((asset, idx) => {
-        if (!asset.base) return;
-        const close = asset.m.get(d.timestamp);
-        if (close == null) return;
-        // Prozent-Performance auf Haupt-Preisskala projizieren:
-        // mainBase * (1 + pct) — so liegen die Linien im Kerzen-Bereich
-        const pct = (close - asset.base) / asset.base;
-        out["c" + idx] = mainBase * (1 + pct);
+      maps.forEach((m, idx) => {
+        const close = m.get(d.timestamp);
+        if (close != null) out["c" + idx] = close;
       });
       return out;
     });

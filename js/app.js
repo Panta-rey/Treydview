@@ -487,8 +487,13 @@ function applyCompareIndicator() {
   window.__tvCompareAssets = state.compareAssets;
   if (state.compareAssets.length > 0) {
     chart.createIndicator({ name: "COMPARE" }, true, { id: "candle_pane" });
+    // Prozent-Achse: alle Linien starten bei 0% am linken sichtbaren Rand,
+    // rechte Skala zeigt Gewinn/Verlust in Prozent (wie TradingView)
+    try { chart.setPaneOptions({ id: "candle_pane", axis: { name: "percentage" } }); } catch (e) {}
   } else {
     chart.removeIndicator("candle_pane", "COMPARE");
+    // Zurück zur normalen Preis-Achse
+    try { chart.setPaneOptions({ id: "candle_pane", axis: { name: "normal" } }); } catch (e) {}
   }
   updateLegend();
 }
@@ -677,7 +682,7 @@ function currentOverlayStyles() {
 
 function startTool(overlayName) {
   state.activeTool = overlayName;
-  const id = chart.createOverlay({
+  const overlayConfig = {
     name: overlayName,
     mode: state.magnetMode,
     styles: currentOverlayStyles(),
@@ -693,10 +698,54 @@ function startTool(overlayName) {
     },
     onSelected:   (e) => { state.selectedOverlayId = e.overlay.id; return false; },
     onDeselected: () => { state.selectedOverlayId = null; return false; },
-  });
+  };
+  // FRVP: Default-Parameter + Rechtsklick-Menü
+  if (overlayName === "frvp") {
+    overlayConfig.extendData = { rows: 150, valueArea: 70, width: 30 };
+    overlayConfig.onRightClick = (e) => { openFrvpMenu(e.overlay, e); return true; };
+  }
+  const id = chart.createOverlay(overlayConfig);
   state.drawingId = Array.isArray(id) ? id[0] : id;
   renderDrawbar();
 }
+
+// ---------- FRVP-Kontextmenü ----------
+function openFrvpMenu(overlay, event) {
+  const menu = document.getElementById("frvpMenu");
+  if (!menu) return;
+  const ext = overlay.extendData || { rows: 150, valueArea: 70, width: 30 };
+  document.getElementById("frvpRows").value = ext.rows;
+  document.getElementById("frvpVA").value = ext.valueArea;
+  document.getElementById("frvpWidth").value = ext.width;
+
+  // Position am Mauszeiger (mit Fallback in die Bildmitte)
+  const x = (event && event.pointerCoordinate && event.pointerCoordinate.x) || (event && event.x) || 200;
+  const y = (event && event.pointerCoordinate && event.pointerCoordinate.y) || (event && event.y) || 200;
+  menu.style.left = Math.min(x, window.innerWidth - 240) + "px";
+  menu.style.top = Math.min(y, window.innerHeight - 220) + "px";
+  menu.classList.remove("hidden");
+
+  document.getElementById("frvpApply").onclick = () => {
+    const newExt = {
+      rows: parseInt(document.getElementById("frvpRows").value, 10) || 150,
+      valueArea: parseInt(document.getElementById("frvpVA").value, 10) || 70,
+      width: parseInt(document.getElementById("frvpWidth").value, 10) || 30,
+    };
+    chart.overrideOverlay({ id: overlay.id, extendData: newExt });
+    menu.classList.add("hidden");
+  };
+  document.getElementById("frvpDelete").onclick = () => {
+    chart.removeOverlay(overlay.id);
+    menu.classList.add("hidden");
+  };
+}
+// Menü schliessen bei Klick ausserhalb
+document.addEventListener("click", (e) => {
+  const menu = document.getElementById("frvpMenu");
+  if (menu && !menu.contains(e.target) && !menu.classList.contains("hidden")) {
+    menu.classList.add("hidden");
+  }
+});
 
 function toggleDrawStylePopover() {
   let pop = document.getElementById("drawStylePopover");
@@ -881,16 +930,5 @@ document.getElementById("screenshotBtn").addEventListener("click", takeScreensho
 document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 
 // Type-Dropdown öffnen/schliessen (zur bestehenden Dropdown-Logik hinzufügen)
-(function initTypeDropdown() {
-  const dd = document.getElementById("typeDropdown");
-  const trigger = dd.querySelector(".dd-trigger");
-  const panel = dd.querySelector(".dd-panel");
-  trigger.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const wasOpen = panel.classList.contains("open");
-    document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
-    if (!wasOpen) panel.classList.add("open");
-  });
-})();
 
 })();

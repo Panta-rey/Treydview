@@ -122,6 +122,27 @@
   </div>
 </div>
 
+<!-- FRVP-Kontextmenü -->
+<div class="frvp-menu hidden" id="frvpMenu">
+  <div class="frvp-menu-header">FRVP Einstellungen</div>
+  <div class="frvp-row">
+    <label>Row Size</label>
+    <input type="number" id="frvpRows" value="150" min="10" max="500">
+  </div>
+  <div class="frvp-row">
+    <label>Value Area %</label>
+    <input type="number" id="frvpVA" value="70" min="10" max="100">
+  </div>
+  <div class="frvp-row">
+    <label>Breite %</label>
+    <input type="number" id="frvpWidth" value="30" min="5" max="80">
+  </div>
+  <div class="frvp-menu-actions">
+    <button id="frvpDelete" class="frvp-del">Löschen</button>
+    <button id="frvpApply" class="frvp-ok">Übernehmen</button>
+  </div>
+</div>
+
 <script src="js/config.js"></script>
 <script src="js/indicators.js"></script>
 <script src="js/overlays.js"></script>
