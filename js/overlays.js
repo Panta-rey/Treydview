@@ -123,15 +123,12 @@
   });
 
   // ---------- FRVP — Fixed Range Volume Profile ----------
-  // Zwei Punkte spannen einen Zeitbereich auf; darin wird das Volumen
-  // pro Preis-Row berechnet und als Histogramm gezeichnet.
-  // Chart-Daten kommen über window.__tvGetDataList (in app.js gesetzt).
   klinecharts.registerOverlay({
     name: "frvp",
     totalStep: 3,
-    needDefaultPointFigure: true,
-    needDefaultXAxisFigure: true,
-    needDefaultYAxisFigure: true,
+    needDefaultPointFigure: false,  // Kein automatisches Verbindungsrechteck oben
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
     createPointFigures: ({ coordinates, overlay, xAxis, yAxis }) => {
       if (coordinates.length < 2) return [];
       const getData = (typeof window !== "undefined" && window.__tvGetDataList) ? window.__tvGetDataList : null;
@@ -142,24 +139,34 @@
       const p0 = overlay.points[0], p1 = overlay.points[1];
       const tStart = Math.min(p0.timestamp, p1.timestamp);
       const tEnd   = Math.max(p0.timestamp, p1.timestamp);
-
-      // Candles im Zeitbereich sammeln
-      const slice = dataList.filter(d => d.timestamp >= tStart && d.timestamp <= tEnd);
+      const slice  = dataList.filter(d => d.timestamp >= tStart && d.timestamp <= tEnd);
       if (slice.length < 2) return [];
 
-      const rows = (overlay.extendData && overlay.extendData.rows) || 150;
-      const vaPct = (overlay.extendData && overlay.extendData.valueArea) || 70;
-      const widthPct = (overlay.extendData && overlay.extendData.width) || 30;
+      // Parameter aus extendData (Rechtsklick-Menü)
+      const ext = overlay.extendData || {};
+      const rows      = ext.rows      || 150;
+      const vaPct     = ext.valueArea || 70;
+      const widthPct  = ext.width     || 30;
+      const showVAH   = ext.showVAH   !== false;
+      const showVAL   = ext.showVAL   !== false;
+      const showPOC   = ext.showPOC   !== false;
+      const colorUp   = ext.colorUp   || "rgba(63,182,139,0.55)";
+      const colorDown = ext.colorDown || "rgba(208,94,94,0.55)";
+      const colorVAH  = ext.colorVAH  || "#e8b64c";
+      const colorVAL  = ext.colorVAL  || "#e8b64c";
+      const colorPOC  = ext.colorPOC  || "#ffffff";
 
+      // Preis-Range
       let pMin = Infinity, pMax = -Infinity;
       for (const d of slice) { if (d.low < pMin) pMin = d.low; if (d.high > pMax) pMax = d.high; }
       const rowH = (pMax - pMin) / rows;
       if (rowH === 0) return [];
 
+      // Volumen akkumulieren
       const upVol = new Float64Array(rows), downVol = new Float64Array(rows);
       for (const d of slice) {
         const vol = d.volume || 0, isUp = d.close >= d.open;
-        const rLow = Math.max(0, Math.floor((d.low - pMin) / rowH));
+        const rLow  = Math.max(0, Math.floor((d.low  - pMin) / rowH));
         const rHigh = Math.min(rows - 1, Math.floor((d.high - pMin) / rowH));
         const n = rHigh - rLow + 1;
         for (let r = rLow; r <= rHigh; r++) {
@@ -167,50 +174,107 @@
         }
       }
       const totalVol = upVol.map((u, i) => u + downVol[i]);
-      const maxVol = Math.max(...totalVol.filter(v => v > 0));
+      const maxVol   = Math.max(...totalVol.filter(v => v > 0));
       if (!(maxVol > 0)) return [];
-      const pocRow = totalVol.indexOf(Math.max(...totalVol));
+
+      // POC (höchstes Volumen)
+      const pocRow   = totalVol.indexOf(Math.max(...totalVol));
       const pocPrice = pMin + (pocRow + 0.5) * rowH;
 
+      // Value Area (70% um POC)
+      const totalAll = totalVol.reduce((s, v) => s + v, 0);
+      const vaTarget = totalAll * (vaPct / 100);
+      let vaVol = totalVol[pocRow], vaLow = pocRow, vaHigh = pocRow;
+      while (vaVol < vaTarget && (vaLow > 0 || vaHigh < rows - 1)) {
+        const aH = vaHigh < rows - 1 ? totalVol[vaHigh + 1] : 0;
+        const aL = vaLow  > 0        ? totalVol[vaLow  - 1] : 0;
+        if (aH >= aL) { vaHigh++; vaVol += aH; } else { vaLow--; vaVol += aL; }
+      }
+      const vahPrice = pMin + (vaHigh + 1) * rowH;
+      const valPrice = pMin + vaLow * rowH;
+
       // Pixel-Koordinaten
-      const xLeft = Math.min(coordinates[0].x, coordinates[1].x);
-      const xRight = Math.max(coordinates[0].x, coordinates[1].x);
+      const xLeft    = Math.min(coordinates[0].x, coordinates[1].x);
+      const xRight   = Math.max(coordinates[0].x, coordinates[1].x);
       const boxWidth = xRight - xLeft;
-      const maxBarW = boxWidth * (widthPct / 100);
+      const maxBarW  = boxWidth * (widthPct / 100);
+
+      // Gesamt-Preis-Range in Pixel für Hitbox
+      const yTop_px    = yAxis.convertToPixel(pMax);
+      const yBottom_px = yAxis.convertToPixel(pMin);
+      const profileH   = Math.abs(yBottom_px - yTop_px);
 
       const figures = [];
-      // Rahmen der Box
-      figures.push({
-        type: "rect",
-        attrs: { x: xLeft, y: Math.min(coordinates[0].y, coordinates[1].y), width: boxWidth, height: Math.abs(coordinates[1].y - coordinates[0].y) },
-        styles: { style: "stroke", borderColor: "rgba(232,182,76,0.5)", borderSize: 1 },
-        ignoreEvent: true,
-      });
 
-      // Histogramm-Balken (Placement: Left — wachsen von xLeft nach rechts)
+      // ---- Histogramm-Balken ----
       for (let r = 0; r < rows; r++) {
         const tot = totalVol[r];
         if (tot === 0) continue;
         const pb = pMin + r * rowH, pt = pb + rowH;
-        const yb = yAxis.convertToPixel(pb), yt = yAxis.convertToPixel(pt);
-        const yTop = Math.min(yb, yt), yH = Math.max(1, Math.abs(yt - yb));
-        const upW = (upVol[r] / maxVol) * maxBarW;
-        const downW = (downVol[r] / maxVol) * maxBarW;
-        const isPoc = Math.abs((pb + pt) / 2 - pocPrice) < rowH;
-        // Up (grün) unten, Down (rot) darüber gestapelt
+        const yb   = yAxis.convertToPixel(pb);
+        const yt   = yAxis.convertToPixel(pt);
+        const yTop = Math.min(yb, yt);
+        const yH   = Math.max(1, Math.abs(yt - yb));
+        const upW  = (upVol[r]   / maxVol) * maxBarW;
+        const dnW  = (downVol[r] / maxVol) * maxBarW;
+        const inVA = (pb + rowH / 2) >= valPrice && (pb + rowH / 2) <= vahPrice;
+
         if (upW > 0) figures.push({
           type: "rect",
           attrs: { x: xLeft, y: yTop, width: upW, height: yH },
-          styles: { style: "fill", color: isPoc ? "rgba(232,182,76,0.7)" : "rgba(63,182,139,0.55)" },
+          styles: { style: "fill", color: inVA ? colorVAH.replace(")", ",0.7)").replace("rgb","rgba") : colorUp },
           ignoreEvent: true,
         });
-        if (downW > 0) figures.push({
+        if (dnW > 0) figures.push({
           type: "rect",
-          attrs: { x: xLeft + upW, y: yTop, width: downW, height: yH },
-          styles: { style: "fill", color: isPoc ? "rgba(232,182,76,0.7)" : "rgba(208,94,94,0.55)" },
+          attrs: { x: xLeft + upW, y: yTop, width: dnW, height: yH },
+          styles: { style: "fill", color: inVA ? colorVAH.replace(")", ",0.5)").replace("rgb","rgba") : colorDown },
           ignoreEvent: true,
         });
       }
+
+      // ---- VAH-Linie ----
+      if (showVAH) {
+        const yVAH = yAxis.convertToPixel(vahPrice);
+        figures.push({
+          type: "line",
+          attrs: { coordinates: [{ x: xLeft, y: yVAH }, { x: xLeft + maxBarW, y: yVAH }] },
+          styles: { style: "solid", color: colorVAH, size: 1.5, dashedValue: [2, 2], smooth: false },
+          ignoreEvent: true,
+        });
+      }
+
+      // ---- VAL-Linie ----
+      if (showVAL) {
+        const yVAL = yAxis.convertToPixel(valPrice);
+        figures.push({
+          type: "line",
+          attrs: { coordinates: [{ x: xLeft, y: yVAL }, { x: xLeft + maxBarW, y: yVAL }] },
+          styles: { style: "solid", color: colorVAL, size: 1.5, dashedValue: [2, 2], smooth: false },
+          ignoreEvent: true,
+        });
+      }
+
+      // ---- POC-Linie ----
+      if (showPOC) {
+        const yPOC = yAxis.convertToPixel(pocPrice);
+        figures.push({
+          type: "line",
+          attrs: { coordinates: [{ x: xLeft, y: yPOC }, { x: xLeft + maxBarW, y: yPOC }] },
+          styles: { style: "dashed", color: colorPOC, size: 1.5, dashedValue: [4, 3], smooth: false },
+          ignoreEvent: true,
+        });
+      }
+
+      // ---- Unsichtbare Hitbox über dem ganzen Profil (macht es klickbar) ----
+      // ignoreEvent: false = klickbar; transparent = unsichtbar
+      figures.push({
+        type: "rect",
+        attrs: { x: xLeft, y: Math.min(yTop_px, yBottom_px), width: maxBarW, height: profileH },
+        styles: { style: "fill", color: "rgba(0,0,0,0)" },
+        ignoreEvent: false,  // Klick wird registriert
+      });
+
       return figures;
     },
   });

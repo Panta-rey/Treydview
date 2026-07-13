@@ -184,3 +184,6 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .frvp-ok{flex:1;background:var(--accent);color:#0d1117;border:none;border-radius:4px;padding:6px;font-family:var(--font-mono);font-size:12px;font-weight:600;cursor:pointer;}
 .frvp-del{background:transparent;border:1px solid var(--border);color:var(--down);border-radius:4px;padding:6px 10px;font-family:var(--font-mono);font-size:12px;cursor:pointer;}
 .frvp-del:hover{border-color:var(--down);}
+.frvp-divider{height:1px;background:var(--border);margin:2px 0;}
+.frvp-row input[type=checkbox]{accent-color:var(--accent);margin-right:4px;}
+.frvp-row input[type=color]{width:36px;height:26px;padding:1px;border:1px solid var(--border);border-radius:4px;background:var(--bg);cursor:pointer;}

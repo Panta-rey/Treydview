@@ -736,23 +736,39 @@ function startTool(overlayName) {
 function openFrvpMenu(overlay, event) {
   const menu = document.getElementById("frvpMenu");
   if (!menu) return;
-  const ext = overlay.extendData || { rows: 150, valueArea: 70, width: 30 };
-  document.getElementById("frvpRows").value = ext.rows;
-  document.getElementById("frvpVA").value = ext.valueArea;
-  document.getElementById("frvpWidth").value = ext.width;
+  const ext = overlay.extendData || {};
+  // Felder befüllen
+  document.getElementById("frvpRows").value  = ext.rows      || 150;
+  document.getElementById("frvpVA").value    = ext.valueArea || 70;
+  document.getElementById("frvpWidth").value = ext.width     || 30;
+  document.getElementById("frvpShowVAH").checked = ext.showVAH !== false;
+  document.getElementById("frvpShowVAL").checked = ext.showVAL !== false;
+  document.getElementById("frvpShowPOC").checked = ext.showPOC !== false;
+  document.getElementById("frvpColorUp").value   = ext.colorUp   ? rgbToHex(ext.colorUp)   : "#3fb68b";
+  document.getElementById("frvpColorDown").value = ext.colorDown ? rgbToHex(ext.colorDown)  : "#d05e5e";
+  document.getElementById("frvpColorVAH").value  = ext.colorVAH  ? rgbToHex(ext.colorVAH)  : "#e8b64c";
+  document.getElementById("frvpColorVAL").value  = ext.colorVAL  ? rgbToHex(ext.colorVAL)  : "#e8b64c";
+  document.getElementById("frvpColorPOC").value  = ext.colorPOC  ? rgbToHex(ext.colorPOC)  : "#ffffff";
 
-  // Position am Mauszeiger (mit Fallback in die Bildmitte)
-  const x = (event && event.pointerCoordinate && event.pointerCoordinate.x) || (event && event.x) || 200;
-  const y = (event && event.pointerCoordinate && event.pointerCoordinate.y) || (event && event.y) || 200;
-  menu.style.left = Math.min(x, window.innerWidth - 240) + "px";
-  menu.style.top = Math.min(y, window.innerHeight - 220) + "px";
+  const x = (event?.pointerCoordinate?.x) || (event?.x) || 200;
+  const y = (event?.pointerCoordinate?.y) || (event?.y) || 200;
+  menu.style.left = Math.min(x, window.innerWidth  - 260) + "px";
+  menu.style.top  = Math.min(y, window.innerHeight - 380) + "px";
   menu.classList.remove("hidden");
 
   document.getElementById("frvpApply").onclick = () => {
     const newExt = {
-      rows: parseInt(document.getElementById("frvpRows").value, 10) || 150,
-      valueArea: parseInt(document.getElementById("frvpVA").value, 10) || 70,
-      width: parseInt(document.getElementById("frvpWidth").value, 10) || 30,
+      rows:      parseInt(document.getElementById("frvpRows").value, 10)  || 150,
+      valueArea: parseInt(document.getElementById("frvpVA").value, 10)    || 70,
+      width:     parseInt(document.getElementById("frvpWidth").value, 10) || 30,
+      showVAH:   document.getElementById("frvpShowVAH").checked,
+      showVAL:   document.getElementById("frvpShowVAL").checked,
+      showPOC:   document.getElementById("frvpShowPOC").checked,
+      colorUp:   hexToRgba(document.getElementById("frvpColorUp").value,   55),
+      colorDown: hexToRgba(document.getElementById("frvpColorDown").value, 55),
+      colorVAH:  document.getElementById("frvpColorVAH").value,
+      colorVAL:  document.getElementById("frvpColorVAL").value,
+      colorPOC:  document.getElementById("frvpColorPOC").value,
     };
     chart.overrideOverlay({ id: overlay.id, extendData: newExt });
     menu.classList.add("hidden");
@@ -761,6 +777,14 @@ function openFrvpMenu(overlay, event) {
     chart.removeOverlay(overlay.id);
     menu.classList.add("hidden");
   };
+}
+
+function rgbToHex(color) {
+  if (!color) return "#888888";
+  if (color.startsWith("#")) return color.slice(0, 7);
+  const m = color.match(/[\d.]+/g);
+  if (!m || m.length < 3) return "#888888";
+  return "#" + [0, 1, 2].map(i => Math.round(parseFloat(m[i])).toString(16).padStart(2, "0")).join("");
 }
 // Menü schliessen bei Klick ausserhalb
 document.addEventListener("click", (e) => {
