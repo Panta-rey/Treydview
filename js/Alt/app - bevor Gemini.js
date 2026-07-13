@@ -502,31 +502,10 @@ function currentOverlayStyles() {
   const ds = state.drawStyle;
   const col = hexToRgba(ds.color, ds.opacity);
   return {
-    line: { 
-      color: col, 
-      size: ds.width, 
-      style: ds.lineStyle,
-      dashedValue: [4, 4] // <-- Hier fehlte der Wert
-    },
-    polygon: { 
-      fillColor: hexToRgba(ds.color, Math.min(ds.opacity, 15)), 
-      stroke: { 
-        color: col, 
-        size: ds.width, 
-        style: ds.lineStyle,
-        dashedValue: [4, 4] // <-- Hier fehlte der Wert
-      } 
-    },
-    rect: { 
-      fillColor: hexToRgba(ds.color, Math.min(ds.opacity, 15)), 
-      stroke: { 
-        color: col, 
-        size: ds.width, 
-        style: ds.lineStyle,
-        dashedValue: [4, 4] // <-- Hier fehlte der Wert
-      } 
-    },
-    text: { color: col },
+    line:    { color: col, size: ds.width, style: ds.lineStyle },
+    polygon: { fillColor: hexToRgba(ds.color, Math.min(ds.opacity, 15)), stroke: { color: col, size: ds.width, style: ds.lineStyle } },
+    rect:    { fillColor: hexToRgba(ds.color, Math.min(ds.opacity, 15)), stroke: { color: col, size: ds.width, style: ds.lineStyle } },
+    text:    { color: col },
   };
 }
 
