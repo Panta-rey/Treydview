@@ -217,18 +217,17 @@
         const yH   = Math.max(1, Math.abs(yt - yb));
         const upW  = (upVol[r]   / maxVol) * maxBarW;
         const dnW  = (downVol[r] / maxVol) * maxBarW;
-        const inVA = (pb + rowH / 2) >= valPrice && (pb + rowH / 2) <= vahPrice;
 
         if (upW > 0) figures.push({
           type: "rect",
           attrs: { x: xLeft, y: yTop, width: upW, height: yH },
-          styles: { style: "fill", color: inVA ? colorVAH.replace(")", ",0.7)").replace("rgb","rgba") : colorUp },
+          styles: { style: "fill", color: colorUp },
           ignoreEvent: true,
         });
         if (dnW > 0) figures.push({
           type: "rect",
           attrs: { x: xLeft + upW, y: yTop, width: dnW, height: yH },
-          styles: { style: "fill", color: inVA ? colorVAH.replace(")", ",0.5)").replace("rgb","rgba") : colorDown },
+          styles: { style: "fill", color: colorDown },
           ignoreEvent: true,
         });
       }
@@ -238,7 +237,7 @@
         const yVAH = yAxis.convertToPixel(vahPrice);
         figures.push({
           type: "line",
-          attrs: { coordinates: [{ x: xLeft, y: yVAH }, { x: xLeft + maxBarW, y: yVAH }] },
+          attrs: { coordinates: [{ x: xLeft, y: yVAH }, { x: xRight, y: yVAH }] },
           styles: { style: "solid", color: colorVAH, size: 1.5, dashedValue: [2, 2], smooth: false },
           ignoreEvent: true,
         });
@@ -249,7 +248,7 @@
         const yVAL = yAxis.convertToPixel(valPrice);
         figures.push({
           type: "line",
-          attrs: { coordinates: [{ x: xLeft, y: yVAL }, { x: xLeft + maxBarW, y: yVAL }] },
+          attrs: { coordinates: [{ x: xLeft, y: yVAL }, { x: xRight, y: yVAL }] },
           styles: { style: "solid", color: colorVAL, size: 1.5, dashedValue: [2, 2], smooth: false },
           ignoreEvent: true,
         });
@@ -260,7 +259,7 @@
         const yPOC = yAxis.convertToPixel(pocPrice);
         figures.push({
           type: "line",
-          attrs: { coordinates: [{ x: xLeft, y: yPOC }, { x: xLeft + maxBarW, y: yPOC }] },
+          attrs: { coordinates: [{ x: xLeft, y: yPOC }, { x: xRight, y: yPOC }] },
           styles: { style: "dashed", color: colorPOC, size: 1.5, dashedValue: [4, 3], smooth: false },
           ignoreEvent: true,
         });
