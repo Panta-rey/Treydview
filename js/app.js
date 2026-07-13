@@ -36,11 +36,15 @@ function tooltipStyle(show) {
   return show ? "standard" : "none";
 }
 
+JavaScript
 function baseStyles() {
   return {
-    grid: { horizontal: { color: T.grid }, vertical: { color: T.grid } },
+    grid: { 
+      horizontal: { color: T.grid, style: "dashed", dashedValue: [2, 2] }, 
+      vertical: { color: T.grid, style: "dashed", dashedValue: [2, 2] } 
+    },
     candle: {
-      type: state.chartType,  // candle_solid | area
+      type: state.chartType, 
       bar: { upColor: T.up, downColor: T.down, noChangeColor: T.text,
              upBorderColor: T.up, downBorderColor: T.down,
              upWickColor: T.up, downWickColor: T.down },
@@ -52,7 +56,6 @@ function baseStyles() {
         ],
       },
       priceMark: { last: { upColor: T.up, downColor: T.down } },
-      // Eigene Legende → KLC-Tooltip komplett aus
       tooltip: { showRule: "none" },
     },
     indicator: {
@@ -68,8 +71,14 @@ function baseStyles() {
       tickText: { color: T.text, family: "'IBM Plex Mono',monospace" },
     },
     crosshair: {
-      horizontal: { line: { color: "rgba(232,182,76,0.4)" }, text: { backgroundColor: "#2a2f3a" } },
-      vertical:   { line: { color: "rgba(232,182,76,0.4)" }, text: { backgroundColor: "#2a2f3a" } },
+      horizontal: { 
+        line: { color: "rgba(232,182,76,0.4)", style: "dashed", dashedValue: [4, 4] }, 
+        text: { backgroundColor: "#2a2f3a" } 
+      },
+      vertical: { 
+        line: { color: "rgba(232,182,76,0.4)", style: "dashed", dashedValue: [4, 4] }, 
+        text: { backgroundColor: "#2a2f3a" } 
+      },
     },
     overlay: {
       line:  { color: T.accent },
@@ -99,7 +108,12 @@ function buildCreate(ind) {
   }
   // Built-in-Indikatoren (EMA, BOLL, RSI): Linien-Styles direkt übergeben
   const lineStyle = (p) => p
-    ? { color: p.visible === false ? "rgba(0,0,0,0)" : p.color, size: p.width || 1 }
+    ? { 
+        style: "solid", 
+        dashedValue: [2, 2], // Dummy-Wert für internen Merge
+        color: p.visible === false ? "rgba(0,0,0,0)" : p.color, 
+        size: p.width || 1 
+      }
     : undefined;
   if (ind.key === "ema") {
     create.styles = { lines: [lineStyle(sv.plots.e1), lineStyle(sv.plots.e2), lineStyle(sv.plots.e3)].filter(Boolean) };
