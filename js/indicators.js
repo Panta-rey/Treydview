@@ -326,16 +326,18 @@ klinecharts.registerIndicator({
   },
 });
 
-// ---------- COMPARE (Multi-Asset-Overlay, prozentual normalisiert) ----------
-// Zeichnet bis zu 6 Vergleichs-Assets als Linien, normalisiert auf den
-// ersten sichtbaren Wert (Prozent-Performance). Daten kommen über
-// window.__tvCompareAssets (in app.js gepflegt).
+// ---------- COMPARE (Relative-Performance-Modus) ----------
+// Alle Assets (Hauptasset + Vergleiche) als Linien, normalisiert auf den
+// linken sichtbaren Rand = 0%. Reaktiv: window.__tvVisibleFrom hält den
+// Index des ersten sichtbaren Bars, gesetzt von app.js bei jedem
+// onVisibleRangeChange. Referenzpreis = Kurs an diesem Index.
 klinecharts.registerIndicator({
   name: "COMPARE",
-  shortName: "Compare",
+  shortName: "",
   precision: 2,
   calcParams: [],
   figures: [
+    { key: "cMain", title: "", type: "line", styles: (d, ind) => cmpMainStyle(ind) },
     { key: "c0", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 0) },
     { key: "c1", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 1) },
     { key: "c2", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 2) },
@@ -345,32 +347,60 @@ klinecharts.registerIndicator({
   ],
   calc: (dataList) => {
     const assets = (typeof window !== "undefined" && window.__tvCompareAssets) ? window.__tvCompareAssets : [];
-    if (!assets.length || dataList.length === 0) return dataList.map(() => ({}));
+    if (dataList.length === 0) return dataList.map(() => ({}));
 
-    // Für jedes Compare-Asset: Timestamp->close Map.
-    // Im Percentage-Achsenmodus normalisiert KLineCharts selbst auf den
-    // ersten sichtbaren Wert — wir geben also die ECHTEN Kurse aus.
+    // Erster sichtbarer Bar-Index (vom app.js gesetzt; Fallback: 0)
+    let fromIdx = (typeof window !== "undefined" && Number.isInteger(window.__tvVisibleFrom))
+      ? window.__tvVisibleFrom : 0;
+    fromIdx = Math.max(0, Math.min(fromIdx, dataList.length - 1));
+
+    // Referenzpreis Hauptasset = Close am linken sichtbaren Rand.
+    // Falls dort null, nächsten gültigen Wert nach rechts suchen.
+    let mainRef = null;
+    for (let i = fromIdx; i < dataList.length; i++) {
+      if (dataList[i].close != null) { mainRef = dataList[i].close; break; }
+    }
+
+    // Vergleichs-Assets: Timestamp->close Maps + Referenzpreis am linken Rand
+    const refTs = dataList[fromIdx]?.timestamp;
     const maps = assets.map(a => {
       const m = new Map();
       (a.data || []).forEach(p => m.set(p.timestamp, p.close));
-      return m;
+      // Referenz = Kurs am (oder nächstgelegen nach) refTs
+      let ref = null;
+      for (let i = fromIdx; i < dataList.length; i++) {
+        const v = m.get(dataList[i].timestamp);
+        if (v != null) { ref = v; break; }
+      }
+      return { m, ref };
     });
 
     return dataList.map(d => {
       const out = {};
-      maps.forEach((m, idx) => {
-        const close = m.get(d.timestamp);
-        if (close != null) out["c" + idx] = close;
+      // Hauptasset in %
+      if (mainRef != null && d.close != null) {
+        out.cMain = ((d.close - mainRef) / mainRef) * 100;
+      }
+      // Vergleiche in %
+      maps.forEach((asset, idx) => {
+        if (asset.ref == null) return;
+        const close = asset.m.get(d.timestamp);
+        if (close != null) out["c" + idx] = ((close - asset.ref) / asset.ref) * 100;
       });
       return out;
     });
   },
 });
 
+function cmpMainStyle(indicator) {
+  // Hauptasset-Linie: weiss, etwas dicker
+  return { style: "solid", smooth: false, dashedValue: [2, 2], size: 2, color: "#ffffff" };
+}
+
 function cmpStyle(indicator, idx) {
   const assets = (typeof window !== "undefined" && window.__tvCompareAssets) ? window.__tvCompareAssets : [];
   const a = assets[idx];
-  const base = { style: "solid", smooth: false, dashedValue: [2, 2], size: 1 };
+  const base = { style: "solid", smooth: false, dashedValue: [2, 2], size: 2 };
   if (!a) return { ...base, color: "rgba(0,0,0,0)" };
   return { ...base, color: a.color };
 }

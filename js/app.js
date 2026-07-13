@@ -294,10 +294,19 @@ function drawVrvp() {
 }
 
 // VRVP bei Zoom/Scroll neu zeichnen
-chart.subscribeAction("onVisibleRangeChange", () => {
+chart.subscribeAction("onVisibleRangeChange", (range) => {
   if (state.active.has("vrvp")) requestAnimationFrame(() => {
     try { drawVrvp(); } catch (e) { /* Render-Fehler nie den Loop killen lassen */ }
   });
+  // Vergleichsmodus: linken sichtbaren Rand als neuen 0%-Referenzpunkt setzen
+  // und Compare-Indikator reaktiv neu berechnen.
+  if (state.compareAssets.length > 0 && range) {
+    const from = Number.isInteger(range.from) ? range.from : 0;
+    if (window.__tvVisibleFrom !== from) {
+      window.__tvVisibleFrom = from;
+      try { chart.overrideIndicator({ name: "COMPARE" }, "candle_pane"); } catch (e) {}
+    }
+  }
 });
 
 // ---------- Daten laden ----------
@@ -486,14 +495,28 @@ async function refreshCompareData(entry) {
 function applyCompareIndicator() {
   window.__tvCompareAssets = state.compareAssets;
   if (state.compareAssets.length > 0) {
+    // Referenzpunkt initial auf den aktuell linken sichtbaren Rand setzen
+    try {
+      const range = chart.getVisibleRange ? chart.getVisibleRange() : null;
+      window.__tvVisibleFrom = range && Number.isInteger(range.from) ? range.from : 0;
+    } catch (e) { window.__tvVisibleFrom = 0; }
+
     chart.createIndicator({ name: "COMPARE" }, true, { id: "candle_pane" });
-    // Prozent-Achse: alle Linien starten bei 0% am linken sichtbaren Rand,
-    // rechte Skala zeigt Gewinn/Verlust in Prozent (wie TradingView)
-    try { chart.setPaneOptions({ id: "candle_pane", axisOptions: { name: "percentage" } }); } catch (e) {}
+
+    // Kerzen ausblenden — im Vergleichsmodus zählt nur relative Performance.
+    // Das Hauptasset läuft als weisse Linie (cMain im COMPARE-Indikator).
+    chart.setStyles({
+      candle: { bar: {
+        upColor: "rgba(0,0,0,0)", downColor: "rgba(0,0,0,0)", noChangeColor: "rgba(0,0,0,0)",
+        upBorderColor: "rgba(0,0,0,0)", downBorderColor: "rgba(0,0,0,0)",
+        upWickColor: "rgba(0,0,0,0)", downWickColor: "rgba(0,0,0,0)",
+      }, priceMark: { last: { show: false } } },
+    });
   } else {
     chart.removeIndicator("candle_pane", "COMPARE");
-    // Zurück zur normalen Preis-Achse
-    try { chart.setPaneOptions({ id: "candle_pane", axisOptions: { name: "normal" } }); } catch (e) {}
+    window.__tvVisibleFrom = undefined;
+    // Kerzen wieder einblenden (Original-Theme wiederherstellen)
+    chart.setStyles(baseStyles());
   }
   updateLegend();
 }
