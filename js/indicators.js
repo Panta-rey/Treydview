@@ -6,12 +6,16 @@
 (function () {
 "use strict";
 
-// Plot-Style aus extendData holen; unsichtbar → transparent
+// Plot-Style aus extendData holen; unsichtbar → transparent.
+// WICHTIG: immer VOLLSTÄNDIGES Style-Objekt zurückgeben (style, color,
+// size, smooth, dashedValue). Unvollständige Objekte bringen KLineCharts'
+// internen Linien-Merge zum Absturz (coordinates[1] undefined) → Chart friert ein.
 function plotStyle(indicator, key, fallbackColor, fallbackWidth) {
+  const base = { style: "solid", smooth: false, dashedValue: [2, 2] };
   const p = indicator?.extendData?.plots?.[key];
-  if (!p) return { color: fallbackColor, size: fallbackWidth || 1 };
-  if (p.visible === false) return { color: "rgba(0,0,0,0)", size: 1 };
-  return { color: p.color, size: p.width || fallbackWidth || 1 };
+  if (!p) return { ...base, color: fallbackColor, size: fallbackWidth || 1 };
+  if (p.visible === false) return { ...base, color: "rgba(0,0,0,0)", size: fallbackWidth || 1 };
+  return { ...base, color: p.color, size: p.width || fallbackWidth || 1 };
 }
 
 // ---------- Mathe-Helfer ----------
@@ -211,6 +215,78 @@ klinecharts.registerIndicator({
         gcUp: i > 0 && mid[i-1] != null ? mid[i] > mid[i-1] : true,
       };
     });
+  },
+});
+
+// ---------- STOCHASTIC RSI ----------
+// Pine-Referenz: rsi -> stoch(rsi) -> SMA(K) -> SMA(D)
+klinecharts.registerIndicator({
+  name: "STOCHRSI",
+  shortName: "StochRSI",
+  precision: 2,
+  calcParams: [3, 3, 14, 14],
+  // 20/50/80-Bänder als horizontale Referenzlinien (gestrichelt)
+  figures: [
+    { key: "band80", title: "", type: "line", styles: () => ({ style: "dashed", color: "rgba(120,123,134,0.7)", size: 1, smooth: false, dashedValue: [4, 4] }) },
+    { key: "band50", title: "", type: "line", styles: () => ({ style: "dashed", color: "rgba(120,123,134,0.35)", size: 1, smooth: false, dashedValue: [4, 4] }) },
+    { key: "band20", title: "", type: "line", styles: () => ({ style: "dashed", color: "rgba(120,123,134,0.7)", size: 1, smooth: false, dashedValue: [4, 4] }) },
+    { key: "k", title: "K: ", type: "line", styles: (d, ind) => plotStyle(ind, "k", "#2962ff", 2) },
+    { key: "d", title: "D: ", type: "line", styles: (d, ind) => plotStyle(ind, "d", "#ff6d00", 2) },
+  ],
+  // Feste Skala 0-100 mit Referenzlinien bei 20/50/80
+  minValue: 0,
+  maxValue: 100,
+  calc: (dataList, indicator) => {
+    const [smoothK, smoothD, lenRSI, lenStoch] = indicator.calcParams;
+    const closes = dataList.map(d => d.close);
+    // 1) RSI
+    const rsi = new Array(closes.length).fill(null);
+    if (closes.length > lenRSI) {
+      let ag = 0, al = 0;
+      for (let i = 1; i <= lenRSI; i++) {
+        const ch = closes[i] - closes[i-1];
+        if (ch >= 0) ag += ch; else al -= ch;
+      }
+      ag /= lenRSI; al /= lenRSI;
+      rsi[lenRSI] = al === 0 ? 100 : 100 - 100/(1 + ag/al);
+      for (let i = lenRSI+1; i < closes.length; i++) {
+        const ch = closes[i] - closes[i-1];
+        const g = ch > 0 ? ch : 0, l = ch < 0 ? -ch : 0;
+        ag = (ag*(lenRSI-1) + g)/lenRSI;
+        al = (al*(lenRSI-1) + l)/lenRSI;
+        rsi[i] = al === 0 ? 100 : 100 - 100/(1 + ag/al);
+      }
+    }
+    // 2) Stochastik auf RSI: (rsi - min) / (max - min) * 100
+    const stoch = new Array(closes.length).fill(null);
+    for (let i = 0; i < closes.length; i++) {
+      if (rsi[i] == null || i < lenRSI + lenStoch - 1) continue;
+      let mn = Infinity, mx = -Infinity;
+      for (let j = i - lenStoch + 1; j <= i; j++) {
+        if (rsi[j] == null) { mn = null; break; }
+        if (rsi[j] < mn) mn = rsi[j];
+        if (rsi[j] > mx) mx = rsi[j];
+      }
+      if (mn == null) continue;
+      stoch[i] = mx === mn ? 0 : ((rsi[i] - mn) / (mx - mn)) * 100;
+    }
+    // 3) K = SMA(stoch, smoothK), D = SMA(K, smoothD)
+    const smaOf = (arr, period, idx) => {
+      if (idx < period - 1) return null;
+      let s = 0, n = 0;
+      for (let j = idx - period + 1; j <= idx; j++) {
+        if (arr[j] == null) return null;
+        s += arr[j]; n++;
+      }
+      return n === period ? s / period : null;
+    };
+    const kArr = stoch.map((_, i) => smaOf(stoch, smoothK, i));
+    const dArr = kArr.map((_, i) => smaOf(kArr, smoothD, i));
+    return dataList.map((_, i) => ({
+      band80: 80, band50: 50, band20: 20,
+      k: kArr[i] ?? undefined,
+      d: dArr[i] ?? undefined,
+    }));
   },
 });
 

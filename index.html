@@ -49,6 +49,23 @@
     </div>
   </div>
 
+  <!-- Chart-Typ-Toggle (Kerzen / Linie) -->
+  <div class="dropdown" id="typeDropdown">
+    <button class="dd-trigger" id="typeTrigger">
+      <span id="typeLabel">Kerzen</span>
+      <span class="dd-arrow">▾</span>
+    </button>
+    <div class="dd-panel" id="typePanel">
+      <div class="dd-list" id="typeList"></div>
+    </div>
+  </div>
+
+  <!-- Aktions-Buttons rechts -->
+  <div class="topbar-actions">
+    <button class="action-btn" id="autoZoomBtn" title="Auto-Zoom auf sichtbaren Bereich">⤢</button>
+    <button class="action-btn" id="screenshotBtn" title="Screenshot speichern">📷</button>
+  </div>
+
   <div class="live-badge" id="liveBadge">
     <span class="dot"></span><span id="liveText">–</span>
   </div>
@@ -64,6 +81,12 @@
       <span class="ph-symbol" id="phSymbol">–</span>
       <span class="ph-price" id="phPrice">–</span>
       <span class="ph-change" id="phChange">–</span>
+    </div>
+
+    <!-- Chart-Legende (einklappbar) -->
+    <div class="chart-legend" id="chartLegend">
+      <button class="legend-toggle" id="legendToggle" title="Beschriftung ein-/ausklappen">▾</button>
+      <div class="legend-body" id="legendBody"></div>
     </div>
 
     <!-- Haupt-Chart (RSI/VOL laufen als synchronisierte Panes darin) -->

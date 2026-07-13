@@ -124,3 +124,40 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .plot-opacity input[type=range]{flex:1;accent-color:var(--accent);}
 .plot-opacity span{font-size:11px;color:var(--text-dim);width:36px;text-align:right;}
 .plot-width{width:48px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:4px 6px;outline:none;}
+
+/* ---- v0.4.1: Grössere Draw-Buttons ---- */
+.draw-btn{width:38px;height:38px;font-size:17px;}
+@media(max-width:720px){.draw-btn{width:34px;height:34px;font-size:15px;}}
+
+/* ---- Topbar-Aktionen ---- */
+.topbar-actions{display:flex;gap:4px;margin-left:4px;}
+.action-btn{width:34px;height:32px;display:flex;align-items:center;justify-content:center;background:transparent;color:var(--text-dim);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-size:15px;transition:color .12s,border-color .12s,background .12s;}
+.action-btn:hover{color:var(--text);border-color:rgba(232,182,76,.5);background:var(--bg-hover);}
+
+/* ---- Chart-Typ-Dropdown erbt .dropdown-Styles ---- */
+
+/* ---- Einklappbare Legende ---- */
+.chart-legend{position:absolute;top:8px;left:10px;z-index:20;display:flex;align-items:flex-start;gap:6px;max-width:70%;pointer-events:none;}
+.legend-toggle{pointer-events:auto;background:rgba(20,26,35,.85);border:1px solid var(--border);color:var(--text-dim);width:20px;height:20px;border-radius:4px;cursor:pointer;font-size:11px;line-height:1;flex-shrink:0;}
+.legend-toggle:hover{color:var(--accent);}
+.legend-body{display:flex;flex-direction:column;gap:2px;background:rgba(13,17,23,.55);border-radius:4px;padding:3px 8px;backdrop-filter:blur(2px);}
+.chart-legend.collapsed .legend-body{display:none;}
+.legend-line{font-size:11px;color:var(--text-dim);white-space:nowrap;display:flex;align-items:center;gap:5px;}
+.legend-line b{color:var(--text);font-weight:500;}
+.legend-ohlc .lg-sym{font-family:var(--font-disp);font-weight:700;color:var(--text);font-size:12px;}
+.legend-ohlc .lg-tf{color:var(--accent);}
+.lg-name{color:var(--text-dim);}
+.lg-dot{display:inline-block;width:8px;height:8px;border-radius:2px;}
+
+/* main-chart braucht relative Position für Legende-Overlay */
+.chart-col{position:relative;}
+
+/* ---- Draw-Stil-Popover ---- */
+.draw-style-popover{position:fixed;z-index:400;background:var(--bg-raised);border:1px solid var(--border);border-radius:6px;padding:10px;display:flex;flex-direction:column;gap:8px;box-shadow:0 8px 32px rgba(0,0,0,.6);width:220px;}
+.dsp-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);}
+.dsp-row label{width:70px;flex-shrink:0;}
+.dsp-row input[type=color]{width:36px;height:26px;padding:1px;border:1px solid var(--border);border-radius:4px;background:var(--bg);cursor:pointer;}
+.dsp-row input[type=range]{flex:1;accent-color:var(--accent);}
+.dsp-row input[type=number]{width:50px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;}
+.dsp-row select{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;cursor:pointer;}
+.dsp-row span{font-size:11px;width:34px;text-align:right;}

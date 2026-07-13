@@ -23,6 +23,9 @@ const state = {
   pinTool:     false,      // Werkzeug nach Zeichnung aktiv lassen
   drawingId:   null,       // Overlay-ID während des Zeichnens (für ESC)
   selectedOverlayId: null, // zuletzt selektiertes Overlay (für Entf)
+  chartType:   "candle_solid", // candle_solid | area
+  legendCollapsed: false,
+  drawStyle:   { color: "#e8b64c", lineStyle: "solid", opacity: 100, width: 1 },
 };
 
 // ---------- Chart-Init ----------
@@ -37,21 +40,24 @@ function baseStyles() {
   return {
     grid: { horizontal: { color: T.grid }, vertical: { color: T.grid } },
     candle: {
+      type: state.chartType,  // candle_solid | area
       bar: { upColor: T.up, downColor: T.down, noChangeColor: T.text,
              upBorderColor: T.up, downBorderColor: T.down,
              upWickColor: T.up, downWickColor: T.down },
-      priceMark: { last: { upColor: T.up, downColor: T.down } },
-      tooltip: {
-        showRule: state.tooltipsVisible ? "always" : "none",
-        text: { color: T.text, family: "'IBM Plex Mono',monospace" },
+      area: {
+        lineColor: T.accent, lineSize: 2,
+        backgroundColor: [
+          { offset: 0, color: "rgba(232,182,76,0.18)" },
+          { offset: 1, color: "rgba(232,182,76,0.02)" },
+        ],
       },
+      priceMark: { last: { upColor: T.up, downColor: T.down } },
+      // Eigene Legende → KLC-Tooltip komplett aus
+      tooltip: { showRule: "none" },
     },
     indicator: {
       lastValueMark: { show: true, text: { show: true, family: "'IBM Plex Mono',monospace" } },
-      tooltip: {
-        showRule: state.tooltipsVisible ? "always" : "none",
-        text: { color: T.text, family: "'IBM Plex Mono',monospace" },
-      },
+      tooltip: { showRule: "none" },
     },
     xAxis: {
       axisLine: { color: "rgba(143,163,184,0.15)" },
@@ -88,6 +94,7 @@ function buildCreate(ind) {
     case "mnoodle": create.calcParams = [inp.fastPeriod||12, inp.medPeriod||21, inp.slowPeriod||35, inp.atrLength||20, inp.bandMult||0.0125]; break;
     case "bmsb":    create.calcParams = [20, 21]; break;
     case "rsi":     create.calcParams = [inp.period||14]; break;
+    case "stochrsi": create.calcParams = [inp.smoothK||3, inp.smoothD||3, inp.lengthRSI||14, inp.lengthStoch||14]; break;
     default:        if (ind.calcParams) create.calcParams = ind.calcParams;
   }
   // Built-in-Indikatoren (EMA, BOLL, RSI): Linien-Styles direkt übergeben
@@ -202,6 +209,10 @@ function drawVrvp() {
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, w, h);
+  // Abstand zur Preisachse: Balken enden nicht am rechten Rand, sondern
+  // mit einem Gap. So bleiben Chart UND Preisskala lesbar.
+  const rightGap = 64;             // px Abstand zur Preisskala
+  const rightEdge = w - rightGap;
   const maxBarW = w * widthPct;
 
   for (let r = 0; r < rows; r++) {
@@ -217,14 +228,15 @@ function drawVrvp() {
     const downW = (downVol[r] / maxVol) * maxBarW;
     const inVA = pm >= valPrice && pm <= vahPrice;
     const isPoc = Math.abs(pm - pocPrice) < rowH;
+    // Balken wachsen vom rightEdge nach links
     ctx.fillStyle = (sv.plots.down && sv.plots.down.visible !== false) ? sv.plots.down.color : "rgba(0,0,0,0)";
-    ctx.fillRect(w - downW, yTop, downW, yH);
+    ctx.fillRect(rightEdge - downW, yTop, downW, yH);
     ctx.fillStyle = (sv.plots.up && sv.plots.up.visible !== false) ? sv.plots.up.color : "rgba(0,0,0,0)";
-    ctx.fillRect(w - barW, yTop, upW, yH);
-    if (inVA && sv.plots.va && sv.plots.va.visible !== false) { ctx.fillStyle = sv.plots.va.color; ctx.fillRect(w - barW, yTop, barW, yH); }
+    ctx.fillRect(rightEdge - barW, yTop, upW, yH);
+    if (inVA && sv.plots.va && sv.plots.va.visible !== false) { ctx.fillStyle = sv.plots.va.color; ctx.fillRect(rightEdge - barW, yTop, barW, yH); }
     if (isPoc) {
       ctx.strokeStyle = "rgba(232,182,76,0.8)"; ctx.lineWidth = 1.5; ctx.setLineDash([4,3]);
-      ctx.beginPath(); ctx.moveTo(0, yTop + yH/2); ctx.lineTo(w - barW, yTop + yH/2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, yTop + yH/2); ctx.lineTo(rightEdge - barW, yTop + yH/2); ctx.stroke();
       ctx.setLineDash([]);
     }
   }
@@ -250,6 +262,7 @@ async function loadData() {
   }
   chart.applyNewData(candles);
   updatePriceHeader(candles.at(-1), candles.at(-2));
+  updateLegend();
   setStatus(`${candles.length} Candles · ${state.symbol.label} · ${state.timeframe.label}`);
   if (state.active.has("vrvp")) setTimeout(drawVrvp, 120);
 
@@ -259,6 +272,7 @@ async function loadData() {
       (candle) => {
         chart.updateData(candle);
         updatePriceHeader(candle, chart.getDataList().at(-2));
+        updateLegend();
         if (state.active.has("vrvp")) requestAnimationFrame(drawVrvp);
       },
       s => setLive(s, s === "live" ? "Live" : "Reconnect …")
@@ -353,20 +367,6 @@ function renderIndPanel() {
   const list = document.getElementById("indList");
   list.innerHTML = "";
 
-  // Tooltip-Toggle ganz oben
-  const toggleRow = document.createElement("div");
-  toggleRow.className = "dd-ind-row dd-toggle-row";
-  const tCheck = document.createElement("input");
-  tCheck.type = "checkbox"; tCheck.id = "tooltipToggle"; tCheck.checked = state.tooltipsVisible;
-  tCheck.addEventListener("change", () => {
-    state.tooltipsVisible = tCheck.checked;
-    chart.setStyles(baseStyles());
-  });
-  const tLabel = document.createElement("label");
-  tLabel.htmlFor = "tooltipToggle"; tLabel.textContent = "Beschriftung im Chart";
-  toggleRow.appendChild(tCheck); toggleRow.appendChild(tLabel);
-  list.appendChild(toggleRow);
-
   CONFIG.INDICATORS.forEach(ind => {
     const row = document.createElement("div");
     row.className = "dd-ind-row";
@@ -375,12 +375,13 @@ function renderIndPanel() {
     check.addEventListener("change", () => {
       if (check.checked) { state.active.add(ind.key); applyIndicator(ind); }
       else { state.active.delete(ind.key); removeIndicator(ind); }
+      updateLegend();
       resize();
     });
     const label = document.createElement("label");
     label.htmlFor = "ind_" + ind.key; label.textContent = ind.label;
     row.appendChild(check); row.appendChild(label);
-    if (ind.settings && ind.settings.length > 0) {
+    if ((ind.inputs && ind.inputs.length) || (ind.plots && ind.plots.length)) {
       const gear = document.createElement("button");
       gear.className = "ind-gear"; gear.title = "Einstellungen"; gear.textContent = "⚙";
       gear.addEventListener("click", (e) => {
@@ -389,6 +390,7 @@ function renderIndPanel() {
         Settings.open(ind.key, (key) => {
           const i = CONFIG.INDICATORS.find(x => x.key === key);
           if (state.active.has(key)) { removeIndicator(i); applyIndicator(i); }
+          updateLegend();
         });
       });
       row.appendChild(gear);
@@ -397,16 +399,106 @@ function renderIndPanel() {
   });
 }
 
+// ---------- Eigene Legende (einklappbar) ----------
+function updateLegend(hoverData) {
+  const body = document.getElementById("legendBody");
+  const data = chart.getDataList();
+  const d = hoverData || (data && data.at(-1));
+  if (!d) { body.innerHTML = ""; return; }
+  const fmt = (v) => v == null ? "–" : v.toLocaleString("de-CH", { maximumFractionDigits: d.close >= 100 ? 2 : 4 });
+
+  let html = `<div class="legend-line legend-ohlc">`
+    + `<span class="lg-sym">${state.symbol.label}</span> `
+    + `<span class="lg-tf">${state.timeframe.label}</span>  `
+    + `O <b>${fmt(d.open)}</b>  H <b>${fmt(d.high)}</b>  L <b>${fmt(d.low)}</b>  C <b>${fmt(d.close)}</b>`
+    + `  Vol ${(d.volume||0).toLocaleString("de-CH",{maximumFractionDigits:0})}`
+    + `</div>`;
+
+  // Aktive Indikatoren auflisten (Name + Farbpunkte der sichtbaren Plots)
+  CONFIG.INDICATORS.filter(i => state.active.has(i.key)).forEach(ind => {
+    const sv = Settings.get(ind.key);
+    const dots = (ind.plots || [])
+      .filter(p => sv.plots[p.key] && sv.plots[p.key].visible !== false)
+      .map(p => `<span class="lg-dot" style="background:${sv.plots[p.key].color}"></span>`)
+      .join("");
+    html += `<div class="legend-line"><span class="lg-name">${ind.label}</span>${dots}</div>`;
+  });
+  body.innerHTML = html;
+}
+
+function toggleLegend() {
+  state.legendCollapsed = !state.legendCollapsed;
+  const legend = document.getElementById("chartLegend");
+  const btn = document.getElementById("legendToggle");
+  legend.classList.toggle("collapsed", state.legendCollapsed);
+  btn.textContent = state.legendCollapsed ? "▸" : "▾";
+}
+
+// ---------- Chart-Typ (Kerzen / Linie) ----------
+function renderTypeList() {
+  const list = document.getElementById("typeList");
+  list.innerHTML = "";
+  const types = [
+    { id: "candle_solid", label: "Kerzen" },
+    { id: "area",         label: "Linie" },
+  ];
+  types.forEach(t => {
+    const item = document.createElement("div");
+    item.className = "dd-item" + (t.id === state.chartType ? " active" : "");
+    item.textContent = t.label;
+    item.addEventListener("click", () => {
+      state.chartType = t.id;
+      document.getElementById("typeLabel").textContent = t.label;
+      document.getElementById("typePanel").classList.remove("open");
+      chart.setStyles(baseStyles());
+      renderTypeList();
+    });
+    list.appendChild(item);
+  });
+}
+
+// ---------- Screenshot & Auto-Zoom ----------
+function takeScreenshot() {
+  try {
+    const url = chart.getConvertPictureUrl(true, "jpeg", "#0d1117");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `treydview_${state.symbol.id}_${state.timeframe.id}_${Date.now()}.jpeg`;
+    a.click();
+  } catch (e) {
+    setStatus("Screenshot fehlgeschlagen: " + e.message);
+  }
+}
+
+function autoZoom() {
+  // Y-Achse automatisch an sichtbaren Bereich anpassen
+  chart.setPaneOptions({ id: "candle_pane", axis: { name: "normal", scrollZoomEnabled: true } });
+  chart.resize();
+  // Re-Fit: ganze Datenbreite zeigen
+  chart.scrollToRealTime();
+}
+
 // ---------- Drawing-Toolbar ----------
+function currentOverlayStyles() {
+  const ds = state.drawStyle;
+  const col = hexToRgba(ds.color, ds.opacity);
+  return {
+    line:    { color: col, size: ds.width, style: ds.lineStyle },
+    polygon: { fillColor: hexToRgba(ds.color, Math.min(ds.opacity, 15)), stroke: { color: col, size: ds.width, style: ds.lineStyle } },
+    rect:    { fillColor: hexToRgba(ds.color, Math.min(ds.opacity, 15)), stroke: { color: col, size: ds.width, style: ds.lineStyle } },
+    text:    { color: col },
+  };
+}
+
 function startTool(overlayName) {
   state.activeTool = overlayName;
   const id = chart.createOverlay({
     name: overlayName,
     mode: state.magnetMode,
+    styles: currentOverlayStyles(),
     onDrawEnd: () => {
       state.drawingId = null;
       if (state.pinTool) {
-        // Werkzeug bleibt aktiv: direkt nächste Zeichnung starten
         setTimeout(() => startTool(overlayName), 0);
       } else {
         state.activeTool = null;
@@ -421,9 +513,64 @@ function startTool(overlayName) {
   renderDrawbar();
 }
 
+function toggleDrawStylePopover() {
+  let pop = document.getElementById("drawStylePopover");
+  if (pop) { pop.remove(); return; }
+  pop = document.createElement("div");
+  pop.id = "drawStylePopover";
+  pop.className = "draw-style-popover";
+  const ds = state.drawStyle;
+  pop.innerHTML = `
+    <div class="dsp-row"><label>Farbe</label><input type="color" id="dspColor" value="${ds.color}"></div>
+    <div class="dsp-row"><label>Deckkraft</label><input type="range" min="0" max="100" id="dspOpacity" value="${ds.opacity}"><span id="dspOpVal">${ds.opacity}%</span></div>
+    <div class="dsp-row"><label>Stärke</label><input type="number" min="1" max="5" id="dspWidth" value="${ds.width}"></div>
+    <div class="dsp-row"><label>Linienart</label>
+      <select id="dspLineStyle">
+        <option value="solid"${ds.lineStyle==="solid"?" selected":""}>durchgezogen</option>
+        <option value="dashed"${ds.lineStyle==="dashed"?" selected":""}>gestrichelt</option>
+      </select>
+    </div>`;
+  document.body.appendChild(pop);
+  const bar = document.getElementById("drawbar").getBoundingClientRect();
+  pop.style.left = (bar.right + 6) + "px";
+  pop.style.top = "120px";
+
+  const opEl = pop.querySelector("#dspOpacity");
+  opEl.addEventListener("input", () => { pop.querySelector("#dspOpVal").textContent = opEl.value + "%"; });
+  const apply = () => {
+    state.drawStyle = {
+      color: pop.querySelector("#dspColor").value,
+      opacity: parseInt(opEl.value, 10),
+      width: parseInt(pop.querySelector("#dspWidth").value, 10),
+      lineStyle: pop.querySelector("#dspLineStyle").value,
+    };
+  };
+  pop.querySelectorAll("input,select").forEach(el => el.addEventListener("change", apply));
+  // Klick ausserhalb schliesst
+  setTimeout(() => {
+    document.addEventListener("click", function close(e) {
+      if (!pop.contains(e.target) && e.target.id !== "drawStyleBtn") {
+        pop.remove(); document.removeEventListener("click", close);
+      }
+    });
+  }, 10);
+}
+
 function renderDrawbar() {
   const bar = document.getElementById("drawbar");
   bar.innerHTML = "";
+
+  // Stil-Wähler ganz oben
+  const styleBtn = document.createElement("button");
+  styleBtn.id = "drawStyleBtn";
+  styleBtn.className = "draw-btn";
+  styleBtn.title = "Zeichenstil (Farbe, Linienart, Deckkraft)";
+  styleBtn.textContent = "🎨";
+  styleBtn.style.setProperty("border-bottom", `3px solid ${hexToRgba(state.drawStyle.color, state.drawStyle.opacity)}`);
+  styleBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleDrawStylePopover(); });
+  bar.appendChild(styleBtn);
+
+  const sep0 = document.createElement("div"); sep0.className = "draw-sep"; bar.appendChild(sep0);
 
   CONFIG.DRAW_TOOLS.forEach(tool => {
     const btn = document.createElement("button");
@@ -435,7 +582,6 @@ function renderDrawbar() {
 
   const sep1 = document.createElement("div"); sep1.className = "draw-sep"; bar.appendChild(sep1);
 
-  // Magnet-Modus (aus → schwach → stark)
   const magnet = document.createElement("button");
   const magnetLabels = { normal: "Magnet: aus", weak_magnet: "Magnet: schwach", strong_magnet: "Magnet: stark" };
   magnet.textContent = "⌖";
@@ -448,7 +594,6 @@ function renderDrawbar() {
   });
   bar.appendChild(magnet);
 
-  // Pin: Werkzeug aktiv lassen
   const pin = document.createElement("button");
   pin.textContent = "📌";
   pin.title = state.pinTool ? "Werkzeug bleibt aktiv (an)" : "Werkzeug bleibt aktiv (aus)";
@@ -516,10 +661,36 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
 initDropdowns();
 renderAssetList();
 renderTfList();
+renderTypeList();
 renderIndPanel();
 renderDrawbar();
 applyAllActive();
+updateLegend();
 loadBinanceSymbols();
 loadData();
+
+// Legende folgt dem Crosshair
+chart.subscribeAction("onCrosshairChange", (data) => {
+  if (data && data.kLineData) updateLegend(data.kLineData);
+  else updateLegend();
+});
+
+// Button-Handler
+document.getElementById("legendToggle").addEventListener("click", toggleLegend);
+document.getElementById("screenshotBtn").addEventListener("click", takeScreenshot);
+document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
+
+// Type-Dropdown öffnen/schliessen (zur bestehenden Dropdown-Logik hinzufügen)
+(function initTypeDropdown() {
+  const dd = document.getElementById("typeDropdown");
+  const trigger = dd.querySelector(".dd-trigger");
+  const panel = dd.querySelector(".dd-panel");
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const wasOpen = panel.classList.contains("open");
+    document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
+    if (!wasOpen) panel.classList.add("open");
+  });
+})();
 
 })();

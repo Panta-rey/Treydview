@@ -141,6 +141,19 @@ const CONFIG = {
       ],
     },
     {
+      key: "stochrsi", name: "STOCHRSI", pane: "sub", label: "Stochastic RSI",
+      inputs: [
+        { key: "smoothK",     label: "K",          default: 3  },
+        { key: "smoothD",     label: "D",          default: 3  },
+        { key: "lengthRSI",   label: "RSI Länge",  default: 14 },
+        { key: "lengthStoch", label: "Stoch Länge", default: 14 },
+      ],
+      plots: [
+        { key: "k", label: "K", color: "#2962ff", opacity: 100, width: 2, visible: true },
+        { key: "d", label: "D", color: "#ff6d00", opacity: 100, width: 2, visible: true },
+      ],
+    },
+    {
       key: "vol", name: "VOL", pane: "sub", label: "Volumen",
       inputs: [], plots: [],
     },
@@ -161,6 +174,14 @@ const CONFIG = {
     { overlay: "priceRange",             icon: "↕",  title: "Price Range" },
     { overlay: "dateRange",              icon: "↔",  title: "Date Range" },
   ],
+
+  // Standard-Stil für neue Zeichnungen (im Draw-Stil-Popover änderbar)
+  DRAW_STYLE_DEFAULT: {
+    color:   "#e8b64c",
+    opacity: 100,
+    width:   2,
+    style:   "solid",   // solid | dashed
+  },
 
   THEME: {
     up: "#3fb68b", down: "#d05e5e", accent: "#e8b64c",

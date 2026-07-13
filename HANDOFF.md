@@ -1,6 +1,6 @@
 # TreydView — HANDOFF
 
-Übergabe-Dokument für künftige Arbeits-Sessions (Claude-Chat, Claude Code, oder andere Entwickler). Stand: v0.4, Juli 2026.
+Übergabe-Dokument für künftige Arbeits-Sessions (Claude-Chat, Claude Code, oder andere Entwickler). Stand: v0.4.1, Juli 2026.
 
 ## Was ist TreydView
 
@@ -46,6 +46,27 @@ js/app.js         Verdrahtung: Chart-Init/Theme, buildCreate() (Settings→calcP
 5. **Money Noodle** ist eine Übersetzung eines Pine Scripts das der User geliefert hat: EMA 12/21/35, Band = EMA35 ± ATR(20) × 0.0125 × 40. Fast EMA default unsichtbar.
 6. **Gaussian Channel:** Ehlers-Filter als Kaskade aus P Ein-Pol-Filtern; beta = (1−cos(2π/N))/(2^(1/P)−1), alpha = −beta+√(beta²+2beta). Mid auf hlc3, Band auf True Range × mult. Params 144/1.414/4. Einschwingphase (~period Bars) wird ausgeblendet.
 
+## v0.4.1 — kritischer Fix + Feature-Runde
+
+**Freeze-Bug behoben (war der wichtigste):** In v0.4 fror das Chart nach dem Laden ein — kein Scroll/Zoom/Symbolwechsel. Ursache: EMA/BOLL/RSI waren KLineCharts-Built-ins, und das Überschreiben von `create.styles.lines` mit einem Positions-Array kollidierte mit deren internem Renderer (`TypeError: reading '0'` in jedem Draw-Frame). **Lösung:** EMA, BOLL, RSI sind jetzt EIGENE registrierte Indikatoren (in indicators.js, v0.4.1-Block) mit Styling über `extendData.plots` wie alle Custom-Indikatoren. NICHT zu Built-ins zurückwechseln.
+
+Ausserdem in v0.4.1:
+- **RSI-Referenzlinien** 20/50/80 als konstante Figures im RSI-Indikator (gestrichelt), Skala fix 0–100 via minValue/maxValue.
+- **Eigene einklappbare Legende** (`.chart-legend` in index.html, `updateLegend()` in app.js) statt KLC-Tooltip. Folgt dem Crosshair, Pfeil-Toggle links. KLC-Tooltip ist global auf `showRule:"none"`.
+- **Chart-Typ-Dropdown** Kerzen/Linie (`state.chartType`, `candle_solid`/`area`).
+- **Screenshot** (`chart.getConvertPictureUrl` → Download) und **Auto-Zoom**-Button oben rechts.
+- **VRVP mit rightGap=64px** Abstand zur Preisskala (vorher bündig → Preise unlesbar).
+- **Draw-Stil-Popover** (🎨 in Toolbar): Farbe, Deckkraft, Stärke, Linienart; wird als `styles` an `createOverlay` übergeben. Draw-Buttons auf 38px vergrössert.
+
+## OFFEN — Punkt 8: Multi-Asset-Vergleich ("Watch High"-Stil)
+
+User will mehrere Assets überlagert vergleichen (Screenshot: ETH + TAO/AERO/NEAR/HYPE, prozentual normalisiert, je eigene Linie/Farbe). **KLineCharts kann das NICHT nativ.** Umsetzungsplan:
+- Custom-Indikator "COMPARE" der N zusätzliche Symbole via Binance lädt.
+- Alle Serien prozentual auf gemeinsamen Startpunkt normalisieren ((close/close[0]−1)×100).
+- Als überlagerte Linien in einem eigenen Pane mit Prozent-Y-Achse ODER als Overlay im candle_pane mit sekundärer Achse.
+- Detailfragen: Timeframe-Alignment zwischen Assets, fehlende Candles (unterschiedliche Listing-Daten), "+"-Button-UI zum Hinzufügen, Farb-Zuweisung, Legende pro Asset, Live-Update aller Streams.
+- Aufwand: eigener Durchgang. Nicht nebenbei.
+
 ## User-Kontext (wichtig für Zusammenarbeit)
 
 - Rey ist technisch versiert (Python, Trading-Domäne), aber **Git/PowerShell-Anfänger** — Befehle einzeln und copy-paste-fertig geben, PowerShell-Syntax (kein &&-Chaining in alten PS-Versionen).
@@ -60,6 +81,23 @@ js/app.js         Verdrahtung: Chart-Init/Theme, buildCreate() (Settings→calcP
 3. **Orderblocks** — letzte Gegenkerze vor Impulsbewegung, Box-Rendering.
 4. **Realised Price** — On-Chain-Metrik, braucht neuen Worker-Endpoint `/realizedprice` (z.B. CoinMetrics Community API, KV-Cache analog `/goldhistory`). Worker-Code ist noch NICHT geschrieben.
 5. Drawing-UX weiter angleichen (TV-Referenz): Linienstile-Editing bestehender Zeichnungen.
+
+
+
+## v0.5-Änderungen (wichtig)
+
+- **KRITISCHER BUGFIX (Chart-Freeze):** Ursache war `plotStyle()` in indicators.js — unvollständige Style-Objekte (`{color, size}`) brachten KLineCharts' internen Linien-Merge zum Absturz (`coordinates[1]` undefined → Render-Exception → eingefrorenes Chart, kein Scroll/Zoom/Wechsel). Fix: `plotStyle()` gibt IMMER vollständige Objekte zurück (`style, color, size, smooth, dashedValue`). Regel für die Zukunft: **jeder figure-`styles()`-Callback MUSS ein vollständiges Objekt liefern.** Headless mit jsdom+node-canvas reproduziert (siehe /home/claude/klc-repro, nicht im Repo).
+- **Altlast bereinigt:** indicators.js hatte über Sessions einen zweiten IIFE-Block mit `plotStyle2` und custom EMA/BOLL/RSI-Nachbauten angesammelt. Entfernt — EMA/BOLL/RSI nutzen jetzt wieder die nativen KLineCharts-Indikatoren (via `create.styles.lines[]` in buildCreate).
+- **Stochastic RSI** neu (STOCHRSI in indicators.js): K/D-Linien blau/orange, gestrichelte Referenzlinien bei 20/50/80 (als konstante figure-Serien), Pine-konform (rsi → stoch → SMA(K) → SMA(D)). RSI 14 bleibt bewusst schlicht ohne Bänder.
+- **Eigene einklappbare Legende** (`updateLegend`, `.chart-legend`) ersetzt KLineCharts-Tooltips (die sind auf `showRule:"none"`). Pfeil-Toggle oben links; folgt dem Crosshair (zeigt OHLC unter dem Cursor). Löst das "Beschriftung ragt in den Chart"-Problem.
+- **Chart-Typ-Umschalter** (Kerzen/Linie) via `state.chartType` + `chart.setStyles({candle:{type}})`.
+- **Screenshot** (`chart.getConvertPictureUrl` → Download) + **Auto-Zoom** (`chart.zoomAtCoordinate`/fitContent) oben rechts.
+- **Draw-Stil-Popover:** Farbe, Linienart (solid/dashed), Deckkraft, Stärke — wird auf neue Overlays angewendet (`state.drawStyle`). Zeichentools grösser.
+- **VRVP mit Gap:** Balken enden 64px vor der Preisskala (`rightGap`), damit Chart UND Achse lesbar bleiben.
+
+## NOCH OFFEN (vom User gewünscht, NICHT gebaut)
+
+- **Multi-Asset-Vergleich** ("Watch High"): mehrere Symbole auf gemeinsamer Prozent-Basis normalisiert überlagern, mit Farb-Legende + Plus-Button zum Hinzufügen. Grösster offener Posten, architektonisch eigener Block (mehrere Datenserien, Normalisierung). War als v0.6 vorgesehen.
 
 ## Bekannte Grenzen
 
