@@ -187,3 +187,9 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .frvp-divider{height:1px;background:var(--border);margin:2px 0;}
 .frvp-row input[type=checkbox]{accent-color:var(--accent);margin-right:4px;}
 .frvp-row input[type=color]{width:36px;height:26px;padding:1px;border:1px solid var(--border);border-radius:4px;background:var(--bg);cursor:pointer;}
+
+/* ---- Generisches Overlay-Kontextmenü ---- */
+.overlay-menu{position:fixed;z-index:601;background:var(--bg-raised);border:1px solid var(--border);border-radius:5px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.6);}
+.overlay-menu.hidden{display:none;}
+.overlay-menu-del{display:block;width:100%;padding:8px 16px;background:transparent;border:none;color:var(--down);font-family:var(--font-mono);font-size:12px;cursor:pointer;text-align:left;white-space:nowrap;}
+.overlay-menu-del:hover{background:rgba(208,94,94,.12);}

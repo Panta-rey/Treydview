@@ -298,13 +298,19 @@ chart.subscribeAction("onVisibleRangeChange", (range) => {
   if (state.active.has("vrvp")) requestAnimationFrame(() => {
     try { drawVrvp(); } catch (e) { /* Render-Fehler nie den Loop killen lassen */ }
   });
-  // Vergleichsmodus: linken sichtbaren Rand als neuen 0%-Referenzpunkt setzen
-  // und Compare-Indikator reaktiv neu berechnen.
+  // Vergleichsmodus: linken sichtbaren Rand als neuen 0%-Referenzpunkt setzen.
+  // Wir übergeben fromIdx als calcParams[0] — KLC erkennt die Parameteränderung
+  // und ruft calc() neu auf (zuverlässiger als overrideIndicator ohne Änderung).
   if (state.compareAssets.length > 0 && range) {
-    const from = Number.isInteger(range.from) ? range.from : 0;
+    const from = Number.isInteger(range.from) ? Math.max(0, range.from) : 0;
     if (window.__tvVisibleFrom !== from) {
       window.__tvVisibleFrom = from;
-      try { chart.overrideIndicator({ name: "COMPARE" }, "candle_pane"); } catch (e) {}
+      try {
+        chart.overrideIndicator(
+          { name: "COMPARE", calcParams: [from] },
+          "candle_pane"
+        );
+      } catch (e) {}
     }
   }
 });
@@ -503,15 +509,25 @@ function applyCompareIndicator() {
 
     chart.createIndicator({ name: "COMPARE" }, true, { id: "candle_pane" });
 
-    // Kerzen ausblenden — im Vergleichsmodus zählt nur relative Performance.
-    // Das Hauptasset läuft als weisse Linie (cMain im COMPARE-Indikator).
+    // Im Vergleichsmodus: Chart auf Linien-Typ wechseln und Linie unsichtbar
+    // machen. So liefert KLineCharts nur noch Close-Werte an die Y-Achse
+    // (nicht OHLC), und die Achse skaliert auf die Prozentwerte des
+    // COMPARE-Indikators statt auf die BTC-Preiswerte (60'000+).
     chart.setStyles({
-      candle: { bar: {
-        upColor: "rgba(0,0,0,0)", downColor: "rgba(0,0,0,0)", noChangeColor: "rgba(0,0,0,0)",
-        upBorderColor: "rgba(0,0,0,0)", downBorderColor: "rgba(0,0,0,0)",
-        upWickColor: "rgba(0,0,0,0)", downWickColor: "rgba(0,0,0,0)",
-      }, priceMark: { last: { show: false } } },
+      candle: {
+        type: "area",
+        area: {
+          lineColor:    "rgba(0,0,0,0)",
+          lineSize:     0,
+          value:        "close",
+          smooth:       false,
+          backgroundColor: [{ offset: 0, color: "rgba(0,0,0,0)" }, { offset: 1, color: "rgba(0,0,0,0)" }],
+        },
+        priceMark: { last: { show: false } },
+      },
     });
+    // Achse nach kurzer Verzögerung auf neuen Datenbereich ausrichten
+    setTimeout(() => { try { chart.setStyles({ yAxis: { type: "normal" } }); } catch (e) {} }, 150);
   } else {
     chart.removeIndicator("candle_pane", "COMPARE");
     window.__tvVisibleFrom = undefined;
@@ -721,18 +737,46 @@ function startTool(overlayName) {
     },
     onSelected:   (e) => { state.selectedOverlayId = e.overlay.id; return false; },
     onDeselected: () => { state.selectedOverlayId = null; return false; },
+    // Rechtsklick auf JEDE Zeichnung → Kontext-Menü mit Löschen
+    onRightClick: (e) => {
+      if (overlayName === "frvp") {
+        openFrvpMenu(e.overlay, e);
+      } else {
+        openOverlayMenu(e.overlay, e);
+      }
+      return true;
+    },
   };
-  // FRVP: Default-Parameter + Rechtsklick-Menü
+  // FRVP: Default-Parameter
   if (overlayName === "frvp") {
-    overlayConfig.extendData = { rows: 150, valueArea: 70, width: 30 };
-    overlayConfig.onRightClick = (e) => { openFrvpMenu(e.overlay, e); return true; };
+    overlayConfig.extendData = { rows: 150, valueArea: 70, width: 30,
+      showVAH: true, showVAL: true, showPOC: true,
+      colorUp: "rgba(63,182,139,0.55)", colorDown: "rgba(208,94,94,0.55)",
+      colorVAH: "#e8b64c", colorVAL: "#e8b64c", colorPOC: "#ffffff" };
   }
   const id = chart.createOverlay(overlayConfig);
   state.drawingId = Array.isArray(id) ? id[0] : id;
   renderDrawbar();
 }
 
-// ---------- FRVP-Kontextmenü ----------
+// ---------- Generisches Overlay-Menü (Einzellöschen per Rechtsklick) ----------
+function openOverlayMenu(overlay, event) {
+  const menu = document.getElementById("overlayMenu");
+  if (!menu) return;
+  const x = event?.pointerCoordinate?.x || event?.x || 200;
+  const y = event?.pointerCoordinate?.y || event?.y || 200;
+  menu.style.left = Math.min(x, window.innerWidth  - 120) + "px";
+  menu.style.top  = Math.min(y, window.innerHeight - 60)  + "px";
+  menu.classList.remove("hidden");
+  document.getElementById("overlayDelete").onclick = () => {
+    chart.removeOverlay(overlay.id);
+    menu.classList.add("hidden");
+  };
+}
+document.addEventListener("click", (e) => {
+  const om = document.getElementById("overlayMenu");
+  if (om && !om.contains(e.target)) om.classList.add("hidden");
+});
 function openFrvpMenu(overlay, event) {
   const menu = document.getElementById("frvpMenu");
   if (!menu) return;

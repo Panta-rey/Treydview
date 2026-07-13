@@ -345,13 +345,16 @@ klinecharts.registerIndicator({
     { key: "c4", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 4) },
     { key: "c5", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 5) },
   ],
-  calc: (dataList) => {
+  calc: (dataList, indicator) => {
     const assets = (typeof window !== "undefined" && window.__tvCompareAssets) ? window.__tvCompareAssets : [];
     if (dataList.length === 0) return dataList.map(() => ({}));
 
-    // Erster sichtbarer Bar-Index (vom app.js gesetzt; Fallback: 0)
-    let fromIdx = (typeof window !== "undefined" && Number.isInteger(window.__tvVisibleFrom))
-      ? window.__tvVisibleFrom : 0;
+    // fromIdx: KLC übergibt calcParams[0] bei overrideIndicator (gesetzt via
+    // onVisibleRangeChange). Fallback auf window.__tvVisibleFrom oder 0.
+    const paramFrom = indicator && indicator.calcParams && indicator.calcParams[0];
+    let fromIdx = Number.isInteger(paramFrom) ? paramFrom
+      : (typeof window !== "undefined" && Number.isInteger(window.__tvVisibleFrom)
+          ? window.__tvVisibleFrom : 0);
     fromIdx = Math.max(0, Math.min(fromIdx, dataList.length - 1));
 
     // Referenzpreis Hauptasset = Close am linken sichtbaren Rand.
