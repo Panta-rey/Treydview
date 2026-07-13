@@ -209,9 +209,23 @@ function drawVrvp() {
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, w, h);
-  // Abstand zur Preisachse: Balken enden nicht am rechten Rand, sondern
-  // mit einem Gap. So bleiben Chart UND Preisskala lesbar.
-  const rightGap = 64;             // px Abstand zur Preisskala
+
+  // Untere Grenze des Preis-Panes bestimmen: VRVP darf NICHT über die
+  // Sub-Panes (RSI/VOL/Stoch) ragen. Wir ermitteln die Pixel-Y von pMin
+  // und pMax im candle_pane; alles ausserhalb wird geclippt.
+  const yOfMin = chart.convertToPixel({ value: pMin }, { paneId: "candle_pane", absolute: true });
+  const yOfMax = chart.convertToPixel({ value: state.vrvpMeta.pMax }, { paneId: "candle_pane", absolute: true });
+  const paneTop = (yOfMax && yOfMax.y != null) ? Math.max(0, yOfMax.y) : 0;
+  const paneBottom = (yOfMin && yOfMin.y != null) ? yOfMin.y : h;
+  // Clip-Region auf den Preis-Pane beschränken
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, Math.min(paneTop, paneBottom) - 4, w, Math.abs(paneBottom - paneTop) + 8);
+  ctx.clip();
+
+  // Abstand zur Preisachse: Balken enden mit grösserem Gap, damit die
+  // Preisskala frei bleibt und nichts überlappt.
+  const rightGap = 96;             // px Abstand zur Preisskala (Punkt 4)
   const rightEdge = w - rightGap;
   const maxBarW = w * widthPct;
 
@@ -240,10 +254,15 @@ function drawVrvp() {
       ctx.setLineDash([]);
     }
   }
+  ctx.restore(); // Clip-Region aufheben
 }
 
 // VRVP bei Zoom/Scroll neu zeichnen
-chart.subscribeAction("onVisibleRangeChange", () => { if (state.active.has("vrvp")) requestAnimationFrame(drawVrvp); });
+chart.subscribeAction("onVisibleRangeChange", () => {
+  if (state.active.has("vrvp")) requestAnimationFrame(() => {
+    try { drawVrvp(); } catch (e) { /* Render-Fehler nie den Loop killen lassen */ }
+  });
+});
 
 // ---------- Daten laden ----------
 async function loadData() {
@@ -671,8 +690,10 @@ loadData();
 
 // Legende folgt dem Crosshair
 chart.subscribeAction("onCrosshairChange", (data) => {
-  if (data && data.kLineData) updateLegend(data.kLineData);
-  else updateLegend();
+  try {
+    if (data && data.kLineData) updateLegend(data.kLineData);
+    else updateLegend();
+  } catch (e) { /* Legend-Fehler nie den Chart blockieren lassen */ }
 });
 
 // Button-Handler

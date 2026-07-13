@@ -66,6 +66,8 @@ klinecharts.registerIndicator({
   ],
   calc: (dataList, indicator) => {
     const [fp, mp, sp, atrLen, mult] = indicator.calcParams;
+    const plots = indicator?.extendData?.plots || {};
+    const vis = (key) => !plots[key] || plots[key].visible !== false;
     const closes = dataList.map(d => d.close);
     const emaF = emaSeries(closes, fp);
     const emaM = emaSeries(closes, mp);
@@ -75,11 +77,15 @@ klinecharts.registerIndicator({
       const s = emaS[i], a = atr[i];
       if (s == null || a == null) return {};
       const offset = a * mult * 40;
-      return {
-        fast: emaF[i] ?? undefined,
-        med:  emaM[i] ?? undefined,
-        main: s, upper: s + offset, lower: s - offset,
-      };
+      const out = {};
+      // Nur sichtbare Plots ausgeben — unsichtbare NICHT als transparente
+      // Linie (das zersplittert KLineCharts' Merge und friert das Chart ein)
+      if (vis("fast")  && emaF[i] != null) out.fast  = emaF[i];
+      if (vis("med")   && emaM[i] != null) out.med   = emaM[i];
+      if (vis("main"))                     out.main  = s;
+      if (vis("upper"))                    out.upper = s + offset;
+      if (vis("lower"))                    out.lower = s - offset;
+      return out;
     });
   },
 });
