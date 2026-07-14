@@ -51,6 +51,82 @@ function atrSeries(dataList, period) {
   return emaSeries(tr, period);
 }
 
+
+// ---------- Zusätzliche Mathe-Helfer ----------
+function rmaSeries(values, period) {
+  // Wilder's RMA (EMA mit alpha=1/period)
+  const out = new Array(values.length).fill(null);
+  let rma = null;
+  const alpha = 1 / period;
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] == null) continue;
+    rma = rma === null ? values[i] : alpha * values[i] + (1 - alpha) * rma;
+    out[i] = rma;
+  }
+  return out;
+}
+
+function wmaSeries(values, period) {
+  const out = new Array(values.length).fill(null);
+  for (let i = period - 1; i < values.length; i++) {
+    let num = 0, den = 0;
+    for (let j = 0; j < period; j++) {
+      if (values[i - j] == null) { num = null; break; }
+      const w = period - j; num += values[i - j] * w; den += w;
+    }
+    if (num != null) out[i] = num / den;
+  }
+  return out;
+}
+
+function vwmaSeries(dataList, period) {
+  // VWMA: weighted by volume
+  const out = new Array(dataList.length).fill(null);
+  for (let i = period - 1; i < dataList.length; i++) {
+    let sumPV = 0, sumV = 0;
+    for (let j = 0; j < period; j++) {
+      const d = dataList[i - j];
+      if (d == null) { sumPV = null; break; }
+      sumPV += d.close * (d.volume || 0);
+      sumV  += (d.volume || 0);
+    }
+    if (sumPV != null && sumV > 0) out[i] = sumPV / sumV;
+  }
+  return out;
+}
+
+function smaSeries(values, period) { return emaSeries(values, period); } // alias für EMA-smoothed (SMMA = RMA in Pine)
+
+function maByType(values, period, type, dataList) {
+  switch (type) {
+    case "EMA":  return emaSeries(values, period);
+    case "SMA":  return smaSeries2(values, period);
+    case "SMMA": return rmaSeries(values, period);
+    case "WMA":  return wmaSeries(values, period);
+    case "VWMA": return dataList ? vwmaSeries(dataList, period) : smaSeries2(values, period);
+    case "RMA":  return rmaSeries(values, period);
+    default:     return smaSeries2(values, period);
+  }
+}
+
+function smaSeries2(values, period) {
+  const out = new Array(values.length).fill(null);
+  for (let i = period - 1; i < values.length; i++) {
+    let s = 0, ok = true;
+    for (let j = 0; j < period; j++) { if (values[i-j] == null) { ok = false; break; } s += values[i-j]; }
+    if (ok) out[i] = s / period;
+  }
+  return out;
+}
+
+function trSeries(dataList) {
+  return dataList.map((d, i) => {
+    if (i === 0) return d.high - d.low;
+    const pc = dataList[i-1].close;
+    return Math.max(d.high - d.low, Math.abs(d.high - pc), Math.abs(d.low - pc));
+  });
+}
+
 // ---------- MONEY NOODLE ----------
 klinecharts.registerIndicator({
   name: "MNOODLE",
@@ -88,6 +164,31 @@ klinecharts.registerIndicator({
       return out;
     });
   },
+
+  draw: ({ ctx, kLineDataList, visibleRange, indicator, xAxis, yAxis }) => {
+    const result = indicator.result;
+    if (!result || result.length === 0) return false;
+    const plots = indicator?.extendData?.plots || {};
+    const fillPlot = plots.fill;
+    if (!fillPlot || fillPlot.visible === false) return false;
+    const { from, to } = visibleRange;
+    ctx.save();
+    for (let i = Math.max(1, from); i < to; i++) {
+      const cur = result[i], prev = result[i - 1];
+      if (!cur || !prev || cur.upper == null || cur.lower == null) continue;
+      const x0 = xAxis.convertToPixel(i - 1), x1 = xAxis.convertToPixel(i);
+      ctx.beginPath();
+      ctx.moveTo(x0, yAxis.convertToPixel(prev.upper));
+      ctx.lineTo(x1, yAxis.convertToPixel(cur.upper));
+      ctx.lineTo(x1, yAxis.convertToPixel(cur.lower));
+      ctx.lineTo(x0, yAxis.convertToPixel(prev.lower));
+      ctx.closePath();
+      ctx.fillStyle = fillPlot.color || "rgba(150,150,150,0.1)";
+      ctx.fill();
+    }
+    ctx.restore();
+    return false;
+  },
 });
 
 // ---------- BULL MARKET SUPPORT BAND ----------
@@ -114,34 +215,118 @@ klinecharts.registerIndicator({
       return { sma20: sma ?? undefined, ema21: emaArr[i] ?? undefined };
     });
   },
+  draw: ({ ctx, kLineDataList, visibleRange, indicator, xAxis, yAxis }) => {
+    const result = indicator.result;
+    if (!result || result.length === 0) return false;
+    const plots = indicator?.extendData?.plots || {};
+    const fillPlot = plots.fill;
+    if (!fillPlot || fillPlot.visible === false) return false;
+    const { from, to } = visibleRange;
+    ctx.save();
+    for (let i = Math.max(1, from); i < to; i++) {
+      const cur = result[i], prev = result[i - 1];
+      if (!cur || !prev || cur.sma20 == null || cur.ema21 == null) continue;
+      const x0 = xAxis.convertToPixel(i - 1), x1 = xAxis.convertToPixel(i);
+      ctx.beginPath();
+      ctx.moveTo(x0, yAxis.convertToPixel(prev.sma20));
+      ctx.lineTo(x1, yAxis.convertToPixel(cur.sma20));
+      ctx.lineTo(x1, yAxis.convertToPixel(cur.ema21));
+      ctx.lineTo(x0, yAxis.convertToPixel(prev.ema21));
+      ctx.closePath();
+      ctx.fillStyle = fillPlot.color || "rgba(63,182,139,0.2)";
+      ctx.fill();
+    }
+    ctx.restore();
+    return false;
+  },
 });
 
-// ---------- HULL SUITE ----------
+// ---------- HULL SUITE (HMA / EHMA / THMA + Band) ----------
 klinecharts.registerIndicator({
   name: "HULL",
   shortName: "Hull",
   precision: 2,
-  calcParams: [55],
-  figures: [{
-    key: "hull", title: "Hull: ", type: "line",
-    styles: (d, ind) => {
-      const key = d.current?.up ? "up" : "down";
-      return plotStyle(ind, key, d.current?.up ? "#3fb68b" : "#d05e5e", 2);
+  calcParams: ["HMA", 55, 1.0],
+  figures: [
+    {
+      key: "hull", title: "Hull: ", type: "line",
+      styles: (d, ind) => {
+        const key = d.current?.up ? "up" : "down";
+        const base = { style: "solid", smooth: false, dashedValue: [2, 2] };
+        const p = ind?.extendData?.plots?.[key];
+        if (!p) return { ...base, color: d.current?.up ? "#00ff00" : "#ff0000", size: 2 };
+        if (p.visible === false) return { ...base, color: "rgba(0,0,0,0)", size: 1 };
+        return { ...base, color: p.color, size: p.width || 2 };
+      },
     },
-  }],
+    {
+      key: "hullLag", title: "HullLag: ", type: "line",
+      styles: (d, ind) => {
+        const key = d.current?.up ? "up" : "down";
+        const base = { style: "solid", smooth: false, dashedValue: [2, 2] };
+        const p = ind?.extendData?.plots?.[key];
+        if (!p) return { ...base, color: d.current?.up ? "#00ff00" : "#ff0000", size: 2 };
+        if (p.visible === false) return { ...base, color: "rgba(0,0,0,0)", size: 1 };
+        return { ...base, color: p.color, size: p.width || 2 };
+      },
+    },
+  ],
   calc: (dataList, indicator) => {
-    const n = indicator.calcParams[0];
-    const half = Math.round(n / 2), sq = Math.round(Math.sqrt(n));
+    const [mode, period, lmult] = indicator.calcParams;
+    const len = Math.max(2, Math.round(period * lmult));
     const closes = dataList.map(d => d.close);
-    const diff = closes.map((_, i) => {
-      const wH = wmaAt(closes, half, i), wF = wmaAt(closes, n, i);
-      return (wH != null && wF != null) ? 2 * wH - wF : null;
-    });
-    const hull = diff.map((_, i) => wmaAt(diff, sq, i));
+
+    let hull;
+    if (mode === "EHMA") {
+      const half = Math.round(len / 2), sq = Math.round(Math.sqrt(len));
+      const e1 = emaSeries(closes, half);
+      const e2 = emaSeries(closes, len);
+      const diff = e1.map((v, i) => v != null && e2[i] != null ? 2 * v - e2[i] : null);
+      hull = emaSeries(diff, sq);
+    } else if (mode === "THMA") {
+      const l3 = Math.round(len / 3), l2 = Math.round(len / 2);
+      const w1 = wmaSeries(closes, l3);
+      const w2 = wmaSeries(closes, l2);
+      const w3 = wmaSeries(closes, len);
+      const diff = w1.map((v, i) => v != null && w2[i] != null && w3[i] != null ? 3*v - w2[i] - w3[i] : null);
+      hull = wmaSeries(diff, Math.round(len / 2));
+    } else {
+      // HMA (default)
+      const half = Math.round(len / 2), sq = Math.round(Math.sqrt(len));
+      const w1 = wmaSeries(closes, half);
+      const w2 = wmaSeries(closes, len);
+      const diff = w1.map((v, i) => v != null && w2[i] != null ? 2*v - w2[i] : null);
+      hull = wmaSeries(diff, sq);
+    }
     return dataList.map((_, i) => ({
-      hull: hull[i] ?? undefined,
-      up: hull[i] != null && hull[i - 2] != null ? hull[i] > hull[i - 2] : true,
+      hull:    hull[i]    ?? undefined,
+      hullLag: hull[i-2]  ?? undefined,
+      up: hull[i] != null && hull[i-2] != null ? hull[i] > hull[i-2] : true,
     }));
+  },
+  draw: ({ ctx, kLineDataList, visibleRange, indicator, xAxis, yAxis }) => {
+    const result = indicator.result;
+    if (!result || result.length === 0) return false;
+    const plots = indicator?.extendData?.plots || {};
+    const fillPlot = plots.band;
+    if (!fillPlot || fillPlot.visible === false) return false;
+    const { from, to } = visibleRange;
+    ctx.save();
+    for (let i = Math.max(1, from); i < to; i++) {
+      const cur = result[i], prev = result[i - 1];
+      if (!cur || !prev || cur.hull == null || cur.hullLag == null) continue;
+      const x0 = xAxis.convertToPixel(i - 1), x1 = xAxis.convertToPixel(i);
+      ctx.beginPath();
+      ctx.moveTo(x0, yAxis.convertToPixel(prev.hull));
+      ctx.lineTo(x1, yAxis.convertToPixel(cur.hull));
+      ctx.lineTo(x1, yAxis.convertToPixel(cur.hullLag));
+      ctx.lineTo(x0, yAxis.convertToPixel(prev.hullLag));
+      ctx.closePath();
+      ctx.fillStyle = fillPlot.color || "rgba(128,128,128,0.3)";
+      ctx.fill();
+    }
+    ctx.restore();
+    return false;
   },
 });
 
@@ -407,5 +592,189 @@ function cmpStyle(indicator, idx) {
   if (!a) return { ...base, color: "rgba(0,0,0,0)" };
   return { ...base, color: a.color };
 }
+
+// ---------- BOLLINGER BANDS (erweitert: MA-Typ, Offset, Fill) ----------
+klinecharts.registerIndicator({
+  name: "BOLL",
+  shortName: "BOLL",
+  precision: 2,
+  calcParams: [20, 2.0, "SMA", 0],
+  figures: [
+    { key: "up",  title: "Upper: ", type: "line", styles: (d, ind) => plotStyle(ind, "up",  "rgba(122,143,168,0.6)", 1) },
+    { key: "mid", title: "Basis: ", type: "line", styles: (d, ind) => plotStyle(ind, "mid", "rgba(122,143,168,0.8)", 1) },
+    { key: "dn",  title: "Lower: ", type: "line", styles: (d, ind) => plotStyle(ind, "dn",  "rgba(122,143,168,0.6)", 1) },
+  ],
+  calc: (dataList, indicator) => {
+    const [period, stddev, maType, offset] = indicator.calcParams;
+    const closes = dataList.map(d => d.close);
+    const basis = maByType(closes, period, maType || "SMA", dataList);
+    return dataList.map((_, i) => {
+      const b = basis[i];
+      if (b == null) return {};
+      let variance = 0, n = 0;
+      for (let j = i - period + 1; j <= i; j++) {
+        if (j >= 0 && closes[j] != null) { variance += Math.pow(closes[j] - b, 2); n++; }
+      }
+      if (n < period) return {};
+      const sd = Math.sqrt(variance / n);
+      const oi = Math.min(i + (offset || 0), dataList.length - 1);
+      if (oi < 0 || oi >= dataList.length) return {};
+      return { up: b + stddev * sd, mid: b, dn: b - stddev * sd };
+    });
+  },
+  draw: ({ ctx, kLineDataList, visibleRange, indicator, xAxis, yAxis }) => {
+    const result = indicator.result;
+    if (!result || result.length === 0) return false;
+    const plots = indicator?.extendData?.plots || {};
+    const fillPlot = plots.fill;
+    if (!fillPlot || fillPlot.visible === false) return false;
+    const { from, to } = visibleRange;
+    ctx.save();
+    for (let i = Math.max(1, from); i < to; i++) {
+      const cur = result[i], prev = result[i - 1];
+      if (!cur || !prev || cur.up == null || cur.dn == null) continue;
+      const x0 = xAxis.convertToPixel(i - 1), x1 = xAxis.convertToPixel(i);
+      ctx.beginPath();
+      ctx.moveTo(x0, yAxis.convertToPixel(prev.up));
+      ctx.lineTo(x1, yAxis.convertToPixel(cur.up));
+      ctx.lineTo(x1, yAxis.convertToPixel(cur.dn));
+      ctx.lineTo(x0, yAxis.convertToPixel(prev.dn));
+      ctx.closePath();
+      ctx.fillStyle = fillPlot.color || "rgba(122,143,168,0.08)";
+      ctx.fill();
+    }
+    ctx.restore();
+    return false;
+  },
+});
+
+// ---------- MYRSI (RSI mit Hilfslinien 30/50/70) ----------
+klinecharts.registerIndicator({
+  name: "MYRSI",
+  shortName: "RSI",
+  precision: 2,
+  calcParams: [14],
+  figures: [
+    { key: "band70", title: "", type: "line", styles: () => ({ style: "dashed", color: "rgba(120,123,134,0.7)", size: 1, smooth: false, dashedValue: [4, 4] }) },
+    { key: "band50", title: "", type: "line", styles: () => ({ style: "dashed", color: "rgba(120,123,134,0.35)", size: 1, smooth: false, dashedValue: [4, 4] }) },
+    { key: "band30", title: "", type: "line", styles: () => ({ style: "dashed", color: "rgba(120,123,134,0.7)", size: 1, smooth: false, dashedValue: [4, 4] }) },
+    { key: "line", title: "RSI: ", type: "line", styles: (d, ind) => plotStyle(ind, "line", "#c792ea", 2) },
+  ],
+  calc: (dataList, indicator) => {
+    const period = indicator.calcParams[0];
+    const closes = dataList.map(d => d.close);
+    if (closes.length <= period) return dataList.map(() => ({}));
+    let ag = 0, al = 0;
+    for (let i = 1; i <= period; i++) {
+      const ch = closes[i] - closes[i-1];
+      if (ch >= 0) ag += ch; else al -= ch;
+    }
+    ag /= period; al /= period;
+    const rsi = new Array(closes.length).fill(null);
+    rsi[period] = al === 0 ? 100 : 100 - 100/(1 + ag/al);
+    for (let i = period + 1; i < closes.length; i++) {
+      const ch = closes[i] - closes[i-1];
+      ag = (ag*(period-1) + Math.max(ch, 0)) / period;
+      al = (al*(period-1) + Math.max(-ch, 0)) / period;
+      rsi[i] = al === 0 ? 100 : 100 - 100/(1 + ag/al);
+    }
+    return dataList.map((_, i) => ({
+      band70: 70, band50: 50, band30: 30,
+      line: rsi[i] ?? undefined,
+    }));
+  },
+});
+
+// ---------- MYVOL (Volumen mit konfigurierbaren MAs) ----------
+klinecharts.registerIndicator({
+  name: "MYVOL",
+  shortName: "VOL",
+  precision: 0,
+  shouldOhlc: false,
+  calcParams: [5, 10, 20],
+  figures: [
+    { key: "vol",  title: "VOL: ", type: "bar",
+      styles: (d, ind) => {
+        const isUp = d.current?.isUp;
+        const key  = isUp ? "up" : "dn";
+        return plotStyle(ind, key, isUp ? "rgba(63,182,139,0.65)" : "rgba(208,94,94,0.65)", 1);
+      }
+    },
+    { key: "ma1", title: "MA1: ", type: "line", styles: (d, ind) => plotStyle(ind, "ma1", "#e8b64c", 1) },
+    { key: "ma2", title: "MA2: ", type: "line", styles: (d, ind) => plotStyle(ind, "ma2", "#5aa9e6", 1) },
+    { key: "ma3", title: "MA3: ", type: "line", styles: (d, ind) => plotStyle(ind, "ma3", "#c792ea", 1) },
+  ],
+  calc: (dataList, indicator) => {
+    const [p1, p2, p3] = indicator.calcParams;
+    const vols = dataList.map(d => d.volume || 0);
+    const ma1s = smaSeries2(vols, p1), ma2s = smaSeries2(vols, p2), ma3s = smaSeries2(vols, p3);
+    return dataList.map((d, i) => ({
+      vol:  d.volume || 0,
+      ma1:  ma1s[i] ?? undefined,
+      ma2:  ma2s[i] ?? undefined,
+      ma3:  ma3s[i] ?? undefined,
+      isUp: d.close >= d.open,
+    }));
+  },
+});
+
+// ---------- MACD ----------
+klinecharts.registerIndicator({
+  name: "MACD",
+  shortName: "MACD",
+  precision: 2,
+  calcParams: [12, 26, 9, "EMA", "EMA"],
+  figures: [
+    { key: "histPos", title: "", type: "bar",
+      styles: (d) => {
+        const h = d.current?.hist, hp = d.prev?.hist;
+        const rising = h != null && hp != null ? h > hp : true;
+        return { style: "solid", color: rising ? "#26a69a" : "#b2dfdb", dashedValue: [2,2], smooth: false, size: 1 };
+      }
+    },
+    { key: "histNeg", title: "", type: "bar",
+      styles: (d) => {
+        const h = d.current?.hist, hp = d.prev?.hist;
+        const rising = h != null && hp != null ? h > hp : false;
+        return { style: "solid", color: rising ? "#ffcdd2" : "#ff5252", dashedValue: [2,2], smooth: false, size: 1 };
+      }
+    },
+    { key: "macd",   title: "MACD: ",   type: "line", styles: (d, ind) => plotStyle(ind, "macd",   "#2962ff", 2) },
+    { key: "signal", title: "Signal: ", type: "line", styles: (d, ind) => plotStyle(ind, "signal", "#ff6d00", 2) },
+  ],
+  calc: (dataList, indicator) => {
+    const [fast, slow, sigLen, oscType, sigType] = indicator.calcParams;
+    const closes = dataList.map(d => d.close);
+    const maFast = maByType(closes, fast, oscType || "EMA");
+    const maSlow = maByType(closes, slow, oscType || "EMA");
+    const macdLine = maFast.map((v, i) => v != null && maSlow[i] != null ? v - maSlow[i] : null);
+    const signalLine = maByType(macdLine, sigLen, sigType || "EMA");
+    const hist = macdLine.map((v, i) => v != null && signalLine[i] != null ? v - signalLine[i] : null);
+    return dataList.map((_, i) => ({
+      hist:    hist[i]      ?? undefined,
+      histPos: (hist[i] != null && hist[i] >= 0) ? hist[i] : undefined,
+      histNeg: (hist[i] != null && hist[i] <  0) ? hist[i] : undefined,
+      macd:    macdLine[i]  ?? undefined,
+      signal:  signalLine[i] ?? undefined,
+    }));
+  },
+});
+
+// ---------- ATR ----------
+klinecharts.registerIndicator({
+  name: "ATR",
+  shortName: "ATR",
+  precision: 2,
+  calcParams: [14, "RMA"],
+  figures: [
+    { key: "atr", title: "ATR: ", type: "line", styles: (d, ind) => plotStyle(ind, "atr", "#b71c1c", 2) },
+  ],
+  calc: (dataList, indicator) => {
+    const [period, smoothing] = indicator.calcParams;
+    const tr = trSeries(dataList);
+    const atr = maByType(tr, period, smoothing || "RMA");
+    return dataList.map((_, i) => ({ atr: atr[i] ?? undefined }));
+  },
+});
 
 })();

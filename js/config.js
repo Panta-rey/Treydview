@@ -50,6 +50,7 @@ const CONFIG = {
         { key: "main",  label: "Main EMA",   color: "#ffffff", opacity: 100, width: 3, visible: true },
         { key: "upper", label: "Upper Band", color: "#969696", opacity: 50,  width: 1, visible: true },
         { key: "lower", label: "Lower Band", color: "#969696", opacity: 50,  width: 1, visible: true },
+        { key: "fill",  label: "Band-Fill",  color: "#969696", opacity: 10,  width: 1, visible: false, noWidth: true },
       ],
     },
     {
@@ -58,6 +59,7 @@ const CONFIG = {
       plots: [
         { key: "sma20", label: "20 SMA", color: "#3fb68b", opacity: 100, width: 2, visible: true },
         { key: "ema21", label: "21 EMA", color: "#d05e5e", opacity: 100, width: 2, visible: true },
+        { key: "fill",  label: "Band-Fill", color: "#3fb68b", opacity: 20,  width: 1, visible: false, noWidth: true },
       ],
     },
     {
@@ -76,13 +78,16 @@ const CONFIG = {
     {
       key: "boll", name: "BOLL", pane: "main", label: "Bollinger",
       inputs: [
-        { key: "period", label: "Periode", default: 20 },
-        { key: "stddev", label: "StdDev",  default: 2  },
+        { key: "period", label: "Length",  default: 20 },
+        { key: "stddev", label: "StdDev",  default: 2.0, step: 0.1 },
+        { key: "maType", label: "MA-Typ",  default: "SMA", type: "select", options: ["SMA","EMA","SMMA","WMA","VWMA"] },
+        { key: "offset", label: "Offset",  default: 0 },
       ],
       plots: [
-        { key: "up",  label: "Oberes Band",  color: "#7a8fa8", opacity: 60, width: 1, visible: true },
-        { key: "mid", label: "Mittellinie",  color: "#7a8fa8", opacity: 80, width: 1, visible: true },
-        { key: "dn",  label: "Unteres Band", color: "#7a8fa8", opacity: 60, width: 1, visible: true },
+        { key: "up",   label: "Oberes Band",  color: "#7a8fa8", opacity: 60, width: 1, visible: true },
+        { key: "mid",  label: "Basis (MA)",   color: "#7a8fa8", opacity: 80, width: 1, visible: true },
+        { key: "dn",   label: "Unteres Band", color: "#7a8fa8", opacity: 60, width: 1, visible: true },
+        { key: "fill", label: "Band-Fill",    color: "#7a8fa8", opacity: 10, width: 1, visible: true, noWidth: true },
       ],
     },
     {
@@ -102,11 +107,14 @@ const CONFIG = {
     {
       key: "hull", name: "HULL", pane: "main", label: "Hull Suite",
       inputs: [
-        { key: "period", label: "Periode", default: 55 },
+        { key: "mode",       label: "Variation",         default: "HMA",  type: "select", options: ["HMA","EHMA","THMA"] },
+        { key: "period",     label: "Length",             default: 55 },
+        { key: "lengthMult", label: "Length Multiplier", default: 1.0, step: 0.1 },
       ],
       plots: [
-        { key: "up",   label: "Trend aufwärts", color: "#3fb68b", opacity: 100, width: 2, visible: true, noVisible: true },
-        { key: "down", label: "Trend abwärts",  color: "#d05e5e", opacity: 100, width: 2, visible: true, noVisible: true, noWidth: true },
+        { key: "up",   label: "Trend aufwärts", color: "#00ff00", opacity: 80, width: 2, visible: true, noVisible: true },
+        { key: "down", label: "Trend abwärts",  color: "#ff0000", opacity: 80, width: 2, visible: true, noVisible: true, noWidth: true },
+        { key: "band", label: "Band-Fill",       color: "#888888", opacity: 40, width: 1, visible: true, noWidth: true },
       ],
     },
     {
@@ -156,6 +164,32 @@ const CONFIG = {
     {
       key: "vol", name: "VOL", pane: "sub", label: "Volumen",
       inputs: [], plots: [],
+    },
+    {
+      key: "macd", name: "MACD", pane: "sub", label: "MACD",
+      inputs: [
+        { key: "fast",    label: "Fast Length",   default: 12 },
+        { key: "slow",    label: "Slow Length",   default: 26 },
+        { key: "signal",  label: "Signal Length", default: 9  },
+        { key: "oscType", label: "Oscillator MA", default: "EMA", type: "select", options: ["EMA","SMA"] },
+        { key: "sigType", label: "Signal MA",     default: "EMA", type: "select", options: ["EMA","SMA"] },
+      ],
+      plots: [
+        { key: "macd",   label: "MACD-Linie",   color: "#2962ff", opacity: 100, width: 2, visible: true },
+        { key: "signal", label: "Signal-Linie",  color: "#ff6d00", opacity: 100, width: 2, visible: true },
+        { key: "histUp", label: "Hist. steigend (pos)", color: "#26a69a", opacity: 100, width: 1, visible: true, noWidth: true },
+        { key: "histDn", label: "Hist. fallend (neg)",  color: "#ff5252", opacity: 100, width: 1, visible: true, noWidth: true },
+      ],
+    },
+    {
+      key: "atr", name: "ATR", pane: "sub", label: "ATR",
+      inputs: [
+        { key: "period",    label: "Length",    default: 14 },
+        { key: "smoothing", label: "Smoothing", default: "RMA", type: "select", options: ["RMA","SMA","EMA","WMA"] },
+      ],
+      plots: [
+        { key: "atr", label: "ATR-Linie", color: "#b71c1c", opacity: 100, width: 2, visible: true },
+      ],
     },
   ],
 

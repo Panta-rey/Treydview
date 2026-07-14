@@ -84,12 +84,24 @@ const Settings = {
       row.className = "settings-row";
       const label = document.createElement("label");
       label.textContent = inp.label;
-      const input = document.createElement("input");
-      input.type = "number";
-      input.className = "settings-input";
+      let input;
+      if (inp.type === "select") {
+        input = document.createElement("select");
+        input.className = "settings-input";
+        (inp.options || []).forEach(opt => {
+          const o = document.createElement("option");
+          o.value = opt; o.textContent = opt;
+          if (opt === current.inputs[inp.key]) o.selected = true;
+          input.appendChild(o);
+        });
+      } else {
+        input = document.createElement("input");
+        input.type = "number";
+        input.className = "settings-input";
+        input.value = current.inputs[inp.key];
+        if (inp.step) input.step = inp.step;
+      }
       input.id = "sin_" + inp.key;
-      input.value = current.inputs[inp.key];
-      if (inp.step) input.step = inp.step;
       row.appendChild(label);
       row.appendChild(input);
       pageInputs.appendChild(row);
@@ -172,7 +184,7 @@ const Settings = {
       const saved = { inputs: {}, plots: {} };
       (ind.inputs || []).forEach(inp => {
         const el = document.getElementById("sin_" + inp.key);
-        saved.inputs[inp.key] = parseFloat(el.value);
+        saved.inputs[inp.key] = (inp.type === "select") ? el.value : parseFloat(el.value);
       });
       (ind.plots || []).forEach(p => {
         const visEl = document.getElementById("spv_" + p.key);

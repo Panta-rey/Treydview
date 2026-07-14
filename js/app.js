@@ -110,36 +110,30 @@ chart.setStyles(baseStyles());
 
 // ---------- Indikator-Params bauen ----------
 function buildCreate(ind) {
-  const sv = Settings.get(ind.key);
+  const sv  = Settings.get(ind.key);
   const inp = sv.inputs;
   const create = { name: ind.name, extendData: { plots: sv.plots } };
   switch (ind.key) {
-    case "ema":     create.calcParams = [inp.p1||21, inp.p2||100, inp.p3||200]; break;
-    case "boll":    create.calcParams = [inp.period||20, inp.stddev||2]; break;
-    case "gc":      create.calcParams = [inp.period||144, inp.mult||1.414, inp.poles||4]; break;
-    case "hull":    create.calcParams = [inp.period||55]; break;
-    case "rvwap":   create.calcParams = [inp.days||365]; break;
-    case "mnoodle": create.calcParams = [inp.fastPeriod||12, inp.medPeriod||21, inp.slowPeriod||35, inp.atrLength||20, inp.bandMult||0.0125]; break;
-    case "bmsb":    create.calcParams = [20, 21]; break;
-    case "rsi":     create.calcParams = [inp.period||14]; break;
+    case "ema":      create.calcParams = [inp.p1||21, inp.p2||100, inp.p3||200]; break;
+    case "boll":     create.calcParams = [inp.period||20, inp.stddev||2.0, inp.maType||"SMA", inp.offset||0]; break;
+    case "gc":       create.calcParams = [inp.period||144, inp.mult||1.414, inp.poles||4]; break;
+    case "hull":     create.calcParams = [inp.mode||"HMA", inp.period||55, inp.lengthMult||1.0]; break;
+    case "rvwap":    create.calcParams = [inp.days||365]; break;
+    case "mnoodle":  create.calcParams = [inp.fastPeriod||12, inp.medPeriod||21, inp.slowPeriod||35, inp.atrLength||20, inp.bandMult||0.0125]; break;
+    case "bmsb":     create.calcParams = [20, 21]; break;
+    case "myrsi":    create.calcParams = [inp.period||14]; break;
     case "stochrsi": create.calcParams = [inp.smoothK||3, inp.smoothD||3, inp.lengthRSI||14, inp.lengthStoch||14]; break;
-    default:        if (ind.calcParams) create.calcParams = ind.calcParams;
+    case "myvol":    create.calcParams = [inp.ma1||5, inp.ma2||10, inp.ma3||20]; break;
+    case "macd":     create.calcParams = [inp.fast||12, inp.slow||26, inp.signal||9, inp.oscType||"EMA", inp.sigType||"EMA"]; break;
+    case "atr":      create.calcParams = [inp.period||14, inp.smoothing||"RMA"]; break;
+    default:         if (ind.calcParams) create.calcParams = ind.calcParams;
   }
-  // Built-in-Indikatoren (EMA, BOLL, RSI): Linien-Styles direkt übergeben
+  // Built-in EMA: Linienstyles übergeben
   const lineStyle = (p) => p
-    ? { 
-        style: "solid", 
-        dashedValue: [2, 2], // Dummy-Wert für internen Merge
-        color: p.visible === false ? "rgba(0,0,0,0)" : p.color, 
-        size: p.width || 1 
-      }
+    ? { style: "solid", dashedValue: [2, 2], color: p.visible === false ? "rgba(0,0,0,0)" : p.color, size: p.width || 1 }
     : undefined;
   if (ind.key === "ema") {
     create.styles = { lines: [lineStyle(sv.plots.e1), lineStyle(sv.plots.e2), lineStyle(sv.plots.e3)].filter(Boolean) };
-  } else if (ind.key === "boll") {
-    create.styles = { lines: [lineStyle(sv.plots.up), lineStyle(sv.plots.mid), lineStyle(sv.plots.dn)].filter(Boolean) };
-  } else if (ind.key === "rsi") {
-    create.styles = { lines: [lineStyle(sv.plots.line)].filter(Boolean) };
   }
   return create;
 }
@@ -187,11 +181,23 @@ function ensureVrvpCanvas() {
 // VRVP-Meta aus dem Indikator-Ergebnis holen (via direktem calc-Aufruf)
 function computeVrvpMeta() {
   if (!state.active.has("vrvp")) { state.vrvpMeta = null; return; }
-  const data = chart.getDataList();
-  if (!data || data.length < 2) { state.vrvpMeta = null; return; }
+  const allData = chart.getDataList();
+  if (!allData || allData.length < 2) { state.vrvpMeta = null; return; }
   const sv = Settings.get("vrvp");
-  // VRVP-Berechnung direkt (gleiche Logik wie im Indikator)
   const rows = sv.inputs.rows || 500, vaPct = sv.inputs.valueArea || 70;
+
+  // Nur sichtbare Kerzen aggregieren (reaktiv bei Scroll/Zoom)
+  let fromIdx = 0, toIdx = allData.length - 1;
+  try {
+    const vr = chart.getVisibleRange();
+    if (vr) {
+      fromIdx = Math.max(0, vr.realFrom != null ? vr.realFrom : vr.from);
+      toIdx   = Math.min(allData.length - 1, vr.realTo != null ? vr.realTo : vr.to);
+    }
+  } catch (e) {}
+  const data = allData.slice(fromIdx, toIdx + 1);
+  if (data.length < 2) { state.vrvpMeta = null; return; }
+
   const prices = data.flatMap(d => [d.high, d.low]);
   const pMin = Math.min(...prices), pMax = Math.max(...prices);
   const rowH = (pMax - pMin) / rows;
@@ -199,7 +205,7 @@ function computeVrvpMeta() {
   const upVol = new Float64Array(rows), downVol = new Float64Array(rows);
   for (const d of data) {
     const vol = d.volume || 0, isUp = d.close >= d.open;
-    const rLow = Math.max(0, Math.floor((d.low - pMin) / rowH));
+    const rLow  = Math.max(0, Math.floor((d.low  - pMin) / rowH));
     const rHigh = Math.min(rows - 1, Math.floor((d.high - pMin) / rowH));
     const n = rHigh - rLow + 1;
     for (let r = rLow; r <= rHigh; r++) {
@@ -207,20 +213,11 @@ function computeVrvpMeta() {
     }
   }
   const totalVol = upVol.map((u, i) => u + downVol[i]);
-  const pocRow = totalVol.indexOf(Math.max(...totalVol));
-  const pocPrice = pMin + (pocRow + 0.5) * rowH;
-  const totalAll = totalVol.reduce((s, v) => s + v, 0);
-  const vaTarget = totalAll * (vaPct / 100);
-  let vaVol = totalVol[pocRow], vaLow = pocRow, vaHigh = pocRow;
-  while (vaVol < vaTarget && (vaLow > 0 || vaHigh < rows - 1)) {
-    const aH = vaHigh < rows-1 ? totalVol[vaHigh+1] : 0;
-    const aL = vaLow > 0 ? totalVol[vaLow-1] : 0;
-    if (aH >= aL) { vaHigh++; vaVol += aH; } else { vaLow--; vaVol += aL; }
-  }
+  const pocRow   = totalVol.indexOf(Math.max(...totalVol));
   state.vrvpMeta = {
     rows, pMin, pMax, rowH, upVol, downVol, totalVol,
     maxVol: Math.max(...totalVol.filter(v => v > 0)),
-    pocPrice, vahPrice: pMin + (vaHigh + 1) * rowH, valPrice: pMin + vaLow * rowH,
+    pocPrice: pMin + (pocRow + 0.5) * rowH,
   };
 }
 
@@ -261,12 +258,12 @@ function drawVrvp() {
 
   // Abstand zur Preisachse: Balken enden mit grösserem Gap, damit die
   // Preisskala frei bleibt und nichts überlappt.
-  const rightGap = 96;             // px Abstand zur Preisskala (Punkt 4)
+  const rightGap = 96;
   const rightEdge = w - rightGap;
   const maxBarW = w * widthPct;
 
   for (let r = 0; r < rows; r++) {
-    const pb = pMin + r * rowH, pt = pb + rowH, pm = (pb + pt) / 2;
+    const pb = pMin + r * rowH, pt = pb + rowH;
     const cb = chart.convertToPixel({ value: pb }, { paneId: "candle_pane", absolute: true });
     const ct = chart.convertToPixel({ value: pt }, { paneId: "candle_pane", absolute: true });
     if (!cb || !ct || cb.y == null || ct.y == null) continue;
@@ -274,23 +271,16 @@ function drawVrvp() {
     const tot = totalVol[r];
     if (tot === 0) continue;
     const barW = (tot / maxVol) * maxBarW;
-    const upW = (upVol[r] / maxVol) * maxBarW;
+    const upW  = (upVol[r]   / maxVol) * maxBarW;
     const downW = (downVol[r] / maxVol) * maxBarW;
-    const inVA = pm >= valPrice && pm <= vahPrice;
-    const isPoc = Math.abs(pm - pocPrice) < rowH;
-    // Balken wachsen vom rightEdge nach links
+    // Down-Balken (von rechts)
     ctx.fillStyle = (sv.plots.down && sv.plots.down.visible !== false) ? sv.plots.down.color : "rgba(0,0,0,0)";
     ctx.fillRect(rightEdge - downW, yTop, downW, yH);
+    // Up-Balken (links daneben)
     ctx.fillStyle = (sv.plots.up && sv.plots.up.visible !== false) ? sv.plots.up.color : "rgba(0,0,0,0)";
     ctx.fillRect(rightEdge - barW, yTop, upW, yH);
-    if (inVA && sv.plots.va && sv.plots.va.visible !== false) { ctx.fillStyle = sv.plots.va.color; ctx.fillRect(rightEdge - barW, yTop, barW, yH); }
-    if (isPoc) {
-      ctx.strokeStyle = "rgba(232,182,76,0.8)"; ctx.lineWidth = 1.5; ctx.setLineDash([4,3]);
-      ctx.beginPath(); ctx.moveTo(0, yTop + yH/2); ctx.lineTo(rightEdge - barW, yTop + yH/2); ctx.stroke();
-      ctx.setLineDash([]);
-    }
   }
-  ctx.restore(); // Clip-Region aufheben
+  ctx.restore();
 }
 
 // VRVP bei Zoom/Scroll neu zeichnen
@@ -1130,6 +1120,43 @@ function resize() {
   }
 }
 new ResizeObserver(resize).observe(document.querySelector(".workspace"));
+
+// ---------- Touch-Support (Mobile) ----------
+// KLineCharts hat eingeschränkten Touch-Support. Wir ergänzen:
+// - Pinch-to-Zoom (zwei Finger) via touchstart/touchmove
+// - Einzel-Finger-Pan ist bereits in KLC eingebaut
+(function initTouch() {
+  const el = document.getElementById("mainChart");
+  let lastDist = null;
+
+  el.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      lastDist = Math.sqrt(dx*dx + dy*dy);
+    } else {
+      lastDist = null;
+    }
+  }, { passive: true });
+
+  el.addEventListener("touchmove", (e) => {
+    if (e.touches.length === 2 && lastDist != null) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const scale = dist / lastDist;
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const rect = el.getBoundingClientRect();
+      try {
+        chart.zoomAtCoordinate(scale, { x: midX - rect.left, y: 0 }, 0);
+      } catch (_) {}
+      lastDist = dist;
+    }
+  }, { passive: false });
+
+  el.addEventListener("touchend", () => { lastDist = null; }, { passive: true });
+})();
 
 // ---------- Workspace speichern ----------
 function saveWorkspace() {
