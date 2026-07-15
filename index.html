@@ -74,6 +74,8 @@
 
   <!-- Aktions-Buttons rechts -->
   <div class="topbar-actions">
+    <button class="action-btn" id="replayStartBtn" title="Bar Replay starten">⏱</button>
+    <button class="action-btn" id="wlToggleBtn" title="Watchlist ein-/ausblenden">☰</button>
     <button class="action-btn" id="autoZoomBtn" title="Auto-Zoom auf sichtbaren Bereich">⤢</button>
     <button class="action-btn" id="screenshotBtn" title="Screenshot speichern">📷</button>
   </div>
@@ -104,8 +106,40 @@
     <!-- Haupt-Chart (RSI/VOL laufen als synchronisierte Panes darin) -->
     <div id="mainChart" class="main-chart"></div>
 
+    <!-- Bar Replay-Leiste -->
+    <div class="replay-bar hidden" id="replayBar">
+      <button class="replay-btn" id="replayStepBack" title="Eine Kerze zurück">⏮</button>
+      <button class="replay-btn replay-play" id="replayPlay" title="Play/Pause">▶</button>
+      <button class="replay-btn" id="replayStepFwd" title="Eine Kerze vor">⏭</button>
+      <div class="replay-speed">
+        <label>Tempo</label>
+        <select id="replaySpeed">
+          <option value="1000">0.5×</option>
+          <option value="500" selected>1×</option>
+          <option value="250">2×</option>
+          <option value="100">5×</option>
+          <option value="40">10×</option>
+        </select>
+      </div>
+      <div class="replay-pos" id="replayPos">–</div>
+      <button class="replay-btn replay-exit" id="replayExit" title="Replay beenden">✕ Beenden</button>
+    </div>
+
     <div class="statusline" id="statusline">Lade …</div>
   </div>
+
+  <!-- Watchlist -->
+  <aside class="watchlist" id="watchlist">
+    <div class="wl-header">
+      <span class="wl-title">Watchlist</span>
+      <button class="wl-add" id="wlAddBtn" title="Symbol hinzufügen">+</button>
+    </div>
+    <div class="wl-search hidden" id="wlSearchBox">
+      <input type="text" id="wlSearch" placeholder="Symbol suchen…" autocomplete="off">
+      <div class="wl-results" id="wlResults"></div>
+    </div>
+    <div class="wl-list" id="wlList"></div>
+  </aside>
 </div>
 
 <!-- Indikator-Einstellungs-Panel -->

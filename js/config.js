@@ -25,7 +25,9 @@ const CONFIG = {
     { id: "1M",  label: "1M",  binanceInterval: "1M"  },
   ],
 
-  CANDLE_LIMIT: 1000,
+  CANDLE_LIMIT: 5000,        // per Pagination (Binance max 1000/Request)
+  LAZY_LOAD_CHUNK: 1000,     // Nachladen beim Zurückscrollen
+  WATCHLIST_DEFAULT: ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
 
   // ------------------------------------------------------------
   // Indikator-Registry mit zweistufigem Settings-Schema:
@@ -78,16 +80,18 @@ const CONFIG = {
       ],
     },
     {
-      key: "ema", name: "EMA", pane: "main", label: "EMA 21 / 100 / 200",
+      key: "ema", name: "EMA", pane: "main", label: "EMA 21 / 50 / 100 / 200",
       inputs: [
         { key: "p1", label: "Periode 1", default: 21  },
-        { key: "p2", label: "Periode 2", default: 100 },
-        { key: "p3", label: "Periode 3", default: 200 },
+        { key: "p2", label: "Periode 2", default: 50  },
+        { key: "p3", label: "Periode 3", default: 100 },
+        { key: "p4", label: "Periode 4", default: 200 },
       ],
       plots: [
-        { key: "e1", label: "EMA 1", color: "#5aa9e6", opacity: 100, width: 1, visible: true },
-        { key: "e2", label: "EMA 2", color: "#e8b64c", opacity: 100, width: 1, visible: true },
-        { key: "e3", label: "EMA 3", color: "#c792ea", opacity: 100, width: 2, visible: true },
+        { key: "e1", label: "EMA 21",  color: "#5aa9e6", opacity: 100, width: 1, visible: true },
+        { key: "e2", label: "EMA 50",  color: "#e8b64c", opacity: 100, width: 1, visible: true },
+        { key: "e3", label: "EMA 100", color: "#c792ea", opacity: 100, width: 1, visible: true },
+        { key: "e4", label: "EMA 200", color: "#3fb68b", opacity: 100, width: 2, visible: true },
       ],
     },
     {
@@ -155,12 +159,24 @@ const CONFIG = {
       ],
     },
     {
-      key: "myrsi", name: "RSI", pane: "sub", label: "RSI 14",
+      key: "myrsi", name: "MYRSI", pane: "sub", label: "RSI",
       inputs: [
-        { key: "period", label: "Periode", default: 14 },
+        { key: "period",   label: "RSI Length", default: 14 },
+        { key: "maType",   label: "Smoothing",  default: "None", type: "select", options: ["None","SMA","SMA + BB","EMA","SMMA","WMA","VWMA"] },
+        { key: "maLength", label: "MA Length",  default: 14 },
+        { key: "bbMult",   label: "BB StdDev",  default: 2.0, step: 0.5 },
       ],
       plots: [
-        { key: "line", label: "RSI-Linie", color: "#c792ea", opacity: 100, width: 2, visible: true },
+        { key: "line",    label: "RSI-Linie",   color: "#7e57c2", opacity: 100, width: 2, visible: true },
+        { key: "band70",  label: "Linie 70",    color: "#787b86", opacity: 70,  width: 1, visible: true },
+        { key: "band50",  label: "Linie 50",    color: "#787b86", opacity: 40,  width: 1, visible: true },
+        { key: "band30",  label: "Linie 30",    color: "#787b86", opacity: 70,  width: 1, visible: true },
+        { key: "bgFill",  label: "Fill 30–70",  color: "#7e57c2", opacity: 8,   width: 1, visible: true, noWidth: true },
+        { key: "obFill",  label: "Overbought",  color: "#3fb68b", opacity: 25,  width: 1, visible: true, noWidth: true },
+        { key: "osFill",  label: "Oversold",    color: "#d05e5e", opacity: 25,  width: 1, visible: true, noWidth: true },
+        { key: "maLine",  label: "RSI-MA",      color: "#e8b64c", opacity: 100, width: 1, visible: true },
+        { key: "bbUpper", label: "BB Oben",     color: "#3fb68b", opacity: 80,  width: 1, visible: true },
+        { key: "bbLower", label: "BB Unten",    color: "#3fb68b", opacity: 80,  width: 1, visible: true },
       ],
     },
     {
@@ -177,8 +193,19 @@ const CONFIG = {
       ],
     },
     {
-      key: "myvol", name: "VOL", pane: "sub", label: "Volumen",
-      inputs: [], plots: [],
+      key: "myvol", name: "MYVOL", pane: "sub", label: "Volumen",
+      inputs: [
+        { key: "ma1", label: "MA 1 Länge", default: 5  },
+        { key: "ma2", label: "MA 2 Länge", default: 10 },
+        { key: "ma3", label: "MA 3 Länge", default: 20 },
+      ],
+      plots: [
+        { key: "up",  label: "Up-Balken",   color: "#3fb68b", opacity: 65,  width: 1, visible: true, noWidth: true },
+        { key: "dn",  label: "Down-Balken", color: "#d05e5e", opacity: 65,  width: 1, visible: true, noWidth: true },
+        { key: "ma1", label: "MA 1",        color: "#e8b64c", opacity: 100, width: 1, visible: true },
+        { key: "ma2", label: "MA 2",        color: "#5aa9e6", opacity: 100, width: 1, visible: true },
+        { key: "ma3", label: "MA 3",        color: "#c792ea", opacity: 100, width: 1, visible: true },
+      ],
     },
     {
       key: "macd", name: "MACD", pane: "sub", label: "MACD",

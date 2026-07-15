@@ -9,8 +9,41 @@ const DataLayer = {
 
   // ---------- Binance ----------
 
+  // Binance liefert max. 1000 Kerzen pro Request. Für mehr paginieren wir
+  // rückwärts über endTime: neueste zuerst holen, dann ältere nachladen.
   async fetchBinanceKlines(symbol, interval, limit) {
-    const url = `${CONFIG.BINANCE_REST}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+    const MAX_PER_REQ = 1000;
+    if (limit <= MAX_PER_REQ) {
+      return this._fetchKlineChunk(symbol, interval, MAX_PER_REQ, null);
+    }
+    const all = [];
+    let endTime = null;
+    let remaining = limit;
+    // Schutz gegen Endlosschleifen bei API-Problemen
+    let guard = Math.ceil(limit / MAX_PER_REQ) + 2;
+    while (remaining > 0 && guard-- > 0) {
+      const take = Math.min(MAX_PER_REQ, remaining);
+      const chunk = await this._fetchKlineChunk(symbol, interval, take, endTime);
+      if (!chunk.length) break;
+      all.unshift(...chunk);
+      remaining -= chunk.length;
+      // Nächster Request endet 1ms vor der ältesten Kerze dieses Chunks
+      endTime = chunk[0].timestamp - 1;
+      // Weniger als angefragt = Historie erschöpft
+      if (chunk.length < take) break;
+    }
+    return this._dedupe(all);
+  },
+
+  // Ältere Kerzen VOR einem Timestamp nachladen (Lazy Loading beim Zurückscrollen)
+  async fetchBinanceKlinesBefore(symbol, interval, beforeTimestamp, limit = 1000) {
+    const chunk = await this._fetchKlineChunk(symbol, interval, Math.min(1000, limit), beforeTimestamp - 1);
+    return this._dedupe(chunk);
+  },
+
+  async _fetchKlineChunk(symbol, interval, limit, endTime) {
+    let url = `${CONFIG.BINANCE_REST}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+    if (endTime) url += `&endTime=${endTime}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Binance HTTP ${res.status}`);
     const raw = await res.json();
@@ -22,6 +55,51 @@ const DataLayer = {
       close: parseFloat(k[4]),
       volume: parseFloat(k[5]),
     }));
+  },
+
+  _dedupe(rows) {
+    rows.sort((a, b) => a.timestamp - b.timestamp);
+    return rows.filter((r, i) => i === 0 || r.timestamp !== rows[i - 1].timestamp);
+  },
+
+  // 24h-Ticker für alle Symbole (Watchlist)
+  async fetchTicker24h(symbols) {
+    const url = `${CONFIG.BINANCE_REST}/ticker/24hr`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Binance HTTP ${res.status}`);
+    const all = await res.json();
+    const wanted = new Set(symbols);
+    return all
+      .filter(t => wanted.has(t.symbol))
+      .map(t => ({
+        symbol: t.symbol,
+        price: parseFloat(t.lastPrice),
+        changePct: parseFloat(t.priceChangePercent),
+      }));
+  },
+
+  // Live-Stream für ALLE Symbole (Watchlist) — ein Socket für alles
+  openMiniTickerStream(onTick, onStatus) {
+    let ws = null, closed = false;
+    const connect = () => {
+      ws = new WebSocket(`${CONFIG.BINANCE_WS}/!miniTicker@arr`);
+      ws.onopen = () => onStatus && onStatus("live");
+      ws.onmessage = (ev) => {
+        try {
+          const arr = JSON.parse(ev.data);
+          if (!Array.isArray(arr)) return;
+          onTick(arr.map(t => ({
+            symbol: t.s,
+            price: parseFloat(t.c),
+            open: parseFloat(t.o),
+          })));
+        } catch (_) {}
+      };
+      ws.onclose = () => { if (!closed) setTimeout(connect, 5000); };
+      ws.onerror = () => ws.close();
+    };
+    connect();
+    return () => { closed = true; if (ws) ws.close(); };
   },
 
   openBinanceStream(symbol, interval, onCandle, onStatus) {

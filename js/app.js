@@ -40,6 +40,26 @@ const state = {
   legendCollapsed: _ws?.legendCollapsed || false,
   drawStyle:   _ws?.drawStyle || { color: "#e8b64c", lineStyle: "solid", opacity: 100, width: 1 },
   compareAssets: [],   // [{ id, label, color, data: [{timestamp, close}] }]
+
+  // Watchlist
+  watchlist:      _ws?.watchlist || [...CONFIG.WATCHLIST_DEFAULT],
+  watchlistOpen:  _ws?.watchlistOpen !== false,
+  wlPrices:       {},   // { SYMBOL: { price, changePct } }
+  wlCloseStream:  null,
+
+  // Lazy Loading
+  loadingOlder:   false,
+  historyDone:    false,  // true wenn Binance keine älteren Daten mehr liefert
+
+  // Bar Replay
+  replay: {
+    active:  false,
+    playing: false,
+    fullData: null,   // komplette Daten während Replay
+    index:   0,       // aktueller Bar-Index
+    timer:   null,
+    speed:   500,
+  },
 };
 
 // Farbpalette für Vergleichs-Assets
@@ -122,19 +142,12 @@ function buildCreate(ind) {
     case "rvwap":    create.calcParams = [inp.days||365]; break;
     case "mnoodle":  create.calcParams = [inp.fastPeriod||12, inp.medPeriod||21, inp.slowPeriod||35, inp.atrLength||20, inp.bandMult||0.0125]; break;
     case "bmsb":     create.calcParams = [20, 21]; break;
-    case "myrsi":    create.calcParams = [inp.period||14]; break;
+    case "myrsi":    create.calcParams = [inp.period||14, inp.maType||"None", inp.maLength||14, inp.bbMult||2.0]; break;
     case "stochrsi": create.calcParams = [inp.smoothK||3, inp.smoothD||3, inp.lengthRSI||14, inp.lengthStoch||14]; break;
     case "myvol":    create.calcParams = [inp.ma1||5, inp.ma2||10, inp.ma3||20]; break;
     case "macd":     create.calcParams = [inp.fast||12, inp.slow||26, inp.signal||9, inp.oscType||"EMA", inp.sigType||"EMA"]; break;
     case "atr":      create.calcParams = [inp.period||14, inp.smoothing||"RMA"]; break;
     default:         if (ind.calcParams) create.calcParams = ind.calcParams;
-  }
-  // Built-in EMA: Linienstyles übergeben
-  const lineStyle = (p) => p
-    ? { style: "solid", dashedValue: [2, 2], color: p.visible === false ? "rgba(0,0,0,0)" : p.color, size: p.width || 1 }
-    : undefined;
-  if (ind.key === "ema") {
-    create.styles = { lines: [lineStyle(sv.plots.e1), lineStyle(sv.plots.e2), lineStyle(sv.plots.e3)].filter(Boolean) };
   }
   return create;
 }
@@ -371,17 +384,7 @@ function renderAssetList(filter = "") {
     const item = document.createElement("div");
     item.className = "dd-item" + (sym.id === state.symbol.id ? " active" : "");
     item.textContent = sym.label;
-    item.addEventListener("click", () => {
-      state.symbol = sym;
-      saveWorkspace();
-      document.getElementById("assetLabel").textContent = sym.label;
-      document.getElementById("assetPanel").classList.remove("open");
-      if (sym.type === "worker") state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
-      renderTfList();
-      renderCompareList();
-      loadData();
-      reloadAllCompareData();
-    });
+    item.addEventListener("click", () => switchSymbol(sym));
     list.appendChild(item);
   });
   if (items.length === 0) list.innerHTML = '<div class="dd-empty">Kein Symbol gefunden</div>';
@@ -1091,7 +1094,18 @@ function renderDrawbar() {
       const popup = group.querySelector(".draw-popup");
       const wasOpen = popup.classList.contains("open");
       bar.querySelectorAll(".draw-popup").forEach(p => p.classList.remove("open"));
-      if (!wasOpen) popup.classList.add("open");
+      if (!wasOpen) {
+        // position:fixed → Viewport-Koordinaten aus dem Button berechnen,
+        // damit das Fly-Out über dem Chart schwebt statt in der Sidebar
+        // geclippt zu werden.
+        const r = catBtn.getBoundingClientRect();
+        popup.style.left = (r.right + 8) + "px";
+        popup.classList.add("open");
+        // Erst nach dem Einblenden ist die Höhe bekannt
+        const ph = popup.offsetHeight;
+        const top = Math.min(r.top, window.innerHeight - ph - 12);
+        popup.style.top = Math.max(8, top) + "px";
+      }
     });
     group.appendChild(catBtn);
 
@@ -1249,8 +1263,250 @@ function saveWorkspace() {
       active: [...state.active],
       chartType: state.chartType,
       legendCollapsed: state.legendCollapsed,
+      watchlist: state.watchlist,
+      watchlistOpen: state.watchlistOpen,
     }));
   } catch (e) { /* localStorage voll oder blockiert — ignorieren */ }
+}
+
+// ---------- Watchlist ----------
+function renderWatchlist() {
+  const panel = document.getElementById("watchlist");
+  const list  = document.getElementById("wlList");
+  if (!panel || !list) return;
+  panel.classList.toggle("hidden", !state.watchlistOpen);
+  list.innerHTML = "";
+
+  if (state.watchlist.length === 0) {
+    list.innerHTML = '<div class="wl-empty">Keine Symbole</div>';
+    return;
+  }
+
+  state.watchlist.forEach(sym => {
+    const p = state.wlPrices[sym];
+    const item = document.createElement("div");
+    item.className = "wl-item" + (sym === state.symbol.id ? " active" : "");
+
+    const label = sym.replace("USDT", "/USDT");
+    const priceStr = p && p.price != null
+      ? p.price.toLocaleString("de-CH", { maximumFractionDigits: p.price < 10 ? 4 : 2 })
+      : "–";
+    const chg = p && p.changePct != null ? p.changePct : null;
+    const chgStr = chg != null ? (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%" : "–";
+    const chgClass = chg == null ? "" : chg >= 0 ? "up" : "down";
+
+    item.innerHTML = `
+      <div class="wl-sym">${label}</div>
+      <div class="wl-vals">
+        <span class="wl-price">${priceStr}</span>
+        <span class="wl-chg ${chgClass}">${chgStr}</span>
+      </div>
+      <button class="wl-remove" title="Entfernen">✕</button>`;
+
+    item.addEventListener("click", (e) => {
+      if (e.target.closest(".wl-remove")) return;
+      const found = state.allSymbols.find(s => s.id === sym);
+      if (found) switchSymbol(found);
+    });
+    item.querySelector(".wl-remove").addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.watchlist = state.watchlist.filter(s => s !== sym);
+      saveWorkspace();
+      renderWatchlist();
+      restartWatchlistStream();
+    });
+    list.appendChild(item);
+  });
+}
+
+function renderWlSearch(filter = "") {
+  const box = document.getElementById("wlResults");
+  if (!box) return;
+  box.innerHTML = "";
+  const f = filter.toUpperCase().trim();
+  if (!f) { box.innerHTML = '<div class="wl-empty">Tippen zum Suchen</div>'; return; }
+  const items = state.allSymbols
+    .filter(s => s.type === "binance" && s.id.includes(f) && !state.watchlist.includes(s.id))
+    .slice(0, 20);
+  if (items.length === 0) { box.innerHTML = '<div class="wl-empty">Nichts gefunden</div>'; return; }
+  items.forEach(s => {
+    const r = document.createElement("div");
+    r.className = "wl-result";
+    r.textContent = s.label;
+    r.addEventListener("click", () => {
+      if (!state.watchlist.includes(s.id)) {
+        state.watchlist.push(s.id);
+        saveWorkspace();
+        renderWatchlist();
+        restartWatchlistStream();
+      }
+      document.getElementById("wlSearchBox").classList.add("hidden");
+      document.getElementById("wlSearch").value = "";
+    });
+    box.appendChild(r);
+  });
+}
+
+// Initiale 24h-Daten holen (Preis + Änderung)
+async function loadWatchlistPrices() {
+  if (state.watchlist.length === 0) return;
+  try {
+    const ticks = await DataLayer.fetchTicker24h(state.watchlist);
+    ticks.forEach(t => { state.wlPrices[t.symbol] = { price: t.price, changePct: t.changePct }; });
+    renderWatchlist();
+  } catch (e) { /* Netzfehler: Liste bleibt ohne Preise */ }
+}
+
+// Live-Updates via miniTicker (ein Socket für alle Symbole)
+function restartWatchlistStream() {
+  if (state.wlCloseStream) { state.wlCloseStream(); state.wlCloseStream = null; }
+  if (state.watchlist.length === 0) return;
+  loadWatchlistPrices();
+  const wanted = new Set(state.watchlist);
+  state.wlCloseStream = DataLayer.openMiniTickerStream((ticks) => {
+    let changed = false;
+    ticks.forEach(t => {
+      if (!wanted.has(t.symbol)) return;
+      const prev = state.wlPrices[t.symbol] || {};
+      state.wlPrices[t.symbol] = {
+        price: t.price,
+        // 24h-Änderung aus miniTicker: (close - open) / open
+        changePct: t.open ? ((t.price - t.open) / t.open) * 100 : prev.changePct,
+      };
+      changed = true;
+    });
+    if (changed) requestAnimationFrame(renderWatchlist);
+  });
+}
+
+// ---------- Symbol-Wechsel (zentral, auch von Watchlist genutzt) ----------
+function switchSymbol(sym) {
+  state.symbol = sym;
+  saveWorkspace();
+  document.getElementById("assetLabel").textContent = sym.label;
+  document.getElementById("assetPanel").classList.remove("open");
+  if (sym.type === "worker") state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
+  state.historyDone = false;
+  renderTfList();
+  renderCompareList();
+  renderWatchlist();
+  loadData();
+  reloadAllCompareData();
+}
+
+// ---------- Lazy Loading: ältere Kerzen beim Zurückscrollen ----------
+// KLineCharts ruft diesen Callback selbst auf, sobald der User an den
+// linken Rand scrollt (type "forward"). callback(daten, mehr?) liefert
+// die Daten zurück; more=false stoppt weitere Anfragen.
+chart.setLoadDataCallback(async ({ type, data, callback }) => {
+  // Nur ältere Daten (forward = nach links), nur Binance, nicht im Replay
+  if (type !== "forward" || !data) { callback([], false); return; }
+  if (state.symbol.type !== "binance" || state.replay.active) { callback([], false); return; }
+
+  setStatus("Lade ältere Kerzen …");
+  try {
+    const older = await DataLayer.fetchBinanceKlinesBefore(
+      state.symbol.id, state.timeframe.binanceInterval,
+      data.timestamp, CONFIG.LAZY_LOAD_CHUNK
+    );
+    const more = older.length >= CONFIG.LAZY_LOAD_CHUNK;
+    callback(older, more);
+    setTimeout(() => {
+      const total = chart.getDataList().length;
+      setStatus(`${total} Candles · ${state.symbol.label} · ${state.timeframe.label}`
+        + (more ? "" : " · Historie vollständig"));
+      if (state.active.has("vrvp")) requestAnimationFrame(drawVrvp);
+    }, 50);
+  } catch (e) {
+    setStatus("Nachladen fehlgeschlagen");
+    callback([], false);
+  }
+});
+
+// ---------- Bar Replay ----------
+function startReplay() {
+  const data = chart.getDataList();
+  if (!data || data.length < 20) { setStatus("Zu wenig Daten für Replay"); return; }
+
+  // Live-Stream stoppen
+  if (state.closeStream) { state.closeStream(); state.closeStream = null; }
+  setLive("offline", "Replay");
+
+  state.replay.active = true;
+  state.replay.fullData = data.slice();
+  // Start bei 60% der Daten — genug Historie für Indikatoren, genug Zukunft zum Abspielen
+  state.replay.index = Math.floor(data.length * 0.6);
+  state.replay.playing = false;
+
+  document.getElementById("replayBar").classList.remove("hidden");
+  applyReplayFrame();
+  renderReplayUI();
+}
+
+function applyReplayFrame() {
+  const r = state.replay;
+  if (!r.active || !r.fullData) return;
+  const slice = r.fullData.slice(0, r.index + 1);
+  chart.applyNewData(slice);
+  const last = slice.at(-1);
+  if (last) updatePriceHeader(last, slice.at(-2));
+  updateLegend();
+  if (state.active.has("vrvp")) requestAnimationFrame(() => { try { drawVrvp(); } catch (e) {} });
+  if (state.compareAssets.length > 0) requestAnimationFrame(() => { try { drawCompare(); } catch (e) {} });
+  renderReplayUI();
+}
+
+function renderReplayUI() {
+  const r = state.replay;
+  const posEl  = document.getElementById("replayPos");
+  const playEl = document.getElementById("replayPlay");
+  if (!posEl || !playEl) return;
+  const total = r.fullData ? r.fullData.length : 0;
+  const cur   = r.fullData ? r.fullData[r.index] : null;
+  const dateStr = cur ? new Date(cur.timestamp).toLocaleDateString("de-CH") : "–";
+  posEl.textContent = `${r.index + 1} / ${total} · ${dateStr}`;
+  playEl.textContent = r.playing ? "⏸" : "▶";
+}
+
+function replayStep(dir) {
+  const r = state.replay;
+  if (!r.active || !r.fullData) return;
+  const next = r.index + dir;
+  if (next < 10 || next >= r.fullData.length) {
+    if (next >= r.fullData.length) replayPause();
+    return;
+  }
+  r.index = next;
+  applyReplayFrame();
+}
+
+function replayPlay() {
+  const r = state.replay;
+  if (!r.active) return;
+  r.playing = true;
+  clearInterval(r.timer);
+  r.timer = setInterval(() => {
+    if (r.index >= r.fullData.length - 1) { replayPause(); return; }
+    replayStep(1);
+  }, r.speed);
+  renderReplayUI();
+}
+
+function replayPause() {
+  const r = state.replay;
+  r.playing = false;
+  clearInterval(r.timer);
+  r.timer = null;
+  renderReplayUI();
+}
+
+function exitReplay() {
+  const r = state.replay;
+  replayPause();
+  r.active = false;
+  r.fullData = null;
+  document.getElementById("replayBar").classList.add("hidden");
+  loadData();   // normale Daten + Live-Stream wiederherstellen
 }
 
 // ---------- Start ----------
@@ -1260,10 +1516,45 @@ renderTfList();
 renderTypeList();
 renderIndPanel();
 renderDrawbar();
+renderWatchlist();
 applyAllActive();
 updateLegend();
 loadBinanceSymbols();
 loadData();
+restartWatchlistStream();
+
+// ---------- Watchlist-Handler ----------
+document.getElementById("wlToggleBtn").addEventListener("click", () => {
+  state.watchlistOpen = !state.watchlistOpen;
+  saveWorkspace();
+  renderWatchlist();
+  setTimeout(resize, 50);
+});
+document.getElementById("wlAddBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const box = document.getElementById("wlSearchBox");
+  box.classList.toggle("hidden");
+  if (!box.classList.contains("hidden")) {
+    renderWlSearch("");
+    setTimeout(() => document.getElementById("wlSearch").focus(), 30);
+  }
+});
+document.getElementById("wlSearch").addEventListener("input", (e) => renderWlSearch(e.target.value));
+
+// ---------- Replay-Handler ----------
+document.getElementById("replayStartBtn").addEventListener("click", () => {
+  if (state.replay.active) exitReplay(); else startReplay();
+});
+document.getElementById("replayPlay").addEventListener("click", () => {
+  if (state.replay.playing) replayPause(); else replayPlay();
+});
+document.getElementById("replayStepFwd").addEventListener("click", () => { replayPause(); replayStep(1); });
+document.getElementById("replayStepBack").addEventListener("click", () => { replayPause(); replayStep(-1); });
+document.getElementById("replayExit").addEventListener("click", exitReplay);
+document.getElementById("replaySpeed").addEventListener("change", (e) => {
+  state.replay.speed = parseInt(e.target.value, 10);
+  if (state.replay.playing) replayPlay();   // Timer mit neuem Tempo neu starten
+});
 
 // Legende folgt dem Crosshair
 chart.subscribeAction("onCrosshairChange", (data) => {

@@ -250,7 +250,7 @@ klinecharts.registerIndicator({
   figures: [
     { key: "mhull", title: "MHULL: ", type: "line",
       styles: (d, ind) => {
-        const up = d.current?.up;
+        const up = d.current?.indicatorData?.up;
         const base = { style: "solid", smooth: false, dashedValue: [2, 2] };
         const p = ind?.extendData?.plots?.[up ? "up" : "down"];
         if (!p) return { ...base, color: up ? "#00ff00" : "#ff0000", size: 2 };
@@ -260,7 +260,7 @@ klinecharts.registerIndicator({
     },
     { key: "shull", title: "SHULL: ", type: "line",
       styles: (d, ind) => {
-        const up = d.current?.up;
+        const up = d.current?.indicatorData?.up;
         const base = { style: "solid", smooth: false, dashedValue: [2, 2] };
         const band = ind?.extendData?.plots?.band;
         // SHULL nur zeigen wenn Band aktiviert
@@ -383,8 +383,8 @@ klinecharts.registerIndicator({
     { key: "gcUpper", title: "Upper: ", type: "line", styles: (d, ind) => plotStyle(ind, "upper", "rgba(232,182,76,0.55)", 1) },
     { key: "gcMid",   title: "Mid: ",   type: "line",
       styles: (d, ind) => {
-        const key = d.current?.gcUp ? "midUp" : "midDown";
-        return plotStyle(ind, key, d.current?.gcUp ? "#0aff68" : "#ff0a5a", 3);
+        const key = d.current?.indicatorData?.gcUp ? "midUp" : "midDown";
+        return plotStyle(ind, key, d.current?.indicatorData?.gcUp ? "#0aff68" : "#ff0a5a", 3);
       } },
     { key: "gcLower", title: "Lower: ", type: "line", styles: (d, ind) => plotStyle(ind, "lower", "rgba(232,182,76,0.55)", 1) },
   ],
@@ -849,7 +849,7 @@ klinecharts.registerIndicator({
   figures: [
     { key: "vol",  title: "VOL: ", type: "bar",
       styles: (d, ind) => {
-        const isUp = d.current?.isUp;
+        const isUp = d.current?.indicatorData?.isUp;
         const key  = isUp ? "up" : "dn";
         return plotStyle(ind, key, isUp ? "rgba(63,182,139,0.65)" : "rgba(208,94,94,0.65)", 1);
       }
@@ -881,8 +881,8 @@ klinecharts.registerIndicator({
   figures: [
     { key: "hist", title: "Hist: ", type: "bar", baseValue: 0,
       styles: (d, ind) => {
-        const h = d.current?.hist;
-        const hp = d.prev?.hist;
+        const h = d.current?.indicatorData?.hist;
+        const hp = d.prev?.indicatorData?.hist;
         if (h == null) return { style: "fill", color: "rgba(0,0,0,0)" };
         const plots = ind?.extendData?.plots || {};
         const rising = hp != null ? h > hp : true;
