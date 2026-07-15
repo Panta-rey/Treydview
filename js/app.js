@@ -114,7 +114,8 @@ function buildCreate(ind) {
   const inp = sv.inputs;
   const create = { name: ind.name, extendData: { plots: sv.plots } };
   switch (ind.key) {
-    case "ema":      create.calcParams = [inp.p1||21, inp.p2||100, inp.p3||200]; break;
+    case "sma":      create.calcParams = [inp.p1||20, inp.p2||50, inp.p3||100, inp.p4||200]; break;
+    case "ema":      create.calcParams = [inp.p1||21, inp.p2||50, inp.p3||100, inp.p4||200]; break;
     case "boll":     create.calcParams = [inp.period||20, inp.stddev||2.0, inp.maType||"SMA", inp.offset||0]; break;
     case "gc":       create.calcParams = [inp.period||144, inp.mult||1.414, inp.poles||4]; break;
     case "hull":     create.calcParams = [inp.mode||"HMA", inp.period||55, inp.lengthMult||1.0]; break;
@@ -1015,58 +1016,139 @@ function toggleDrawStylePopover() {
   }, 10);
 }
 
+// Zeichenwerkzeug-Kategorien
+const DRAW_CATEGORIES = [
+  {
+    id: "lines", title: "Linien",
+    icon: `<svg viewBox="0 0 24 24"><circle cx="4" cy="20" r="2.2" fill="currentColor"/><circle cx="20" cy="4" r="2.2" fill="currentColor"/><line x1="5.6" y1="18.4" x2="18.4" y2="5.6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`,
+    tools: [
+      { overlay: "segment",                label: "Trendlinie",       desc: "Verbindet Hochs oder Tiefs" },
+      { overlay: "horizontalStraightLine",  label: "Horizontale Linie",desc: "Support- und Resistance-Level" },
+      { overlay: "rayLine",                 label: "Strahl",           desc: "Halbgerade ab einem Punkt" },
+      { overlay: "priceChannelLine",        label: "Parallelkanal",    desc: "Zwei parallele Trendlinien" },
+      { overlay: "parallelStraightLine",    label: "Parallele Linien", desc: "Mehrere parallele Geraden" },
+    ],
+  },
+  {
+    id: "zones", title: "Zonen & Profile",
+    icon: `<svg viewBox="0 0 24 24"><rect x="3" y="4" width="6" height="3" rx="1" fill="currentColor"/><rect x="3" y="9" width="12" height="3" rx="1" fill="currentColor"/><rect x="3" y="14" width="9" height="3" rx="1" fill="currentColor"/><rect x="3" y="19" width="5" height="2" rx="1" fill="currentColor"/></svg>`,
+    tools: [
+      { overlay: "rectangle",   label: "Rechteck",         desc: "Preiszonen, Orderblöcke" },
+      { overlay: "frvp",        label: "Fixed Range Vol.",  desc: "Volumen pro Preisstufe" },
+      { overlay: "priceLine",   label: "Preislinie",        desc: "Horizontale mit Preislabel" },
+    ],
+  },
+  {
+    id: "fib", title: "Fibonacci",
+    icon: `<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3,2"/><line x1="3" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
+    tools: [
+      { overlay: "fibonacciLine", label: "Fibonacci Retracement", desc: "Korrektur-Ziele" },
+    ],
+  },
+  {
+    id: "measure", title: "Messwerkzeuge",
+    icon: `<svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" stroke-width="1.5"/><line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="1.5"/></svg>`,
+    tools: [
+      { overlay: "priceRange", label: "Preisspanne",  desc: "Prozentuale Preisänderung" },
+      { overlay: "dateRange",  label: "Zeitspanne",   desc: "Zeit und Kerzenanzahl" },
+    ],
+  },
+  {
+    id: "annot", title: "Annotationen",
+    icon: `<svg viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    tools: [
+      { overlay: "verticalStraightLine", label: "Vertikale Linie", desc: "Zeitereignis markieren" },
+    ],
+  },
+];
+
 function renderDrawbar() {
   const bar = document.getElementById("drawbar");
   bar.innerHTML = "";
 
-  // Stil-Wähler ganz oben
+  // Stil-Wähler oben
   const styleBtn = document.createElement("button");
   styleBtn.id = "drawStyleBtn";
-  styleBtn.className = "draw-btn";
-  styleBtn.title = "Zeichenstil (Farbe, Linienart, Deckkraft)";
-  styleBtn.textContent = "🎨";
-  styleBtn.style.setProperty("border-bottom", `3px solid ${hexToRgba(state.drawStyle.color, state.drawStyle.opacity)}`);
+  styleBtn.className = "draw-cat-btn";
+  styleBtn.title = "Zeichenstil";
+  styleBtn.innerHTML = `<svg viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M12 2a10 10 0 1 0 0 20 2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2h1.17A8 8 0 0 0 12 2z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="9" r="1.5" fill="#ff5252"/><circle cx="12" cy="7" r="1.5" fill="#e8b64c"/><circle cx="16" cy="9" r="1.5" fill="#3fb68b"/><circle cx="17" cy="13" r="1.5" fill="#5aa9e6"/></svg>`;
   styleBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleDrawStylePopover(); });
   bar.appendChild(styleBtn);
 
   const sep0 = document.createElement("div"); sep0.className = "draw-sep"; bar.appendChild(sep0);
 
-  CONFIG.DRAW_TOOLS.forEach(tool => {
-    const btn = document.createElement("button");
-    btn.textContent = tool.icon; btn.title = tool.title;
-    btn.className = "draw-btn" + (state.activeTool === tool.overlay ? " active" : "");
-    btn.addEventListener("click", () => startTool(tool.overlay));
-    bar.appendChild(btn);
+  // Kategorie-Gruppen
+  DRAW_CATEGORIES.forEach(cat => {
+    const group = document.createElement("div");
+    group.className = "draw-group";
+
+    const catBtn = document.createElement("button");
+    catBtn.className = "draw-cat-btn" + (state.activeTool && cat.tools.some(t => t.overlay === state.activeTool) ? " active" : "");
+    catBtn.title = cat.title;
+    catBtn.innerHTML = cat.icon;
+    catBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const popup = group.querySelector(".draw-popup");
+      const wasOpen = popup.classList.contains("open");
+      bar.querySelectorAll(".draw-popup").forEach(p => p.classList.remove("open"));
+      if (!wasOpen) popup.classList.add("open");
+    });
+    group.appendChild(catBtn);
+
+    const popup = document.createElement("div");
+    popup.className = "draw-popup";
+    cat.tools.forEach(tool => {
+      const item = document.createElement("div");
+      item.className = "draw-popup-item" + (state.activeTool === tool.overlay ? " active" : "");
+      item.innerHTML = `<span class="dpi-name">${tool.label}</span><span class="dpi-desc">${tool.desc}</span>`;
+      item.addEventListener("click", () => {
+        popup.classList.remove("open");
+        startTool(tool.overlay);
+      });
+      popup.appendChild(item);
+    });
+    group.appendChild(popup);
+    bar.appendChild(group);
   });
 
   const sep1 = document.createElement("div"); sep1.className = "draw-sep"; bar.appendChild(sep1);
 
+  // Magnet
   const magnet = document.createElement("button");
-  const magnetLabels = { normal: "Magnet: aus", weak_magnet: "Magnet: schwach", strong_magnet: "Magnet: stark" };
-  magnet.textContent = "⌖";
-  magnet.title = magnetLabels[state.magnetMode] + " (klicken zum Wechseln)";
-  magnet.className = "draw-btn" + (state.magnetMode !== "normal" ? " active" : "");
+  magnet.className = "draw-cat-btn small" + (state.magnetMode !== "normal" ? " active" : "");
+  magnet.title = state.magnetMode === "normal" ? "Magnet: aus" : state.magnetMode === "weak_magnet" ? "Magnet: schwach" : "Magnet: stark";
+  magnet.innerHTML = `<svg viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M4 8a8 8 0 0 1 16 0" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="4" y1="8" x2="4" y2="14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="20" y1="8" x2="20" y2="14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>`;
   magnet.addEventListener("click", () => {
-    state.magnetMode = state.magnetMode === "normal" ? "weak_magnet"
-                     : state.magnetMode === "weak_magnet" ? "strong_magnet" : "normal";
+    state.magnetMode = state.magnetMode === "normal" ? "weak_magnet" : state.magnetMode === "weak_magnet" ? "strong_magnet" : "normal";
     renderDrawbar();
   });
   bar.appendChild(magnet);
 
+  // Pin
   const pin = document.createElement("button");
-  pin.textContent = "📌";
-  pin.title = state.pinTool ? "Werkzeug bleibt aktiv (an)" : "Werkzeug bleibt aktiv (aus)";
-  pin.className = "draw-btn" + (state.pinTool ? " active" : "");
+  pin.className = "draw-cat-btn small" + (state.pinTool ? " active" : "");
+  pin.title = state.pinTool ? "Werkzeug bleibt aktiv" : "Werkzeug nach Zeichnung deaktivieren";
+  pin.innerHTML = `<svg viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M9 4v6l-2 4v2h10v-2l-2-4V4M12 16v5M8 4h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   pin.addEventListener("click", () => { state.pinTool = !state.pinTool; renderDrawbar(); });
   bar.appendChild(pin);
 
   const sep2 = document.createElement("div"); sep2.className = "draw-sep"; bar.appendChild(sep2);
 
+  // Alles löschen
   const clear = document.createElement("button");
-  clear.textContent = "✕"; clear.title = "Alle Zeichnungen löschen"; clear.className = "draw-btn danger";
+  clear.className = "draw-cat-btn small danger";
+  clear.title = "Alle Zeichnungen löschen";
+  clear.innerHTML = `<svg viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   clear.addEventListener("click", () => chart.removeOverlay());
   bar.appendChild(clear);
 }
+
+// Popups schliessen bei Klick ausserhalb
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".draw-group")) {
+    document.querySelectorAll(".draw-popup").forEach(p => p.classList.remove("open"));
+  }
+});
 
 // Tastatur: ESC bricht Zeichnen ab, Entf löscht selektiertes Overlay
 document.addEventListener("keydown", (e) => {

@@ -61,11 +61,23 @@ html,body{height:100%;background:radial-gradient(1200px 600px at 80% -10%,rgba(2
 
 /* ---- Drawbar ---- */
 .drawbar{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 5px;border-right:1px solid var(--border);background:var(--bg-raised);overflow-y:auto;}
-.draw-btn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:14px;background:transparent;color:var(--text-dim);border:1px solid transparent;border-radius:var(--radius);cursor:pointer;transition:color .12s,border-color .12s,background .12s;}
-.draw-btn:hover{color:var(--text);border-color:var(--border);}
-.draw-btn.active{color:#0d1117;background:var(--accent);}
-.draw-btn.danger:hover{color:var(--down);border-color:var(--down);}
-.draw-sep{width:20px;height:1px;background:var(--border);margin:5px 0;}
+/* ---- Drawbar: Kategorie-System mit SVG-Icons ---- */
+.draw-group{position:relative;}
+.draw-cat-btn{width:42px;height:42px;display:flex;align-items:center;justify-content:center;background:transparent;color:var(--text-dim);border:1px solid transparent;border-radius:var(--radius);cursor:pointer;transition:color .12s,border-color .12s,background .12s;padding:0;}
+.draw-cat-btn svg{width:24px;height:24px;fill:currentColor;stroke:currentColor;}
+.draw-cat-btn:hover{color:var(--text);border-color:var(--border);background:var(--bg-hover);}
+.draw-cat-btn.active{color:var(--accent);border-color:rgba(232,182,76,.4);}
+.draw-cat-btn.small{width:36px;height:36px;}
+.draw-cat-btn.small svg{width:18px;height:18px;}
+.draw-cat-btn.danger:hover{color:var(--down);border-color:var(--down);}
+.draw-sep{width:26px;height:1px;background:var(--border);margin:5px 0;}
+.draw-popup{display:none;position:absolute;left:calc(100% + 8px);top:0;background:var(--bg-raised);border:1px solid var(--border);border-radius:8px;padding:6px;min-width:220px;z-index:200;box-shadow:0 8px 32px rgba(0,0,0,.5);}
+.draw-popup.open{display:flex;flex-direction:column;gap:2px;}
+.draw-popup-item{display:flex;flex-direction:column;gap:1px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background .1s;}
+.draw-popup-item:hover{background:var(--bg-hover);}
+.draw-popup-item.active{background:rgba(232,182,76,.1);}
+.dpi-name{font-size:13px;font-weight:500;color:var(--text);}
+.dpi-desc{font-size:11px;color:var(--text-dim);line-height:1.3;}
 
 /* ---- Price-Header ---- */
 .price-header{display:flex;align-items:baseline;gap:14px;padding:10px 12px 6px;flex-wrap:wrap;}

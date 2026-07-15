@@ -241,31 +241,32 @@ klinecharts.registerIndicator({
   },
 });
 
-// ---------- HULL SUITE (HMA / EHMA / THMA + Band) ----------
+// ---------- HULL SUITE (nach InSilico: MHULL + SHULL[2], Trendfarbe, Band) ----------
 klinecharts.registerIndicator({
   name: "HULL",
   shortName: "Hull",
   precision: 2,
   calcParams: ["HMA", 55, 1.0],
   figures: [
-    {
-      key: "hull", title: "Hull: ", type: "line",
+    { key: "mhull", title: "MHULL: ", type: "line",
       styles: (d, ind) => {
-        const key = d.current?.up ? "up" : "down";
+        const up = d.current?.up;
         const base = { style: "solid", smooth: false, dashedValue: [2, 2] };
-        const p = ind?.extendData?.plots?.[key];
-        if (!p) return { ...base, color: d.current?.up ? "#00ff00" : "#ff0000", size: 2 };
+        const p = ind?.extendData?.plots?.[up ? "up" : "down"];
+        if (!p) return { ...base, color: up ? "#00ff00" : "#ff0000", size: 2 };
         if (p.visible === false) return { ...base, color: "rgba(0,0,0,0)", size: 1 };
         return { ...base, color: p.color, size: p.width || 2 };
       },
     },
-    {
-      key: "hullLag", title: "HullLag: ", type: "line",
+    { key: "shull", title: "SHULL: ", type: "line",
       styles: (d, ind) => {
-        const key = d.current?.up ? "up" : "down";
+        const up = d.current?.up;
         const base = { style: "solid", smooth: false, dashedValue: [2, 2] };
-        const p = ind?.extendData?.plots?.[key];
-        if (!p) return { ...base, color: d.current?.up ? "#00ff00" : "#ff0000", size: 2 };
+        const band = ind?.extendData?.plots?.band;
+        // SHULL nur zeigen wenn Band aktiviert
+        if (band && band.visible === false) return { ...base, color: "rgba(0,0,0,0)", size: 1 };
+        const p = ind?.extendData?.plots?.[up ? "up" : "down"];
+        if (!p) return { ...base, color: up ? "#00ff00" : "#ff0000", size: 2 };
         if (p.visible === false) return { ...base, color: "rgba(0,0,0,0)", size: 1 };
         return { ...base, color: p.color, size: p.width || 2 };
       },
@@ -273,56 +274,68 @@ klinecharts.registerIndicator({
   ],
   calc: (dataList, indicator) => {
     const [mode, period, lmult] = indicator.calcParams;
-    const len = Math.max(2, Math.round(period * lmult));
+    const len = Math.max(2, Math.round(period * (lmult || 1)));
     const closes = dataList.map(d => d.close);
 
     let hull;
     if (mode === "EHMA") {
-      const half = Math.round(len / 2), sq = Math.round(Math.sqrt(len));
-      const e1 = emaSeries(closes, half);
+      // EHMA(src,len) = ema(2*ema(src,len/2) - ema(src,len), round(sqrt(len)))
+      const e1 = emaSeries(closes, Math.round(len / 2));
       const e2 = emaSeries(closes, len);
       const diff = e1.map((v, i) => v != null && e2[i] != null ? 2 * v - e2[i] : null);
-      hull = emaSeries(diff, sq);
+      hull = emaSeries(diff, Math.round(Math.sqrt(len)));
     } else if (mode === "THMA") {
-      const l3 = Math.round(len / 3), l2 = Math.round(len / 2);
-      const w1 = wmaSeries(closes, l3);
-      const w2 = wmaSeries(closes, l2);
-      const w3 = wmaSeries(closes, len);
-      const diff = w1.map((v, i) => v != null && w2[i] != null && w3[i] != null ? 3*v - w2[i] - w3[i] : null);
-      hull = wmaSeries(diff, Math.round(len / 2));
+      // THMA(src,len/2) = wma(wma(src,len/3)*3 - wma(src,len/2) - wma(src,len), len)
+      const l = Math.round(len / 2);
+      const w1 = wmaSeries(closes, Math.round(l / 3));
+      const w2 = wmaSeries(closes, Math.round(l / 2));
+      const w3 = wmaSeries(closes, l);
+      const diff = w1.map((v, i) => v != null && w2[i] != null && w3[i] != null ? 3 * v - w2[i] - w3[i] : null);
+      hull = wmaSeries(diff, l);
     } else {
-      // HMA (default)
-      const half = Math.round(len / 2), sq = Math.round(Math.sqrt(len));
-      const w1 = wmaSeries(closes, half);
+      // HMA(src,len) = wma(2*wma(src,len/2) - wma(src,len), round(sqrt(len)))
+      const w1 = wmaSeries(closes, Math.round(len / 2));
       const w2 = wmaSeries(closes, len);
-      const diff = w1.map((v, i) => v != null && w2[i] != null ? 2*v - w2[i] : null);
-      hull = wmaSeries(diff, sq);
+      const diff = w1.map((v, i) => v != null && w2[i] != null ? 2 * v - w2[i] : null);
+      hull = wmaSeries(diff, Math.round(Math.sqrt(len)));
     }
-    return dataList.map((_, i) => ({
-      hull:    hull[i]    ?? undefined,
-      hullLag: hull[i-2]  ?? undefined,
-      up: hull[i] != null && hull[i-2] != null ? hull[i] > hull[i-2] : true,
-    }));
+
+    // MHULL = HULL[0], SHULL = HULL[2] — Trend: HULL > HULL[2]
+    return dataList.map((_, i) => {
+      const mh = hull[i];
+      const sh = i >= 2 ? hull[i - 2] : null;
+      if (mh == null) return {};
+      return {
+        mhull: mh,
+        shull: sh ?? undefined,
+        up: sh != null ? mh > sh : true,
+      };
+    });
   },
-  draw: ({ ctx, kLineDataList, visibleRange, indicator, xAxis, yAxis }) => {
+  // Band-Fill zwischen MHULL und SHULL in Trendfarbe
+  draw: ({ ctx, visibleRange, indicator, xAxis, yAxis }) => {
     const result = indicator.result;
     if (!result || result.length === 0) return false;
     const plots = indicator?.extendData?.plots || {};
-    const fillPlot = plots.band;
-    if (!fillPlot || fillPlot.visible === false) return false;
+    const band = plots.band;
+    if (!band || band.visible === false) return false;
     const { from, to } = visibleRange;
     ctx.save();
     for (let i = Math.max(1, from); i < to; i++) {
       const cur = result[i], prev = result[i - 1];
-      if (!cur || !prev || cur.hull == null || cur.hullLag == null) continue;
+      if (!cur || !prev || cur.mhull == null || cur.shull == null || prev.mhull == null || prev.shull == null) continue;
       const x0 = xAxis.convertToPixel(i - 1), x1 = xAxis.convertToPixel(i);
       ctx.beginPath();
-      ctx.moveTo(x0, yAxis.convertToPixel(prev.hull));
-      ctx.lineTo(x1, yAxis.convertToPixel(cur.hull));
-      ctx.lineTo(x1, yAxis.convertToPixel(cur.hullLag));
-      ctx.lineTo(x0, yAxis.convertToPixel(prev.hullLag));
+      ctx.moveTo(x0, yAxis.convertToPixel(prev.mhull));
+      ctx.lineTo(x1, yAxis.convertToPixel(cur.mhull));
+      ctx.lineTo(x1, yAxis.convertToPixel(cur.shull));
+      ctx.lineTo(x0, yAxis.convertToPixel(prev.shull));
       ctx.closePath();
-      ctx.fillStyle = fillPlot.color || "rgba(128,128,128,0.3)";
+      // Fill in Trendfarbe mit eingestellter Deckkraft
+      const trendPlot = plots[cur.up ? "up" : "down"];
+      const baseColor = trendPlot?.hex || (cur.up ? "#00ff00" : "#ff0000");
+      const op = band.opacity != null ? band.opacity : 40;
+      ctx.fillStyle = hexToRgba(baseColor, op);
       ctx.fill();
     }
     ctx.restore();
@@ -511,6 +524,30 @@ klinecharts.registerIndicator({
   },
 });
 
+// ---------- MYSMA (4-Level SMA) ----------
+klinecharts.registerIndicator({
+  name: "MYSMA",
+  shortName: "SMA",
+  precision: 2,
+  calcParams: [20, 50, 100, 200],
+  figures: [
+    { key: "s1", title: "SMA1: ", type: "line", styles: (d, ind) => plotStyle(ind, "s1", "#e8b64c", 1) },
+    { key: "s2", title: "SMA2: ", type: "line", styles: (d, ind) => plotStyle(ind, "s2", "#5aa9e6", 1) },
+    { key: "s3", title: "SMA3: ", type: "line", styles: (d, ind) => plotStyle(ind, "s3", "#c792ea", 1) },
+    { key: "s4", title: "SMA4: ", type: "line", styles: (d, ind) => plotStyle(ind, "s4", "#3fb68b", 2) },
+  ],
+  calc: (dataList, indicator) => {
+    const [p1, p2, p3, p4] = indicator.calcParams;
+    const closes = dataList.map(d => d.close);
+    const s1 = smaSeries2(closes, p1), s2 = smaSeries2(closes, p2);
+    const s3 = smaSeries2(closes, p3), s4 = smaSeries2(closes, p4);
+    return dataList.map((_, i) => ({
+      s1: s1[i] ?? undefined, s2: s2[i] ?? undefined,
+      s3: s3[i] ?? undefined, s4: s4[i] ?? undefined,
+    }));
+  },
+});
+
 // ---------- COMPARE (Relative-Performance-Modus) ----------
 // Alle Assets (Hauptasset + Vergleiche) als Linien, normalisiert auf den
 // linken sichtbaren Rand = 0%. Reaktiv: window.__tvVisibleFrom hält den
@@ -593,6 +630,29 @@ function cmpStyle(indicator, idx) {
   return { ...base, color: a.color };
 }
 
+// ---------- MYEMA (EMA mit 4 Levels statt 3 — built-in EMA überschrieben) ----------
+klinecharts.registerIndicator({
+  name: "EMA",
+  shortName: "EMA",
+  precision: 2,
+  calcParams: [21, 50, 100, 200],
+  figures: [
+    { key: "ema1", title: "EMA1: ", type: "line", styles: (d, ind) => plotStyle(ind, "e1", "#5aa9e6", 1) },
+    { key: "ema2", title: "EMA2: ", type: "line", styles: (d, ind) => plotStyle(ind, "e2", "#e8b64c", 1) },
+    { key: "ema3", title: "EMA3: ", type: "line", styles: (d, ind) => plotStyle(ind, "e3", "#c792ea", 1) },
+    { key: "ema4", title: "EMA4: ", type: "line", styles: (d, ind) => plotStyle(ind, "e4", "#3fb68b", 2) },
+  ],
+  calc: (dataList, indicator) => {
+    const params = indicator.calcParams;
+    const closes = dataList.map(d => d.close);
+    const results = params.map(p => emaSeries(closes, p));
+    return dataList.map((_, i) => ({
+      ema1: results[0][i] ?? undefined, ema2: results[1][i] ?? undefined,
+      ema3: results[2][i] ?? undefined, ema4: results[3] ? (results[3][i] ?? undefined) : undefined,
+    }));
+  },
+});
+
 // ---------- BOLLINGER BANDS (erweitert: MA-Typ, Offset, Fill) ----------
 klinecharts.registerIndicator({
   name: "BOLL",
@@ -648,40 +708,134 @@ klinecharts.registerIndicator({
   },
 });
 
-// ---------- MYRSI (RSI mit Hilfslinien 30/50/70) ----------
+// ---------- MYRSI (nach TV-Source: RMA, Hilfslinien, Fills, Smoothing-MA) ----------
 klinecharts.registerIndicator({
   name: "MYRSI",
   shortName: "RSI",
   precision: 2,
-  calcParams: [14],
+  calcParams: [14, "None", 14, 2.0],
   figures: [
-    { key: "band70", title: "", type: "line", styles: () => ({ style: "dashed", color: "rgba(120,123,134,0.7)", size: 1, smooth: false, dashedValue: [4, 4] }) },
-    { key: "band50", title: "", type: "line", styles: () => ({ style: "dashed", color: "rgba(120,123,134,0.35)", size: 1, smooth: false, dashedValue: [4, 4] }) },
-    { key: "band30", title: "", type: "line", styles: () => ({ style: "dashed", color: "rgba(120,123,134,0.7)", size: 1, smooth: false, dashedValue: [4, 4] }) },
-    { key: "line", title: "RSI: ", type: "line", styles: (d, ind) => plotStyle(ind, "line", "#c792ea", 2) },
+    { key: "band70", title: "", type: "line", styles: (d, ind) => plotStyle(ind, "band70", "rgba(120,123,134,0.7)", 1) },
+    { key: "band50", title: "", type: "line", styles: (d, ind) => plotStyle(ind, "band50", "rgba(120,123,134,0.4)", 1) },
+    { key: "band30", title: "", type: "line", styles: (d, ind) => plotStyle(ind, "band30", "rgba(120,123,134,0.7)", 1) },
+    { key: "bbUpper", title: "BB+: ", type: "line", styles: (d, ind) => plotStyle(ind, "bbUpper", "rgba(63,182,139,0.8)", 1) },
+    { key: "bbLower", title: "BB-: ", type: "line", styles: (d, ind) => plotStyle(ind, "bbLower", "rgba(63,182,139,0.8)", 1) },
+    { key: "maLine", title: "MA: ",  type: "line", styles: (d, ind) => plotStyle(ind, "maLine", "#e8b64c", 1) },
+    { key: "line",   title: "RSI: ", type: "line", styles: (d, ind) => plotStyle(ind, "line", "#7e57c2", 2) },
   ],
   calc: (dataList, indicator) => {
-    const period = indicator.calcParams[0];
+    const [period, maType, maLength, bbMult] = indicator.calcParams;
+    const plots = indicator?.extendData?.plots || {};
+    const vis = (k) => !plots[k] || plots[k].visible !== false;
     const closes = dataList.map(d => d.close);
-    if (closes.length <= period) return dataList.map(() => ({}));
-    let ag = 0, al = 0;
-    for (let i = 1; i <= period; i++) {
-      const ch = closes[i] - closes[i-1];
-      if (ch >= 0) ag += ch; else al -= ch;
+
+    // RSI nach Wilder (ta.rma auf up/down changes)
+    const changes = closes.map((c, i) => i === 0 ? 0 : c - closes[i-1]);
+    const ups   = changes.map(ch => Math.max(ch, 0));
+    const downs = changes.map(ch => Math.max(-ch, 0));
+    const upRma   = rmaSeries(ups, period);
+    const downRma = rmaSeries(downs, period);
+    const rsi = closes.map((_, i) => {
+      if (i < period || upRma[i] == null || downRma[i] == null) return null;
+      if (downRma[i] === 0) return 100;
+      if (upRma[i] === 0) return 0;
+      return 100 - (100 / (1 + upRma[i] / downRma[i]));
+    });
+
+    // Smoothing-MA auf dem RSI
+    let maArr = null, bbUp = null, bbLo = null;
+    const isBB = maType === "SMA + BB";
+    if (maType && maType !== "None") {
+      const t = isBB ? "SMA" : maType;
+      maArr = maByType(rsi, maLength, t === "SMMA" ? "RMA" : t, dataList);
+      if (isBB) {
+        // StdDev auf RSI
+        bbUp = new Array(rsi.length).fill(null);
+        bbLo = new Array(rsi.length).fill(null);
+        for (let i = maLength - 1; i < rsi.length; i++) {
+          if (maArr[i] == null) continue;
+          let variance = 0, n = 0;
+          for (let j = i - maLength + 1; j <= i; j++) {
+            if (rsi[j] == null) { n = 0; break; }
+            variance += Math.pow(rsi[j] - maArr[i], 2); n++;
+          }
+          if (n === maLength) {
+            const sd = Math.sqrt(variance / n) * bbMult;
+            bbUp[i] = maArr[i] + sd;
+            bbLo[i] = maArr[i] - sd;
+          }
+        }
+      }
     }
-    ag /= period; al /= period;
-    const rsi = new Array(closes.length).fill(null);
-    rsi[period] = al === 0 ? 100 : 100 - 100/(1 + ag/al);
-    for (let i = period + 1; i < closes.length; i++) {
-      const ch = closes[i] - closes[i-1];
-      ag = (ag*(period-1) + Math.max(ch, 0)) / period;
-      al = (al*(period-1) + Math.max(-ch, 0)) / period;
-      rsi[i] = al === 0 ? 100 : 100 - 100/(1 + ag/al);
+
+    return dataList.map((_, i) => {
+      const out = { line: rsi[i] ?? undefined };
+      if (vis("band70")) out.band70 = 70;
+      if (vis("band50")) out.band50 = 50;
+      if (vis("band30")) out.band30 = 30;
+      if (maArr && vis("maLine") && maArr[i] != null) out.maLine = maArr[i];
+      if (isBB && bbUp && vis("bbUpper") && bbUp[i] != null) out.bbUpper = bbUp[i];
+      if (isBB && bbLo && vis("bbLower") && bbLo[i] != null) out.bbLower = bbLo[i];
+      return out;
+    });
+  },
+  // Fills: Hintergrund 30-70, Overbought >70 (grün), Oversold <30 (rot)
+  draw: ({ ctx, visibleRange, indicator, xAxis, yAxis }) => {
+    const result = indicator.result;
+    if (!result || result.length === 0) return false;
+    const plots = indicator?.extendData?.plots || {};
+    const { from, to } = visibleRange;
+
+    // 1. Hintergrund-Fill zwischen 30 und 70
+    const bg = plots.bgFill;
+    if (bg && bg.visible !== false) {
+      const x0 = xAxis.convertToPixel(Math.max(0, from));
+      const x1 = xAxis.convertToPixel(to - 1);
+      const y70 = yAxis.convertToPixel(70), y30 = yAxis.convertToPixel(30);
+      ctx.save();
+      ctx.fillStyle = bg.color || "rgba(126,87,194,0.08)";
+      ctx.fillRect(x0, Math.min(y70, y30), x1 - x0, Math.abs(y30 - y70));
+      ctx.restore();
     }
-    return dataList.map((_, i) => ({
-      band70: 70, band50: 50, band30: 30,
-      line: rsi[i] ?? undefined,
-    }));
+
+    // 2. Overbought/Oversold Gradient-Fills
+    const drawZoneFill = (plotKey, threshold, above) => {
+      const p = plots[plotKey];
+      if (!p || p.visible === false) return;
+      const yThr = yAxis.convertToPixel(threshold);
+      ctx.save();
+      ctx.beginPath();
+      let started = false;
+      for (let i = Math.max(0, from); i < to; i++) {
+        const r = result[i];
+        if (!r || r.line == null) continue;
+        const inZone = above ? r.line > threshold : r.line < threshold;
+        const x = xAxis.convertToPixel(i);
+        const y = yAxis.convertToPixel(r.line);
+        if (inZone) {
+          if (!started) { ctx.moveTo(x, yThr); started = true; }
+          ctx.lineTo(x, y);
+        } else if (started) {
+          ctx.lineTo(xAxis.convertToPixel(i - 1), yThr);
+          ctx.closePath();
+          ctx.fillStyle = p.color || (above ? "rgba(63,182,139,0.25)" : "rgba(208,94,94,0.25)");
+          ctx.fill();
+          ctx.beginPath();
+          started = false;
+        }
+      }
+      if (started) {
+        ctx.lineTo(xAxis.convertToPixel(to - 1), yThr);
+        ctx.closePath();
+        ctx.fillStyle = p.color || (above ? "rgba(63,182,139,0.25)" : "rgba(208,94,94,0.25)");
+        ctx.fill();
+      }
+      ctx.restore();
+    };
+    drawZoneFill("obFill", 70, true);
+    drawZoneFill("osFill", 30, false);
+
+    return false;
   },
 });
 
@@ -725,37 +879,44 @@ klinecharts.registerIndicator({
   precision: 2,
   calcParams: [12, 26, 9, "EMA", "EMA"],
   figures: [
-    { key: "histPos", title: "", type: "bar",
-      styles: (d) => {
-        const h = d.current?.hist, hp = d.prev?.hist;
-        const rising = h != null && hp != null ? h > hp : true;
-        return { style: "solid", color: rising ? "#26a69a" : "#b2dfdb", dashedValue: [2,2], smooth: false, size: 1 };
+    { key: "hist", title: "Hist: ", type: "bar", baseValue: 0,
+      styles: (d, ind) => {
+        const h = d.current?.hist;
+        const hp = d.prev?.hist;
+        if (h == null) return { style: "fill", color: "rgba(0,0,0,0)" };
+        const plots = ind?.extendData?.plots || {};
+        const rising = hp != null ? h > hp : true;
+        // 4 Farben wie TradingView:
+        // hist>=0 && steigend  -> kräftiges Grün
+        // hist>=0 && fallend   -> helles Grün
+        // hist<0  && steigend  -> helles Rot
+        // hist<0  && fallend   -> kräftiges Rot
+        let color;
+        if (h >= 0) {
+          color = rising ? (plots.histUp?.color || "#26a69a") : "#b2dfdb";
+        } else {
+          color = rising ? "#ffcdd2" : (plots.histDn?.color || "#ff5252");
+        }
+        return { style: "fill", color };
       }
     },
-    { key: "histNeg", title: "", type: "bar",
-      styles: (d) => {
-        const h = d.current?.hist, hp = d.prev?.hist;
-        const rising = h != null && hp != null ? h > hp : false;
-        return { style: "solid", color: rising ? "#ffcdd2" : "#ff5252", dashedValue: [2,2], smooth: false, size: 1 };
-      }
-    },
+    { key: "zero",   title: "", type: "line", styles: () => ({ style: "dashed", color: "rgba(120,123,134,0.5)", size: 1, smooth: false, dashedValue: [4, 4] }) },
     { key: "macd",   title: "MACD: ",   type: "line", styles: (d, ind) => plotStyle(ind, "macd",   "#2962ff", 2) },
     { key: "signal", title: "Signal: ", type: "line", styles: (d, ind) => plotStyle(ind, "signal", "#ff6d00", 2) },
   ],
   calc: (dataList, indicator) => {
     const [fast, slow, sigLen, oscType, sigType] = indicator.calcParams;
     const closes = dataList.map(d => d.close);
-    const maFast = maByType(closes, fast, oscType || "EMA");
-    const maSlow = maByType(closes, slow, oscType || "EMA");
+    const maFast = maByType(closes, fast, oscType || "EMA", dataList);
+    const maSlow = maByType(closes, slow, oscType || "EMA", dataList);
     const macdLine = maFast.map((v, i) => v != null && maSlow[i] != null ? v - maSlow[i] : null);
-    const signalLine = maByType(macdLine, sigLen, sigType || "EMA");
+    const signalLine = maByType(macdLine, sigLen, sigType || "EMA", dataList);
     const hist = macdLine.map((v, i) => v != null && signalLine[i] != null ? v - signalLine[i] : null);
     return dataList.map((_, i) => ({
-      hist:    hist[i]      ?? undefined,
-      histPos: (hist[i] != null && hist[i] >= 0) ? hist[i] : undefined,
-      histNeg: (hist[i] != null && hist[i] <  0) ? hist[i] : undefined,
-      macd:    macdLine[i]  ?? undefined,
-      signal:  signalLine[i] ?? undefined,
+      hist:   hist[i]       ?? undefined,
+      zero:   hist[i] != null ? 0 : undefined,
+      macd:   macdLine[i]   ?? undefined,
+      signal: signalLine[i] ?? undefined,
     }));
   },
 });

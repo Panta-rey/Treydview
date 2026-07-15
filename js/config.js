@@ -63,6 +63,21 @@ const CONFIG = {
       ],
     },
     {
+      key: "sma", name: "MYSMA", pane: "main", label: "SMA 20 / 50 / 100 / 200",
+      inputs: [
+        { key: "p1", label: "Periode 1", default: 20  },
+        { key: "p2", label: "Periode 2", default: 50  },
+        { key: "p3", label: "Periode 3", default: 100 },
+        { key: "p4", label: "Periode 4", default: 200 },
+      ],
+      plots: [
+        { key: "s1", label: "SMA 1", color: "#e8b64c", opacity: 100, width: 1, visible: true },
+        { key: "s2", label: "SMA 2", color: "#5aa9e6", opacity: 100, width: 1, visible: true },
+        { key: "s3", label: "SMA 3", color: "#c792ea", opacity: 100, width: 1, visible: true },
+        { key: "s4", label: "SMA 4", color: "#3fb68b", opacity: 100, width: 2, visible: true },
+      ],
+    },
+    {
       key: "ema", name: "EMA", pane: "main", label: "EMA 21 / 100 / 200",
       inputs: [
         { key: "p1", label: "Periode 1", default: 21  },
@@ -140,7 +155,7 @@ const CONFIG = {
       ],
     },
     {
-      key: "rsi", name: "RSI", pane: "sub", label: "RSI 14",
+      key: "myrsi", name: "RSI", pane: "sub", label: "RSI 14",
       inputs: [
         { key: "period", label: "Periode", default: 14 },
       ],
@@ -162,7 +177,7 @@ const CONFIG = {
       ],
     },
     {
-      key: "vol", name: "VOL", pane: "sub", label: "Volumen",
+      key: "myvol", name: "VOL", pane: "sub", label: "Volumen",
       inputs: [], plots: [],
     },
     {
@@ -193,7 +208,7 @@ const CONFIG = {
     },
   ],
 
-  DEFAULT_ACTIVE: ["mnoodle", "bmsb", "ema", "rsi", "vol"],
+  DEFAULT_ACTIVE: ["mnoodle", "bmsb", "ema", "myrsi", "myvol"],
 
   DRAW_TOOLS: [
     { overlay: "segment",                icon: "╱",  title: "Trendlinie" },
