@@ -61,7 +61,7 @@
     </div>
   </div>
 
-  <!-- Chart-Typ-Toggle (Kerzen / Linie) -->
+  <!-- Chart-Typ-Toggle (Kerzen / Linie) mit Stil-Einstellungen -->
   <div class="dropdown" id="typeDropdown">
     <button class="dd-trigger" id="typeTrigger">
       <span id="typeLabel">Kerzen</span>
@@ -72,16 +72,58 @@
     </div>
   </div>
 
-  <!-- Aktions-Buttons rechts -->
+  <!-- Aktions-Buttons rechtsbündig -->
   <div class="topbar-actions">
-    <button class="action-btn" id="replayStartBtn" title="Bar Replay starten">⏱</button>
-    <button class="action-btn" id="wlToggleBtn" title="Watchlist ein-/ausblenden">☰</button>
-    <button class="action-btn" id="autoZoomBtn" title="Auto-Zoom auf sichtbaren Bereich">⤢</button>
-    <button class="action-btn" id="screenshotBtn" title="Screenshot speichern">📷</button>
-  </div>
+    <!-- Layouts -->
+    <div class="dropdown" id="layoutDropdown">
+      <button class="action-btn" id="layoutTrigger" title="Layouts">
+        <svg viewBox="0 0 24 24" class="ab-icon">
+          <rect x="3" y="3" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/>
+          <rect x="13" y="3" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/>
+          <rect x="3" y="13" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/>
+          <rect x="13" y="13" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/>
+        </svg>
+      </button>
+      <div class="dd-panel dd-panel--right" id="layoutPanel">
+        <div class="layout-save">
+          <input type="text" id="layoutName" placeholder="Layout-Name…" autocomplete="off">
+          <button id="layoutSaveBtn" title="Aktuelles Layout speichern">Speichern</button>
+        </div>
+        <div class="dd-list" id="layoutList"></div>
+      </div>
+    </div>
 
-  <div class="live-badge" id="liveBadge">
-    <span class="dot"></span><span id="liveText">–</span>
+    <!-- Theme -->
+    <button class="action-btn" id="themeBtn" title="Hell / Dunkel">
+      <svg viewBox="0 0 24 24" class="ab-icon" id="themeIcon">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
+    <!-- Watchlist (Auge) -->
+    <button class="action-btn" id="wlToggleBtn" title="Watchlist ein-/ausblenden">
+      <svg viewBox="0 0 24 24" class="ab-icon">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/>
+      </svg>
+    </button>
+
+    <button class="action-btn" id="autoZoomBtn" title="Auto-Zoom auf sichtbaren Bereich">
+      <svg viewBox="0 0 24 24" class="ab-icon">
+        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
+    <button class="action-btn" id="screenshotBtn" title="Screenshot speichern">
+      <svg viewBox="0 0 24 24" class="ab-icon">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        <circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="2"/>
+      </svg>
+    </button>
+
+    <div class="live-badge" id="liveBadge">
+      <span class="dot"></span><span id="liveText">–</span>
+    </div>
   </div>
 </header>
 
@@ -106,24 +148,6 @@
     <!-- Haupt-Chart (RSI/VOL laufen als synchronisierte Panes darin) -->
     <div id="mainChart" class="main-chart"></div>
 
-    <!-- Bar Replay-Leiste -->
-    <div class="replay-bar hidden" id="replayBar">
-      <button class="replay-btn" id="replayStepBack" title="Eine Kerze zurück">⏮</button>
-      <button class="replay-btn replay-play" id="replayPlay" title="Play/Pause">▶</button>
-      <button class="replay-btn" id="replayStepFwd" title="Eine Kerze vor">⏭</button>
-      <div class="replay-speed">
-        <label>Tempo</label>
-        <select id="replaySpeed">
-          <option value="1000">0.5×</option>
-          <option value="500" selected>1×</option>
-          <option value="250">2×</option>
-          <option value="100">5×</option>
-          <option value="40">10×</option>
-        </select>
-      </div>
-      <div class="replay-pos" id="replayPos">–</div>
-      <button class="replay-btn replay-exit" id="replayExit" title="Replay beenden">✕ Beenden</button>
-    </div>
 
     <div class="statusline" id="statusline">Lade …</div>
   </div>
@@ -153,6 +177,50 @@
     <div class="settings-footer">
       <button class="btn-apply" id="settingsApply">Übernehmen</button>
     </div>
+  </div>
+</div>
+
+<!-- Chart-Stil-Panel (Kerzen-/Linienfarben) -->
+<div class="chartstyle-menu hidden" id="chartStyleMenu">
+  <div class="csm-header">Chart-Darstellung</div>
+
+  <div class="csm-section" id="csmCandleSection">
+    <div class="csm-title">Kerzen</div>
+    <div class="csm-row">
+      <label>Steigend</label>
+      <input type="color" id="csUpColor" value="#3fb68b">
+    </div>
+    <div class="csm-row">
+      <label>Fallend</label>
+      <input type="color" id="csDownColor" value="#d05e5e">
+    </div>
+    <div class="csm-row">
+      <label><input type="checkbox" id="csHollow"> Hohl (nur Umriss)</label>
+    </div>
+  </div>
+
+  <div class="csm-section hidden" id="csmLineSection">
+    <div class="csm-title">Linie</div>
+    <div class="csm-row">
+      <label>Linienfarbe</label>
+      <input type="color" id="csLineColor" value="#e8b64c">
+    </div>
+    <div class="csm-row">
+      <label>Stärke</label>
+      <input type="number" id="csLineWidth" value="2" min="1" max="5">
+    </div>
+    <div class="csm-row">
+      <label><input type="checkbox" id="csAreaFill" checked> Fläche füllen</label>
+    </div>
+    <div class="csm-row" id="csmFillOpacityRow">
+      <label>Deckkraft <span id="csFillOpacityVal">15%</span></label>
+      <input type="range" id="csFillOpacity" min="0" max="60" value="15">
+    </div>
+  </div>
+
+  <div class="csm-actions">
+    <button id="csResetBtn" class="csm-reset">Standard</button>
+    <button id="csApplyBtn" class="csm-ok">Übernehmen</button>
   </div>
 </div>
 

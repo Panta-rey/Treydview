@@ -47,19 +47,24 @@ const state = {
   wlPrices:       {},   // { SYMBOL: { price, changePct } }
   wlCloseStream:  null,
 
+  // Theme: "dark" | "light"
+  theme: _ws?.theme || "dark",
+
+  // Chart-Darstellung (Kerzen-/Linienfarben)
+  chartStyle: _ws?.chartStyle || {
+    upColor:     "#3fb68b",
+    downColor:   "#d05e5e",
+    hollow:      false,
+    lineColor:   "#e8b64c",
+    lineWidth:   2,
+    areaFill:    true,
+    fillOpacity: 15,
+  },
+
   // Lazy Loading
   loadingOlder:   false,
   historyDone:    false,  // true wenn Binance keine älteren Daten mehr liefert
 
-  // Bar Replay
-  replay: {
-    active:  false,
-    playing: false,
-    fullData: null,   // komplette Daten während Replay
-    index:   0,       // aktueller Bar-Index
-    timer:   null,
-    speed:   500,
-  },
 };
 
 // Farbpalette für Vergleichs-Assets
@@ -77,24 +82,36 @@ function tooltipStyle(show) {
 }
 
 function baseStyles() {
+  const cs = state.chartStyle;
   return {
     grid: { 
       horizontal: { color: T.grid, style: "dashed", dashedValue: [2, 2] }, 
       vertical: { color: T.grid, style: "dashed", dashedValue: [2, 2] } 
     },
     candle: {
-      type: state.chartType, 
-      bar: { upColor: T.up, downColor: T.down, noChangeColor: T.text,
-             upBorderColor: T.up, downBorderColor: T.down,
-             upWickColor: T.up, downWickColor: T.down },
-      area: {
-        lineColor: T.accent, lineSize: 2,
-        backgroundColor: [
-          { offset: 0, color: "rgba(232,182,76,0.18)" },
-          { offset: 1, color: "rgba(232,182,76,0.02)" },
-        ],
+      type: state.chartType,
+      bar: {
+        // "hollow" = nur Umriss: Füllfarbe transparent, Rahmen in Trendfarbe
+        upColor:       cs.hollow ? "rgba(0,0,0,0)" : cs.upColor,
+        downColor:     cs.hollow ? "rgba(0,0,0,0)" : cs.downColor,
+        noChangeColor: T.text,
+        upBorderColor: cs.upColor,   downBorderColor: cs.downColor,
+        upWickColor:   cs.upColor,   downWickColor:   cs.downColor,
       },
-      priceMark: { last: { upColor: T.up, downColor: T.down } },
+      area: {
+        lineColor: cs.lineColor,
+        lineSize:  cs.lineWidth,
+        backgroundColor: cs.areaFill
+          ? [
+              { offset: 0, color: hexToRgba(cs.lineColor, cs.fillOpacity) },
+              { offset: 1, color: hexToRgba(cs.lineColor, 1) },
+            ]
+          : [
+              { offset: 0, color: "rgba(0,0,0,0)" },
+              { offset: 1, color: "rgba(0,0,0,0)" },
+            ],
+      },
+      priceMark: { last: { upColor: cs.upColor, downColor: cs.downColor } },
       tooltip: { showRule: "none" },
     },
     indicator: {
@@ -352,10 +369,10 @@ function initDropdowns() {
       document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
     }
   });
-  ["assetDropdown", "compareDropdown", "tfDropdown", "typeDropdown", "indDropdown"].forEach(id => {
+  ["assetDropdown", "compareDropdown", "tfDropdown", "typeDropdown", "indDropdown", "layoutDropdown"].forEach(id => {
     const dd = document.getElementById(id);
     if (!dd) return;
-    const trigger = dd.querySelector(".dd-trigger");
+    const trigger = dd.querySelector(".dd-trigger, .action-btn");
     const panel = dd.querySelector(".dd-panel");
     trigger.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -369,6 +386,7 @@ function initDropdowns() {
         renderCompareActive();
         setTimeout(() => document.getElementById("compareSearch").focus(), 30);
       }
+      if (id === "layoutDropdown" && !wasOpen) renderLayoutList();
     });
   });
 }
@@ -789,9 +807,12 @@ function renderTypeList() {
   ];
   types.forEach(t => {
     const item = document.createElement("div");
-    item.className = "dd-item" + (t.id === state.chartType ? " active" : "");
-    item.textContent = t.label;
-    item.addEventListener("click", () => {
+    item.className = "dd-item dd-item--gear" + (t.id === state.chartType ? " active" : "");
+
+    const name = document.createElement("span");
+    name.textContent = t.label;
+    name.style.flex = "1";
+    name.addEventListener("click", () => {
       state.chartType = t.id;
       saveWorkspace();
       document.getElementById("typeLabel").textContent = t.label;
@@ -799,6 +820,28 @@ function renderTypeList() {
       chart.setStyles(baseStyles());
       renderTypeList();
     });
+    item.appendChild(name);
+
+    // Zahnrad: öffnet Farb-/Füll-Einstellungen für diesen Typ
+    const gear = document.createElement("button");
+    gear.className = "ind-gear";
+    gear.title = t.id === "area" ? "Linienfarbe & Füllung" : "Kerzenfarben";
+    gear.textContent = "⚙";
+    gear.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // Erst auf den Typ wechseln, dessen Zahnrad geklickt wurde
+      if (state.chartType !== t.id) {
+        state.chartType = t.id;
+        saveWorkspace();
+        document.getElementById("typeLabel").textContent = t.label;
+        chart.setStyles(baseStyles());
+        renderTypeList();
+      }
+      document.getElementById("typePanel").classList.remove("open");
+      openChartStyleMenu(document.getElementById("typeTrigger"));
+    });
+    item.appendChild(gear);
+
     list.appendChild(item);
   });
 }
@@ -1265,6 +1308,8 @@ function saveWorkspace() {
       legendCollapsed: state.legendCollapsed,
       watchlist: state.watchlist,
       watchlistOpen: state.watchlistOpen,
+      theme: state.theme,
+      chartStyle: state.chartStyle,
     }));
   } catch (e) { /* localStorage voll oder blockiert — ignorieren */ }
 }
@@ -1386,7 +1431,6 @@ function switchSymbol(sym) {
   document.getElementById("assetLabel").textContent = sym.label;
   document.getElementById("assetPanel").classList.remove("open");
   if (sym.type === "worker") state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
-  state.historyDone = false;
   renderTfList();
   renderCompareList();
   renderWatchlist();
@@ -1401,7 +1445,7 @@ function switchSymbol(sym) {
 chart.setLoadDataCallback(async ({ type, data, callback }) => {
   // Nur ältere Daten (forward = nach links), nur Binance, nicht im Replay
   if (type !== "forward" || !data) { callback([], false); return; }
-  if (state.symbol.type !== "binance" || state.replay.active) { callback([], false); return; }
+  if (state.symbol.type !== "binance") { callback([], false); return; }
 
   setStatus("Lade ältere Kerzen …");
   try {
@@ -1423,94 +1467,186 @@ chart.setLoadDataCallback(async ({ type, data, callback }) => {
   }
 });
 
-// ---------- Bar Replay ----------
-function startReplay() {
-  const data = chart.getDataList();
-  if (!data || data.length < 20) { setStatus("Zu wenig Daten für Replay"); return; }
-
-  // Live-Stream stoppen
-  if (state.closeStream) { state.closeStream(); state.closeStream = null; }
-  setLive("offline", "Replay");
-
-  state.replay.active = true;
-  state.replay.fullData = data.slice();
-  // Start bei 60% der Daten — genug Historie für Indikatoren, genug Zukunft zum Abspielen
-  state.replay.index = Math.floor(data.length * 0.6);
-  state.replay.playing = false;
-
-  document.getElementById("replayBar").classList.remove("hidden");
-  applyReplayFrame();
-  renderReplayUI();
-}
-
-function applyReplayFrame() {
-  const r = state.replay;
-  if (!r.active || !r.fullData) return;
-  const slice = r.fullData.slice(0, r.index + 1);
-  chart.applyNewData(slice);
-  const last = slice.at(-1);
-  if (last) updatePriceHeader(last, slice.at(-2));
-  updateLegend();
-  if (state.active.has("vrvp")) requestAnimationFrame(() => { try { drawVrvp(); } catch (e) {} });
+// ---------- Theme (Hell / Dunkel) ----------
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", state.theme);
+  // Icon wechseln: Mond im Dunkelmodus, Sonne im Hellmodus
+  const icon = document.getElementById("themeIcon");
+  if (icon) {
+    icon.innerHTML = state.theme === "dark"
+      ? `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`
+      : `<circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/>
+         <path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`;
+  }
+  // Chart-Theme nachziehen (Grid, Achsen, Text)
+  const css = getComputedStyle(document.documentElement);
+  T.text   = css.getPropertyValue("--text-dim").trim() || T.text;
+  T.grid   = state.theme === "dark" ? "rgba(143,163,184,0.07)" : "rgba(60,80,100,0.09)";
+  T.accent = css.getPropertyValue("--accent").trim() || T.accent;
+  chart.setStyles(baseStyles());
+  if (state.active.has("vrvp")) requestAnimationFrame(drawVrvp);
   if (state.compareAssets.length > 0) requestAnimationFrame(() => { try { drawCompare(); } catch (e) {} });
-  renderReplayUI();
 }
 
-function renderReplayUI() {
-  const r = state.replay;
-  const posEl  = document.getElementById("replayPos");
-  const playEl = document.getElementById("replayPlay");
-  if (!posEl || !playEl) return;
-  const total = r.fullData ? r.fullData.length : 0;
-  const cur   = r.fullData ? r.fullData[r.index] : null;
-  const dateStr = cur ? new Date(cur.timestamp).toLocaleDateString("de-CH") : "–";
-  posEl.textContent = `${r.index + 1} / ${total} · ${dateStr}`;
-  playEl.textContent = r.playing ? "⏸" : "▶";
+function toggleTheme() {
+  state.theme = state.theme === "dark" ? "light" : "dark";
+  saveWorkspace();
+  applyTheme();
 }
 
-function replayStep(dir) {
-  const r = state.replay;
-  if (!r.active || !r.fullData) return;
-  const next = r.index + dir;
-  if (next < 10 || next >= r.fullData.length) {
-    if (next >= r.fullData.length) replayPause();
+// ---------- Layouts (mehrere benannte Workspaces) ----------
+const LAYOUTS_KEY = "tv_layouts";
+
+function loadLayouts() {
+  try { return JSON.parse(localStorage.getItem(LAYOUTS_KEY)) || {}; }
+  catch { return {}; }
+}
+
+function saveLayouts(obj) {
+  try { localStorage.setItem(LAYOUTS_KEY, JSON.stringify(obj)); } catch (e) {}
+}
+
+function currentLayoutSnapshot() {
+  return {
+    symbol: state.symbol,
+    timeframeId: state.timeframe.id,
+    active: [...state.active],
+    chartType: state.chartType,
+    legendCollapsed: state.legendCollapsed,
+    watchlist: state.watchlist,
+    watchlistOpen: state.watchlistOpen,
+    theme: state.theme,
+    chartStyle: state.chartStyle,
+  };
+}
+
+function saveNamedLayout(name) {
+  if (!name || !name.trim()) { setStatus("Layout braucht einen Namen"); return; }
+  const layouts = loadLayouts();
+  layouts[name.trim()] = currentLayoutSnapshot();
+  saveLayouts(layouts);
+  renderLayoutList();
+  setStatus(`Layout "${name.trim()}" gespeichert`);
+}
+
+function applyNamedLayout(name) {
+  const layouts = loadLayouts();
+  const l = layouts[name];
+  if (!l) return;
+
+  state.symbol      = l.symbol || state.symbol;
+  state.timeframe   = CONFIG.TIMEFRAMES.find(t => t.id === l.timeframeId) || state.timeframe;
+  state.chartType   = l.chartType || state.chartType;
+  state.legendCollapsed = !!l.legendCollapsed;
+  state.watchlist   = l.watchlist || state.watchlist;
+  state.watchlistOpen = l.watchlistOpen !== false;
+  state.theme       = l.theme || state.theme;
+  state.chartStyle  = l.chartStyle || state.chartStyle;
+
+  // Indikatoren neu setzen: alte entfernen, neue aus dem Layout aktivieren
+  [...state.active].forEach(k => {
+    const ind = CONFIG.INDICATORS.find(i => i.key === k);
+    if (ind) removeIndicator(ind);
+  });
+  state.active = new Set(l.active || CONFIG.DEFAULT_ACTIVE);
+
+  saveWorkspace();
+  syncLabels();
+  applyTheme();
+  renderTfList();
+  renderTypeList();
+  renderIndPanel();
+  renderWatchlist();
+  applyAllActive();
+  loadData();
+  restartWatchlistStream();
+  document.getElementById("layoutPanel").classList.remove("open");
+  setStatus(`Layout "${name}" geladen`);
+}
+
+function renderLayoutList() {
+  const list = document.getElementById("layoutList");
+  if (!list) return;
+  list.innerHTML = "";
+  const layouts = loadLayouts();
+  const names = Object.keys(layouts);
+  if (names.length === 0) {
+    list.innerHTML = '<div class="dd-empty">Noch keine Layouts</div>';
     return;
   }
-  r.index = next;
-  applyReplayFrame();
+  names.forEach(name => {
+    const item = document.createElement("div");
+    item.className = "layout-item";
+    item.innerHTML = `<span class="li-name">${name}</span><button class="li-del" title="Löschen">✕</button>`;
+    item.addEventListener("click", (e) => {
+      if (e.target.closest(".li-del")) return;
+      applyNamedLayout(name);
+    });
+    item.querySelector(".li-del").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const l = loadLayouts();
+      delete l[name];
+      saveLayouts(l);
+      renderLayoutList();
+    });
+    list.appendChild(item);
+  });
 }
 
-function replayPlay() {
-  const r = state.replay;
-  if (!r.active) return;
-  r.playing = true;
-  clearInterval(r.timer);
-  r.timer = setInterval(() => {
-    if (r.index >= r.fullData.length - 1) { replayPause(); return; }
-    replayStep(1);
-  }, r.speed);
-  renderReplayUI();
+// ---------- Chart-Stil-Menü ----------
+function openChartStyleMenu(anchorEl) {
+  const menu = document.getElementById("chartStyleMenu");
+  if (!menu) return;
+  const cs = state.chartStyle;
+  const isLine = state.chartType === "area";
+
+  document.getElementById("csmCandleSection").classList.toggle("hidden", isLine);
+  document.getElementById("csmLineSection").classList.toggle("hidden", !isLine);
+
+  document.getElementById("csUpColor").value    = cs.upColor;
+  document.getElementById("csDownColor").value  = cs.downColor;
+  document.getElementById("csHollow").checked   = !!cs.hollow;
+  document.getElementById("csLineColor").value  = cs.lineColor;
+  document.getElementById("csLineWidth").value  = cs.lineWidth;
+  document.getElementById("csAreaFill").checked = cs.areaFill !== false;
+  document.getElementById("csFillOpacity").value = cs.fillOpacity;
+  document.getElementById("csFillOpacityVal").textContent = cs.fillOpacity + "%";
+
+  const r = anchorEl.getBoundingClientRect();
+  menu.classList.remove("hidden");
+  menu.style.left = Math.min(r.left, window.innerWidth - 250) + "px";
+  menu.style.top  = (r.bottom + 6) + "px";
 }
 
-function replayPause() {
-  const r = state.replay;
-  r.playing = false;
-  clearInterval(r.timer);
-  r.timer = null;
-  renderReplayUI();
+function applyChartStyle() {
+  const cs = state.chartStyle;
+  cs.upColor     = document.getElementById("csUpColor").value;
+  cs.downColor   = document.getElementById("csDownColor").value;
+  cs.hollow      = document.getElementById("csHollow").checked;
+  cs.lineColor   = document.getElementById("csLineColor").value;
+  cs.lineWidth   = parseInt(document.getElementById("csLineWidth").value, 10) || 2;
+  cs.areaFill    = document.getElementById("csAreaFill").checked;
+  cs.fillOpacity = parseInt(document.getElementById("csFillOpacity").value, 10);
+  saveWorkspace();
+  chart.setStyles(baseStyles());
+  document.getElementById("chartStyleMenu").classList.add("hidden");
 }
 
-function exitReplay() {
-  const r = state.replay;
-  replayPause();
-  r.active = false;
-  r.fullData = null;
-  document.getElementById("replayBar").classList.add("hidden");
-  loadData();   // normale Daten + Live-Stream wiederherstellen
+function resetChartStyle() {
+  state.chartStyle = {
+    upColor: "#3fb68b", downColor: "#d05e5e", hollow: false,
+    lineColor: "#e8b64c", lineWidth: 2, areaFill: true, fillOpacity: 15,
+  };
+  saveWorkspace();
+  chart.setStyles(baseStyles());
+  document.getElementById("chartStyleMenu").classList.add("hidden");
 }
 
 // ---------- Start ----------
 initDropdowns();
+syncLabels();
+applyTheme();
+renderLayoutList();
 renderAssetList();
 renderTfList();
 renderTypeList();
@@ -1541,19 +1677,33 @@ document.getElementById("wlAddBtn").addEventListener("click", (e) => {
 });
 document.getElementById("wlSearch").addEventListener("input", (e) => renderWlSearch(e.target.value));
 
-// ---------- Replay-Handler ----------
-document.getElementById("replayStartBtn").addEventListener("click", () => {
-  if (state.replay.active) exitReplay(); else startReplay();
+// ---------- Theme-Handler ----------
+document.getElementById("themeBtn").addEventListener("click", toggleTheme);
+
+// ---------- Layout-Handler ----------
+document.getElementById("layoutSaveBtn").addEventListener("click", () => {
+  const input = document.getElementById("layoutName");
+  saveNamedLayout(input.value);
+  input.value = "";
 });
-document.getElementById("replayPlay").addEventListener("click", () => {
-  if (state.replay.playing) replayPause(); else replayPlay();
+document.getElementById("layoutName").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    saveNamedLayout(e.target.value);
+    e.target.value = "";
+  }
 });
-document.getElementById("replayStepFwd").addEventListener("click", () => { replayPause(); replayStep(1); });
-document.getElementById("replayStepBack").addEventListener("click", () => { replayPause(); replayStep(-1); });
-document.getElementById("replayExit").addEventListener("click", exitReplay);
-document.getElementById("replaySpeed").addEventListener("change", (e) => {
-  state.replay.speed = parseInt(e.target.value, 10);
-  if (state.replay.playing) replayPlay();   // Timer mit neuem Tempo neu starten
+
+// ---------- Chart-Stil-Handler ----------
+document.getElementById("csApplyBtn").addEventListener("click", applyChartStyle);
+document.getElementById("csResetBtn").addEventListener("click", resetChartStyle);
+document.getElementById("csFillOpacity").addEventListener("input", (e) => {
+  document.getElementById("csFillOpacityVal").textContent = e.target.value + "%";
+});
+document.addEventListener("click", (e) => {
+  const m = document.getElementById("chartStyleMenu");
+  if (m && !m.contains(e.target) && !e.target.closest(".ind-gear")) {
+    m.classList.add("hidden");
+  }
 });
 
 // Legende folgt dem Crosshair

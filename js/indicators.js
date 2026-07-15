@@ -851,7 +851,12 @@ klinecharts.registerIndicator({
       styles: (d, ind) => {
         const isUp = d.current?.indicatorData?.isUp;
         const key  = isUp ? "up" : "dn";
-        return plotStyle(ind, key, isUp ? "rgba(63,182,139,0.65)" : "rgba(208,94,94,0.65)", 1);
+        const p = ind?.extendData?.plots?.[key];
+        // bar-Figures brauchen style:"fill" — "solid" (aus plotStyle)
+        // zeichnet keine gefüllten Balken.
+        if (!p) return { style: "fill", color: isUp ? "rgba(63,182,139,0.65)" : "rgba(208,94,94,0.65)" };
+        if (p.visible === false) return { style: "fill", color: "rgba(0,0,0,0)" };
+        return { style: "fill", color: p.color };
       }
     },
     { key: "ma1", title: "MA1: ", type: "line", styles: (d, ind) => plotStyle(ind, "ma1", "#e8b64c", 1) },
