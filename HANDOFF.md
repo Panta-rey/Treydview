@@ -132,6 +132,8 @@ Labels sind **Chips mit Hintergrund** — `drawText` in KLC unterstützt `styles
 
 **Theme:** Mond/Sonne-Button, `data-theme="light"|"dark"` CSS-Variablen, `applyTheme()` zieht Chart-Theme nach. Persistent.
 
+**Achtung bei Light-Mode:** Hartcodierte Hintergründe wie `rgba(20,26,35,.85)` brechen im Hell-Modus (dunkler Text auf dunklem Grund). Betraf `.legend-toggle` und `.legend-body` — beide haben jetzt gar keinen Hintergrund mehr. Bei neuen Elementen immer CSS-Variablen nutzen, nie feste Farben.
+
 **Layouts:** Button oben rechts (4 Quadrate), localStorage `"tv_layouts"`. Name → speichern, Klick → laden, einzeln löschbar. Snapshot: symbol/tf/active/chartType/legend/watchlist/theme/chartStyle.
 
 **Chart-Stil-Menü:** Zahnrad pro Chart-Typ im typeDropdown. Kerzen: Up/Down-Farbe + Hohl-Option. Linie: Farbe/Stärke/Fläche/Deckkraft. `baseStyles()` nutzt `state.chartStyle`.
@@ -260,7 +262,11 @@ computeTier -> LP/UP/Hebel/Grids/SL/TP/Size/Liq-Check                    [B37-B4
 
 ### UI
 
-Bodenleiste (`position:absolute; bottom:0`), Roboter-Icon in der Topbar. Zweistufig: kollabierte Statuszeile (Bias-Pill, Regime, RSI, Funding, F&G) ↔ aufgeklappt mit drei Tabs (Strategie / Daten / Einstellungen). Zustand persistent.
+Roboter-Icon in der Topbar. Zweistufig: kollabierte Statuszeile (Bias-Pill, Regime, RSI, Funding, F&G) ↔ aufgeklappt mit drei Tabs (Strategie / Daten / Einstellungen). Zustand persistent.
+
+**Layout:** Die Leiste ist ein **Flex-Kind in `.chart-col`**, kein `position:absolute`. Dadurch grenzt sie links an die Drawbar und rechts an die Watchlist an, statt darüberzuliegen; der Chart schrumpft entsprechend. Höhe per Handle (`#gbResize`, ns-resize) verstellbar, persistent in `state.gbHeight`. Der Handle ist nur sichtbar, wenn die Leiste offen und nicht kollabiert ist.
+
+**Tabellen-Layout:** `.gb-table` hat `width:auto`, **nicht** `100%`. Bei voller Breite zieht der Browser die Spalten auseinander und Bezeichnung und Wert verlieren den Zusammenhang. Zusätzlich: Zeilentrenner (`rgba(128,140,155,.09)`), Hover-Highlight, und Gruppenzeilen (Konfiguration / Grid / Ausstieg / Kapital) statt einer langen Liste. Alle drei Tabs nutzen 12px — vorher waren Daten und Einstellungen auf 11px.
 
 **Die Grid-Bänder im Chart überleben das Schliessen der Leiste** — bewusst: sonst müsste man sie offen halten, nur um die Visualisierung zu sehen, und das hebelt den Zweck des Wegklappens aus.
 
@@ -268,7 +274,7 @@ Overlay `gridBands` (overlays.js): Range-Fläche, Grid-Linien (max. 60 gezeichne
 
 ### Long / Short Position
 
-Overlay `positionTool`, **Zeichenwerkzeug** in der Drawbar unter Messwerkzeuge — kein Panel. Drei Klicks: Einstieg, Stop, Ziel. Zeigt Risiko-/Gewinnzone, CRV, Positionsgrösse.
+Overlay `positionTool`, **Zeichenwerkzeug mit eigenem Button in der Drawbar** (`#posToolBtn`, direkt unter dem Stil-Wähler) — bewusst kein Untermenü. Es liefert Stop und Positionsgrösse, also die Zahlen, um die es beim Handeln geht; ein Dropdown davor wäre eine Hürde an der falschen Stelle. Zweiter Klick auf den Button bricht ab (gleiche Logik wie der ESC-Handler). Drei Klicks: Einstieg, Stop, Ziel → Risiko-/Gewinnzone, CRV, Positionsgrösse.
 
 **Gemeinsame Sizing-Quelle:** `window.__tvSizing()` liest die Felder Kapital/Risiko% aus dem Grid-Bot-Panel. Eine Quelle, zwei Konsumenten — sonst hat man das Kapital an zwei Orten und irgendwann divergieren sie.
 

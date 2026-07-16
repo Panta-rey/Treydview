@@ -248,7 +248,6 @@ const CONFIG = {
     { overlay: "fibRetracement",        icon: "𝑓",  title: "Fib Retracement" },
     { overlay: "fibExtension",          icon: "𝑓",  title: "Fib Extension" },
     { overlay: "rectangle",              icon: "▭",  title: "Rechteck" },
-    { overlay: "positionTool",       icon: "⇅",  title: "Long / Short Position" },
     { overlay: "priceRange",             icon: "↕",  title: "Price Range" },
     { overlay: "dateRange",              icon: "↔",  title: "Date Range" },
     { overlay: "frvp",                   icon: "▤",  title: "Fixed Range Volume Profile" },

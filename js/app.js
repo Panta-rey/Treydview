@@ -53,6 +53,7 @@ const state = {
   // Grid Bot
   gbOpen: _ws?.gbOpen || false,
   gbCollapsed: _ws?.gbCollapsed || false,
+  gbHeight: _ws?.gbHeight || 250,
   gbActiveTier: _ws?.gbActiveTier || null,
   gbBandIds: [],
   gbResult: null,
@@ -1109,7 +1110,6 @@ const DRAW_CATEGORIES = [
     id: "measure", title: "Messwerkzeuge",
     icon: `<svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" stroke-width="1.5"/><line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="1.5"/></svg>`,
     tools: [
-      { overlay: "positionTool", label: "Long / Short Position", desc: "Einstieg, Stop, Ziel → CRV und Grösse" },
       { overlay: "priceRange", label: "Preisspanne",  desc: "Prozentuale Preisänderung" },
       { overlay: "dateRange",  label: "Zeitspanne",   desc: "Zeit und Kerzenanzahl" },
     ],
@@ -1137,6 +1137,36 @@ function renderDrawbar() {
   bar.appendChild(styleBtn);
 
   const sep0 = document.createElement("div"); sep0.className = "draw-sep"; bar.appendChild(sep0);
+
+  // Long/Short Position: eigener Button statt in einem Untermenü.
+  // Es liefert Stop und Positionsgrösse — die Zahlen, um die es beim
+  // Handeln tatsächlich geht. Ein Dropdown davor wäre eine Hürde an der
+  // falschen Stelle.
+  const posBtn = document.createElement("button");
+  posBtn.id = "posToolBtn";
+  posBtn.className = "draw-cat-btn draw-pos" + (state.activeTool === "positionTool" ? " active" : "");
+  posBtn.title = "Long / Short Position — Einstieg, Stop, Ziel klicken";
+  posBtn.innerHTML = `<svg viewBox="0 0 24 24" style="width:21px;height:21px">
+    <rect x="3" y="4" width="18" height="6.5" rx="1" fill="rgba(63,182,139,.22)" stroke="#3fb68b" stroke-width="1.6"/>
+    <rect x="3" y="13.5" width="18" height="6.5" rx="1" fill="rgba(208,94,94,.22)" stroke="#d05e5e" stroke-width="1.6"/>
+    <line x1="1.5" y1="12" x2="22.5" y2="12" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 2"/>
+  </svg>`;
+  posBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    // Zweiter Klick bricht ab — gleiche Logik wie der ESC-Handler
+    if (state.activeTool === "positionTool") {
+      if (state.drawingId != null) { try { chart.removeOverlay(state.drawingId); } catch (err) {} state.drawingId = null; }
+      state.activeTool = null;
+      renderDrawbar();
+      setStatus("Abgebrochen");
+      return;
+    }
+    startTool("positionTool");
+    setStatus("Long/Short: 1. Einstieg klicken  →  2. Stop  →  3. Ziel");
+  });
+  bar.appendChild(posBtn);
+
+  const sepPos = document.createElement("div"); sepPos.className = "draw-sep"; bar.appendChild(sepPos);
 
   // Kategorie-Gruppen
   DRAW_CATEGORIES.forEach(cat => {
@@ -1326,6 +1356,7 @@ function saveWorkspace() {
       theme: state.theme,
     gbOpen: state.gbOpen,
     gbCollapsed: state.gbCollapsed,
+    gbHeight: state.gbHeight,
     gbActiveTier: state.gbActiveTier,
     gbTiers: state.gbTiers,
     gbThresholds: state.gbThresholds,
@@ -1640,34 +1671,48 @@ function gbRenderStatus() {
 function gbRenderTiers() {
   const r = state.gbResult;
   const t = document.getElementById("gbTiers");
-  if (!r || !r.tiers.length) { t.innerHTML = '<tr><td class="lbl">Keine Daten</td></tr>'; return; }
+  if (!r || !r.tiers.length) { t.innerHTML = '<tbody><tr><td class="lbl">Keine Daten</td></tr></tbody>'; return; }
 
   const fmt = (n) => n == null ? "–" : n.toLocaleString("de-CH", { maximumFractionDigits: 0 });
-  const rows = [
-    ["Laufzeit",    (x) => x.horizon],
-    ["Grid-Typ",    (x) => x.gridType],
-    ["ATR-Basis",   (x) => x.atrKey.toUpperCase().replace("ATR", "ATR") + ` (${x.atrPct.toFixed(2)}%)`],
-    ["Range unten", (x) => fmt(x.lower)],
-    ["Range oben",  (x) => fmt(x.upper)],
-    ["Hebel",       (x) => x.leverage + "×"],
-    ["Grids",       (x) => x.grids + `  (${fmt(x.gridStep)} Abstand)`],
-    ["Stop Loss",   (x) => fmt(x.stopLoss)],
-    ["Take Profit", (x) => x.takeProfit ? fmt(x.takeProfit) : "Range (kein TP)"],
-    ["Funding/Mon", (x) => x.fundingDrag ? x.fundingDrag + "%" : "0%"],
-    ["Positionsgrösse", (x) => fmt(x.positionSize) + " USDT"],
-    ["Effektiv",    (x) => fmt(x.effective) + " USDT"],
-    ["Sicherheit",  (x) => x.safety],
+
+  // Gruppiert: erst was der Bot ist, dann die Range, dann das Geld.
+  const groups = [
+    ["Konfiguration", [
+      ["Laufzeit",    (x) => x.horizon],
+      ["Grid-Typ",    (x) => x.gridType],
+      ["ATR-Basis",   (x) => x.atrKey.toUpperCase() + " · " + x.atrPct.toFixed(2) + "%"],
+    ]],
+    ["Grid", [
+      ["Range oben",  (x) => fmt(x.upper)],
+      ["Range unten", (x) => fmt(x.lower)],
+      ["Grids",       (x) => x.grids],
+      ["Grid-Abstand",(x) => fmt(x.gridStep)],
+      ["Hebel",       (x) => x.leverage + "×"],
+    ]],
+    ["Ausstieg", [
+      ["Stop Loss",   (x) => fmt(x.stopLoss)],
+      ["Take Profit", (x) => x.takeProfit ? fmt(x.takeProfit) : "Range"],
+      ["Sicherheit",  (x) => x.safety],
+    ]],
+    ["Kapital", [
+      ["Positionsgrösse", (x) => fmt(x.positionSize) + " USDT"],
+      ["Effektiv (×Hebel)", (x) => fmt(x.effective) + " USDT"],
+      ["Funding/Monat", (x) => (x.fundingDrag ? x.fundingDrag : 0) + "%"],
+    ]],
   ];
 
-  let html = '<tr><th></th>' + r.tiers.map(x => `<th class="tier-head">${x.label}</th>`).join("") + "</tr>";
-  rows.forEach(([lbl, fn], i) => {
-    const sep = (lbl === "Range unten" || lbl === "Positionsgrösse") ? ' class="gb-sep"' : "";
-    html += `<tr${sep}><td class="lbl">${lbl}</td>` +
-      r.tiers.map(x => `<td${state.gbActiveTier === x.id ? ' class="on"' : ""}>${fn(x)}</td>`).join("") + "</tr>";
+  const nCols = r.tiers.length + 1;
+  let html = "<thead><tr><th></th>" + r.tiers.map(x => `<th class="tier-head">${x.label}</th>`).join("") + "</tr></thead><tbody>";
+  groups.forEach(([title, rows]) => {
+    html += `<tr class="gb-group"><td colspan="${nCols}">${title}</td></tr>`;
+    rows.forEach(([lbl, fn]) => {
+      html += `<tr><td class="lbl">${lbl}</td>` +
+        r.tiers.map(x => `<td${state.gbActiveTier === x.id ? ' class="on"' : ""}>${fn(x)}</td>`).join("") + "</tr>";
+    });
   });
-  html += '<tr class="gb-sep"><td class="lbl"></td>' + r.tiers.map(x =>
-    `<td><button class="gb-show${state.gbActiveTier === x.id ? " active" : ""}" data-tier="${x.id}">${state.gbActiveTier === x.id ? "Im Chart ✓" : "Im Chart"}</button></td>`
-  ).join("") + "</tr>";
+  html += '<tr class="gb-group"><td colspan="' + nCols + '">Im Chart anzeigen</td></tr><tr><td class="lbl"></td>' +
+    r.tiers.map(x => `<td><button class="gb-show${state.gbActiveTier === x.id ? " active" : ""}" data-tier="${x.id}">${state.gbActiveTier === x.id ? "Aktiv ✓" : "Anzeigen"}</button></td>`).join("") +
+    "</tr></tbody>";
   t.innerHTML = html;
 
   t.querySelectorAll(".gb-show").forEach(b => {
@@ -1755,11 +1800,58 @@ function gbDrawBands(tierId) {
   } catch (e) {}
 }
 
+// Höhe der Leiste per Handle verstellbar — damit man alle Zahlen
+// ohne Scrollen sehen kann, wenn man will.
+function gbInitResize() {
+  const handle = document.getElementById("gbResize");
+  const bar = document.getElementById("gridBotBar");
+  let dragging = false, startY = 0, startH = 0;
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    const max = document.querySelector(".chart-col").clientHeight - 160;
+    const h = Math.max(34, Math.min(max, startH + (startY - y)));
+    bar.style.height = h + "px";
+    state.gbHeight = h;
+    resize();
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.cursor = "";
+    saveWorkspace();
+  };
+
+  const onDown = (e) => {
+    dragging = true;
+    startY = e.touches ? e.touches[0].clientY : e.clientY;
+    startH = bar.getBoundingClientRect().height;
+    document.body.style.cursor = "ns-resize";
+    e.preventDefault();
+  };
+
+  handle.addEventListener("mousedown", onDown);
+  handle.addEventListener("touchstart", onDown, { passive: false });
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("touchmove", onMove, { passive: false });
+  document.addEventListener("mouseup", onUp);
+  document.addEventListener("touchend", onUp);
+}
+
+function gbApplyHeight() {
+  const bar = document.getElementById("gridBotBar");
+  if (state.gbCollapsed) { bar.style.height = ""; return; }
+  bar.style.height = (state.gbHeight || 250) + "px";
+}
+
 function gbToggleBar(show) {
   const bar = document.getElementById("gridBotBar");
   const on = show != null ? show : bar.classList.contains("hidden");
   bar.classList.toggle("hidden", !on);
+  document.getElementById("gbResize").classList.toggle("hidden", !on || state.gbCollapsed);
   document.getElementById("gridBotBtn").classList.toggle("active", on);
+  if (on) gbApplyHeight();
   state.gbOpen = on;
   saveWorkspace();
   resize();
@@ -1768,10 +1860,12 @@ function gbToggleBar(show) {
 
 function gbSetCollapsed(c) {
   document.getElementById("gbBody").classList.toggle("collapsed", c);
+  document.getElementById("gbResize").classList.toggle("hidden", c || !state.gbOpen);
   document.getElementById("gbChev").innerHTML = c
     ? '<path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
     : '<path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
   state.gbCollapsed = c;
+  gbApplyHeight();
   saveWorkspace();
   resize();
 }
@@ -2046,6 +2140,7 @@ function currentLayoutSnapshot() {
     theme: state.theme,
     gbOpen: state.gbOpen,
     gbCollapsed: state.gbCollapsed,
+    gbHeight: state.gbHeight,
     gbActiveTier: state.gbActiveTier,
     gbTiers: state.gbTiers,
     gbThresholds: state.gbThresholds,
@@ -2179,6 +2274,7 @@ function resetChartStyle() {
 initDropdowns();
 syncLabels();
 gbRenderSettings();
+gbInitResize();
 gbSetCollapsed(state.gbCollapsed);
 if (state.gbOpen) gbToggleBar(true);
 applyTheme();
