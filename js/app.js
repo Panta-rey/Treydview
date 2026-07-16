@@ -1467,6 +1467,18 @@ chart.setLoadDataCallback(async ({ type, data, callback }) => {
   }
 });
 
+// Labels aus dem State setzen. Nötig nach Workspace-/Layout-Restore, sonst
+// zeigt die Topbar die statischen HTML-Defaults (1D, BTC/USDT, Kerzen)
+// statt der wiederhergestellten Auswahl.
+function syncLabels() {
+  const a = document.getElementById("assetLabel");
+  const t = document.getElementById("tfLabel");
+  const c = document.getElementById("typeLabel");
+  if (a) a.textContent = state.symbol.label;
+  if (t) t.textContent = state.timeframe.label;
+  if (c) c.textContent = state.chartType === "area" ? "Linie" : "Kerzen";
+}
+
 // ---------- Theme (Hell / Dunkel) ----------
 function applyTheme() {
   document.documentElement.setAttribute("data-theme", state.theme);
