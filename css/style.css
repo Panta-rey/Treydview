@@ -413,3 +413,9 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .gb-status .gb-tab{background:transparent;border:none;color:var(--text-dim);font-family:var(--font-mono);font-size:11px;padding:4px 10px;cursor:pointer;border-radius:3px;height:24px;}
 .gb-status .gb-tab:hover{color:var(--text);background:var(--bg-hover);}
 .gb-status .gb-tab.active{background:var(--bg);color:var(--accent);}
+
+/* Compare-Chips: Auge zum Ein-/Ausblenden */
+.cc-eye{background:transparent;border:none;color:var(--text-dim);cursor:pointer;padding:1px 3px;display:flex;align-items:center;border-radius:2px;}
+.cc-eye:hover{color:var(--accent);background:var(--bg-hover);}
+.compare-chip.hidden-asset{opacity:.45;}
+.compare-chip.hidden-asset .cc-label{text-decoration:line-through;}

@@ -13,6 +13,7 @@ const CONFIG = {
     { id: "BTCUSDT",  label: "BTC/USDT",  type: "binance" },
     { id: "ETHUSDT",  label: "ETH/USDT",  type: "binance" },
     { id: "SOLUSDT",  label: "SOL/USDT",  type: "binance" },
+    { id: "AEROUSDT", label: "AERO/USDT", type: "binance" },
     { id: "XAUUSD",   label: "Gold XAU/USD", type: "worker" },
   ],
 

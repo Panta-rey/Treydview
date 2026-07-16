@@ -84,7 +84,13 @@ const state = {
 };
 
 // Farbpalette für Vergleichs-Assets
-const COMPARE_COLORS = ["#5aa9e6", "#e8b64c", "#c792ea", "#3fb68b", "#ff6d00", "#ff5c8a"];
+// 15 gut unterscheidbare Farben. Reihenfolge so gewählt, dass benachbarte
+// Einträge nie ähnliche Töne bekommen.
+const COMPARE_COLORS = [
+  "#5aa9e6", "#e8b64c", "#c792ea", "#3fb68b", "#ff6d00",
+  "#ff5c8a", "#4dd0e1", "#aed581", "#ba68c8", "#ffb74d",
+  "#7986cb", "#f06292", "#4db6ac", "#dce775", "#9575cd",
+];
 
 // ---------- Chart-Init ----------
 const chartEl = document.getElementById("mainChart");
@@ -356,8 +362,11 @@ async function loadData() {
     return;
   }
   chart.applyNewData(candles);
-  // Y-Achse für vertikales Draggen entsperren (nach Auto-Skalierung)
-  setTimeout(unlockYAxis, 80);
+  // 2.9: Nach einem Asset-Wechsel liegen die Preisniveaus ganz woanders
+  // (BTC ~60'000, ETH ~2'500). Ohne Auto-Skalierung müsste man die
+  // Y-Achse erst suchen. autoScaleY() skaliert neu und entsperrt danach
+  // die Achse fürs vertikale Draggen.
+  setTimeout(autoScaleY, 80);
   updatePriceHeader(candles.at(-1), candles.at(-2));
   updateLegend();
   setStatus(`${candles.length} Candles · ${state.symbol.label} · ${state.timeframe.label}`);
@@ -482,11 +491,24 @@ function renderCompareActive() {
   }
   state.compareAssets.forEach(a => {
     const chip = document.createElement("div");
-    chip.className = "compare-chip";
+    chip.className = "compare-chip" + (a.hidden ? " hidden-asset" : "");
+    const eye = a.hidden
+      ? `<path d="M2 2l20 20M9.9 5.1A9.9 9.9 0 0 1 12 5c7 0 11 7 11 7a18 18 0 0 1-3.2 4M6.6 6.6A18 18 0 0 0 1 12s4 7 11 7a9.9 9.9 0 0 0 4.2-.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`
+      : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/>`;
     chip.innerHTML = `<span class="cc-dot" style="background:${a.color}"></span>`
       + `<span class="cc-label">${a.label}</span>`
+      + `<button class="cc-eye" title="${a.hidden ? "Einblenden" : "Ausblenden"}"><svg viewBox="0 0 24 24" width="13" height="13">${eye}</svg></button>`
       + `<button class="cc-remove" title="Entfernen">✕</button>`;
-    chip.querySelector(".cc-remove").addEventListener("click", () => removeCompareAsset(a.id));
+    // stopPropagation: sonst schliesst der globale Click-Handler das
+    // Dropdown und man kann nicht mehrere Assets hintereinander entfernen.
+    chip.querySelector(".cc-eye").addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleCompareAsset(a.id);
+    });
+    chip.querySelector(".cc-remove").addEventListener("click", (e) => {
+      e.stopPropagation();
+      removeCompareAsset(a.id);
+    });
     box.appendChild(chip);
   });
 }
@@ -497,12 +519,22 @@ async function addCompareAsset(sym) {
     return;
   }
   const color = COMPARE_COLORS[state.compareAssets.length];
-  const entry = { id: sym.id, label: sym.label, color, data: [] };
+  const entry = { id: sym.id, label: sym.label, color, data: [], hidden: false };
   state.compareAssets.push(entry);
   renderCompareActive();
   renderCompareList(document.getElementById("compareSearch")?.value || "");
   await refreshCompareData(entry);
   applyCompareIndicator();
+}
+
+function toggleCompareAsset(id) {
+  const a = state.compareAssets.find(c => c.id === id);
+  if (!a) return;
+  a.hidden = !a.hidden;
+  window.__tvCompareAssets = state.compareAssets;
+  renderCompareActive();
+  try { drawCompare(); } catch (e) {}
+  updateLegend();
 }
 
 function removeCompareAsset(id) {
@@ -640,6 +672,7 @@ function drawCompare() {
 
   // Vergleichs-Linien
   state.compareAssets.forEach((asset, idx) => {
+    if (asset.hidden) return;
     const { m, ref } = assetRefs[idx];
     if (!ref) return;
     drawLine(ctx, dataList, fromIdx, toIdx, (d) => {
@@ -671,7 +704,58 @@ function drawCompare() {
     ctx.fillText(label, axisX, y + 4);
   }
 
+  // 2.3: Kürzel + aktueller Wert am rechten Ende jeder Linie.
+  // Ohne das muss man Farben raten, sobald mehr als drei Assets laufen.
+  const lastVisible = dataList[toIdx];
+  const chips = [];
+  if (mainRef && lastVisible?.close) {
+    chips.push({
+      label: shortSymbol(state.symbol.label),
+      pct: ((lastVisible.close - mainRef) / mainRef) * 100,
+      color: "#ffffff",
+    });
+  }
+  state.compareAssets.forEach((asset, idx) => {
+    if (asset.hidden) return;
+    const { m, ref } = assetRefs[idx];
+    if (!ref) return;
+    // Letzten verfügbaren Wert im sichtbaren Bereich suchen
+    let v = null;
+    for (let i = toIdx; i >= fromIdx && v == null; i--) v = m.get(dataList[i].timestamp);
+    if (v == null) return;
+    chips.push({ label: shortSymbol(asset.label), pct: ((v - ref) / ref) * 100, color: asset.color });
+  });
+
+  // Überlappung vermeiden: nach Y sortieren und mindestens 14px Abstand
+  chips.forEach(c => { c.y = pctToY(c.pct); });
+  chips.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < chips.length; i++) {
+    if (chips[i].y - chips[i - 1].y < 14) chips[i].y = chips[i - 1].y + 14;
+  }
+
+  ctx.font = "10px 'IBM Plex Mono', monospace";
+  ctx.textAlign = "left";
+  chips.forEach(c => {
+    const txt = `${c.label} ${c.pct >= 0 ? "+" : ""}${c.pct.toFixed(1)}%`;
+    const tw = ctx.measureText(txt).width;
+    const bx = w - tw - 12, by = c.y - 7;
+    ctx.fillStyle = T.bg || "rgba(13,17,23,0.9)";
+    ctx.fillRect(bx - 3, by, tw + 6, 14);
+    ctx.strokeStyle = c.color;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx - 3, by, tw + 6, 14);
+    ctx.fillStyle = c.color;
+    ctx.fillText(txt, bx, by + 10);
+  });
+
   ctx.restore();
+}
+
+// "BTC/USDT" -> "BTC", "Gold XAU/USD" -> "XAU"
+function shortSymbol(label) {
+  const s = String(label).split("/")[0].trim();
+  const parts = s.split(" ");
+  return (parts.at(-1) || s).toUpperCase().slice(0, 5);
 }
 
 function drawLine(ctx, dataList, from, to, valFn, color, width, dl, pctToY, chart) {
@@ -893,6 +977,12 @@ function autoZoom() {
   autoScaleY();
 }
 
+// Mauszeiger über dem Chart setzen. "" stellt das Fadenkreuz wieder her.
+function setChartCursor(cursor) {
+  const el = document.getElementById("mainChart");
+  if (el) el.style.cursor = cursor;
+}
+
 // ---------- Drawing-Toolbar ----------
 function currentOverlayStyles() {
   const ds = state.drawStyle;
@@ -944,6 +1034,10 @@ function startTool(overlayName) {
     },
     onSelected:   (e) => { state.selectedOverlayId = e.overlay.id; return false; },
     onDeselected: () => { state.selectedOverlayId = null; return false; },
+    // 2.15: Zeigt an, dass die Zeichnung anklickbar ist. Ohne das sieht
+    // man dem Fadenkreuz nicht an, dass hier etwas zu holen ist.
+    onMouseEnter: () => { setChartCursor("pointer"); return false; },
+    onMouseLeave: () => { setChartCursor(""); return false; },
     // Rechtsklick auf JEDE Zeichnung → Kontext-Menü mit Löschen
     onRightClick: (e) => {
       if (overlayName === "frvp") {
@@ -1096,6 +1190,9 @@ const DRAW_CATEGORIES = [
     tools: [
       { overlay: "segment",                label: "Trendlinie",       desc: "Verbindet Hochs oder Tiefs" },
       { overlay: "horizontalStraightLine",  label: "Horizontale Linie",desc: "Support- und Resistance-Level" },
+      { overlay: "verticalStraightLine",    label: "Vertikale Linie",  desc: "Zeitereignis markieren" },
+      { overlay: "priceLine",               label: "Preislinie",       desc: "Horizontale mit Preislabel" },
+      { overlay: "rectangle",               label: "Rechteck",         desc: "Preiszonen, Orderblöcke" },
       { overlay: "rayLine",                 label: "Strahl",           desc: "Halbgerade ab einem Punkt" },
       { overlay: "priceChannelLine",        label: "Parallelkanal",    desc: "Zwei parallele Trendlinien" },
       { overlay: "parallelStraightLine",    label: "Parallele Linien", desc: "Mehrere parallele Geraden" },
@@ -1105,9 +1202,7 @@ const DRAW_CATEGORIES = [
     id: "zones", title: "Zonen & Profile",
     icon: `<svg viewBox="0 0 24 24"><rect x="3" y="4" width="6" height="3" rx="1" fill="currentColor"/><rect x="3" y="9" width="12" height="3" rx="1" fill="currentColor"/><rect x="3" y="14" width="9" height="3" rx="1" fill="currentColor"/><rect x="3" y="19" width="5" height="2" rx="1" fill="currentColor"/></svg>`,
     tools: [
-      { overlay: "rectangle",   label: "Rechteck",         desc: "Preiszonen, Orderblöcke" },
       { overlay: "frvp",        label: "Fixed Range Vol.",  desc: "Volumen pro Preisstufe" },
-      { overlay: "priceLine",   label: "Preislinie",        desc: "Horizontale mit Preislabel" },
     ],
   },
   {
@@ -1130,7 +1225,8 @@ const DRAW_CATEGORIES = [
     id: "annot", title: "Annotationen",
     icon: `<svg viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
     tools: [
-      { overlay: "verticalStraightLine", label: "Vertikale Linie", desc: "Zeitereignis markieren" },
+      { overlay: "simpleAnnotation", label: "Textfeld",  desc: "Notiz an eine Kerze heften" },
+      { overlay: "simpleTag",        label: "Preis-Tag", desc: "Markierung auf der Preisachse" },
     ],
   },
 ];
@@ -1495,6 +1591,11 @@ function restartWatchlistStream() {
 
 // ---------- Symbol-Wechsel (zentral, auch von Watchlist genutzt) ----------
 function switchSymbol(sym) {
+  // 2.8: Zeichnungen gehören zum Asset, nicht zum Chart. Ein FRVP oder
+  // eine Fibonacci auf BTC-Preisen ist auf ETH schlicht falsch — die
+  // Preisniveaus haben dort keine Bedeutung. Also weg damit.
+  clearAllDrawings();
+
   state.symbol = sym;
   saveWorkspace();
   document.getElementById("assetLabel").textContent = sym.label;
@@ -1505,6 +1606,25 @@ function switchSymbol(sym) {
   renderWatchlist();
   loadData();
   reloadAllCompareData();
+}
+
+// Alle User-Zeichnungen entfernen. Grid-Bänder und Muster bleiben, die
+// werden vom jeweiligen Modul selbst verwaltet.
+function clearAllDrawings() {
+  try {
+    const store = chart.getOverlayStore?.();
+    const all = store?.getCompleteOverlays?.() || [];
+    all.forEach(o => {
+      // Vom System erzeugte Overlays nicht anfassen
+      if (o.name === "gridBands" || o.name === "pattern") return;
+      try { chart.removeOverlay(o.id); } catch (e) {}
+    });
+  } catch (e) { /* interne API — bei Versionswechsel prüfen */ }
+  // Muster und Grid-Bänder gehören ebenfalls zum alten Asset
+  clearPatterns();
+  gbClearBands();
+  state.gbActiveTier = null;
+  state.selectedOverlayId = null;
 }
 
 // ---------- Lazy Loading: ältere Kerzen beim Zurückscrollen ----------
@@ -1809,6 +1929,8 @@ function gbDrawBands(tierId) {
       name: "gridBands",
       points: [{ timestamp: ts, value: t.upper }, { timestamp: d.at(-1).timestamp, value: t.lower }],
       lock: true,
+      onMouseEnter: () => { setChartCursor("pointer"); return false; },
+      onMouseLeave: () => { setChartCursor(""); return false; },
       extendData: {
         lower: t.lower, upper: t.upper, grids: t.grids, stopLoss: t.stopLoss,
         takeProfit: t.takeProfit, label: t.label, direction: t.direction, leverage: t.leverage,
@@ -2058,6 +2180,8 @@ function scanPatterns() {
         name: "pattern",
         points,
         lock: true,   // nicht versehentlich verschiebbar
+        onMouseEnter: () => { setChartCursor("pointer"); return false; },
+        onMouseLeave: () => { setChartCursor(""); return false; },
         extendData: {
           label: p.label,
           direction: p.direction,
@@ -2150,6 +2274,9 @@ function currentLayoutSnapshot() {
   return {
     symbol: state.symbol,
     timeframeId: state.timeframe.id,
+    // Nur die Kennung sichern, nicht die Kursdaten — die werden beim
+    // Laden ohnehin neu geholt und wären sonst mehrere MB im localStorage.
+    compareAssets: state.compareAssets.map(a => ({ id: a.id, label: a.label })),
     active: [...state.active],
     chartType: state.chartType,
     legendCollapsed: state.legendCollapsed,
@@ -2196,6 +2323,15 @@ function applyNamedLayout(name) {
   });
   state.active = new Set(l.active || CONFIG.DEFAULT_ACTIVE);
 
+  // Vergleichs-Assets aus dem Layout übernehmen. Ohne das bleibt der
+  // alte Compare-State stehen und man sieht Kerzen UND Vergleichslinien
+  // gleichzeitig.
+  state.compareAssets = (l.compareAssets || []).map((a, i) => ({
+    id: a.id, label: a.label, color: COMPARE_COLORS[i % COMPARE_COLORS.length],
+    data: [], hidden: false,
+  }));
+  window.__tvCompareAssets = state.compareAssets;
+
   saveWorkspace();
   syncLabels();
   applyTheme();
@@ -2203,9 +2339,15 @@ function applyNamedLayout(name) {
   renderTypeList();
   renderIndPanel();
   renderWatchlist();
+  renderCompareActive();
   applyAllActive();
   loadData();
   restartWatchlistStream();
+
+  // Kerzen aus- bzw. wieder einblenden — je nachdem ob das Layout
+  // Vergleiche enthält. Muss NACH loadData laufen.
+  applyCompareIndicator();
+  if (state.compareAssets.length > 0) reloadAllCompareData();
   document.getElementById("layoutPanel").classList.remove("open");
   setStatus(`Layout "${name}" geladen`);
 }
