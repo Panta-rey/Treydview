@@ -50,6 +50,15 @@ const state = {
   // Theme: "dark" | "light"
   theme: _ws?.theme || "dark",
 
+  // Grid Bot
+  gbOpen: _ws?.gbOpen || false,
+  gbCollapsed: _ws?.gbCollapsed || false,
+  gbActiveTier: _ws?.gbActiveTier || null,
+  gbBandIds: [],
+  gbResult: null,
+  gbTiers: _ws?.gbTiers || JSON.parse(JSON.stringify(GridBot.DEFAULT_TIERS)),
+  gbThresholds: _ws?.gbThresholds || { ...GridBot.DEFAULT_THRESHOLDS },
+
   // Pattern-Erkennung
   patternOverlayIds: [],
   patternOpts: _ws?.patternOpts || {},   // leer = Engine-Defaults (streng)
@@ -1100,6 +1109,7 @@ const DRAW_CATEGORIES = [
     id: "measure", title: "Messwerkzeuge",
     icon: `<svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" stroke-width="1.5"/><line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="1.5"/></svg>`,
     tools: [
+      { overlay: "positionTool", label: "Long / Short Position", desc: "Einstieg, Stop, Ziel → CRV und Grösse" },
       { overlay: "priceRange", label: "Preisspanne",  desc: "Prozentuale Preisänderung" },
       { overlay: "dateRange",  label: "Zeitspanne",   desc: "Zeit und Kerzenanzahl" },
     ],
@@ -1314,6 +1324,11 @@ function saveWorkspace() {
       watchlist: state.watchlist,
       watchlistOpen: state.watchlistOpen,
       theme: state.theme,
+    gbOpen: state.gbOpen,
+    gbCollapsed: state.gbCollapsed,
+    gbActiveTier: state.gbActiveTier,
+    gbTiers: state.gbTiers,
+    gbThresholds: state.gbThresholds,
       chartStyle: state.chartStyle,
     }));
   } catch (e) { /* localStorage voll oder blockiert — ignorieren */ }
@@ -1484,6 +1499,406 @@ function syncLabels() {
   if (c) c.textContent = state.chartType === "area" ? "Linie" : "Kerzen";
 }
 
+// ============================================================
+// GRID BOT
+// Liest die Marktdaten aus dem Chart (Preis, SMA, RSI, ATR — alles
+// schon vorhanden), holt die Derivate-Daten dazu und rechnet die
+// Cockpit-Logik. Die Bänder im Chart überleben das Schliessen der
+// Leiste bewusst: sonst müsste man sie offen halten, nur um die
+// Visualisierung zu sehen.
+// ============================================================
+
+// ---------- Marktdaten aus den Chart-Daten rechnen ----------
+// Eigene Berechnung statt Zugriff auf die Indikator-Instanzen: die
+// sind nur da, wenn der User sie aktiviert hat. Der Grid Bot soll
+// auch ohne aktiven ATR200 funktionieren.
+function gbMarketData() {
+  const d = chart.getDataList();
+  if (!d || d.length < 200) return null;
+
+  const closes = d.map(x => x.close);
+  const price = closes.at(-1);
+
+  const sma = (n) => {
+    if (closes.length < n) return null;
+    const s = closes.slice(-n);
+    return s.reduce((a, b) => a + b, 0) / n;
+  };
+
+  // RSI 14 nach Wilder (identisch zur Formel in indicators.js)
+  const rsiWilder = (period = 14) => {
+    if (closes.length < period + 1) return null;
+    let gain = 0, loss = 0;
+    for (let i = 1; i <= period; i++) {
+      const ch = closes[i] - closes[i - 1];
+      if (ch > 0) gain += ch; else loss -= ch;
+    }
+    let ag = gain / period, al = loss / period;
+    for (let i = period + 1; i < closes.length; i++) {
+      const ch = closes[i] - closes[i - 1];
+      ag = (ag * (period - 1) + (ch > 0 ? ch : 0)) / period;
+      al = (al * (period - 1) + (ch < 0 ? -ch : 0)) / period;
+    }
+    if (al === 0) return 100;
+    return 100 - 100 / (1 + ag / al);
+  };
+
+  // ATR nach Wilder, Rückgabe in % vom Preis (so nutzt es das Cockpit)
+  const atrPct = (period) => {
+    if (d.length < period + 1) return null;
+    const tr = [];
+    for (let i = 1; i < d.length; i++) {
+      tr.push(Math.max(
+        d[i].high - d[i].low,
+        Math.abs(d[i].high - d[i - 1].close),
+        Math.abs(d[i].low  - d[i - 1].close)
+      ));
+    }
+    let a = tr.slice(0, period).reduce((x, y) => x + y, 0) / period;
+    for (let i = period; i < tr.length; i++) a = (a * (period - 1) + tr[i]) / period;
+    return (a / price) * 100;
+  };
+
+  // Volumen-Signal wie im Cockpit
+  const vols = d.map(x => x.volume || 0);
+  const volMa = vols.slice(-20).reduce((a, b) => a + b, 0) / 20;
+  const volSignal = vols.at(-1) > volMa * 2 ? "🔥 Volumen-Spike (Achtung Trendwende/Ausbruch)"
+                  : vols.at(-1) < volMa * 0.5 ? "😴 Volumen-Flaute" : "➖ Volumen normal";
+
+  const a14 = atrPct(14), a90 = atrPct(90), a200 = atrPct(200);
+  const context = (a14 != null && a90 != null)
+    ? (a14 < a90 * 0.8 ? "Volatilitäts-Kontraktion (Kompression)"
+     : a14 > a90 * 1.3 ? "Volatilitäts-Expansion" : "Normale Volatilität")
+    : "—";
+
+  return {
+    price, sma50: sma(50), sma200: sma(200), rsi: rsiWilder(14),
+    atr14: a14, atr90: a90, atr200: a200,
+    volumeSignal: volSignal, marketContext: context,
+  };
+}
+
+// ---------- Rechnen und rendern ----------
+async function gbRefresh(force) {
+  const market = gbMarketData();
+  if (!market) { setStatus("Grid Bot: zu wenig Chart-Daten (200+ Kerzen nötig)"); return; }
+
+  if (force) Derivatives.clearCache();
+  document.getElementById("gbUpdated").textContent = "lädt…";
+
+  let deriv = { funding: null, oi: null, ls: null, fng: null, errors: [] };
+  try {
+    deriv = await Derivatives.fetchAll(state.symbol.value);
+  } catch (e) {
+    deriv.errors = [String(e.message || e)];
+  }
+
+  const opts = {
+    capital: parseFloat(document.getElementById("gbCapital").value) || 8000,
+    riskPct: parseFloat(document.getElementById("gbRisk").value) || 1,
+    feePct:  parseFloat(document.getElementById("gbFee").value) || 0.1,
+    tiers:   state.gbTiers,
+  };
+  GridBot.setThresholds(state.gbThresholds);
+  state.gbResult = GridBot.compute(market, deriv, opts);
+
+  gbRenderStatus();
+  gbRenderTiers();
+  gbRenderData();
+  if (state.gbActiveTier) gbDrawBands(state.gbActiveTier);
+}
+
+function gbRenderStatus() {
+  const r = state.gbResult;
+  if (!r) return;
+  const pill = document.getElementById("gbHeadline");
+  pill.textContent = r.bias === "Long" ? "LONG-GRID" : r.bias === "Short" ? "SHORT-GRID" : "NEUTRAL-GRID";
+  pill.className = "gb-pill" + (r.bias === "Long" ? " long" : r.bias === "Short" ? " short" : "");
+
+  const reg = document.getElementById("gbRegime");
+  const isExtreme = r.confluence.extreme !== "—";
+  reg.textContent = isExtreme ? "⚠ " + r.confluence.extreme : r.market.marketContext;
+  reg.className = "gb-stat" + (isExtreme ? " warn" : "");
+
+  const rsi = r.market.rsi;
+  const rsiEl = document.getElementById("gbRsi");
+  rsiEl.textContent = rsi != null ? "RSI " + rsi.toFixed(0) : "RSI –";
+  rsiEl.className = "gb-stat" + (rsi <= 30 ? " good" : rsi >= 70 ? " warn" : "");
+
+  const fm = r.derivatives.fundingMonthly;
+  const fEl = document.getElementById("gbFunding");
+  fEl.textContent = fm != null ? `Funding ${fm > 0 ? "+" : ""}${fm.toFixed(1)}%/M` : "Funding –";
+  fEl.className = "gb-stat" + (fm != null && Math.abs(fm) > 3 ? " warn" : "");
+
+  const fng = r.derivatives.fng;
+  document.getElementById("gbFng").textContent = fng != null ? "F&G " + fng : "F&G –";
+
+  document.getElementById("gbUpdated").textContent =
+    r.missing.length ? `${r.missing.length} Quelle(n) fehlen` : new Date().toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
+}
+
+function gbRenderTiers() {
+  const r = state.gbResult;
+  const t = document.getElementById("gbTiers");
+  if (!r || !r.tiers.length) { t.innerHTML = '<tr><td class="lbl">Keine Daten</td></tr>'; return; }
+
+  const fmt = (n) => n == null ? "–" : n.toLocaleString("de-CH", { maximumFractionDigits: 0 });
+  const rows = [
+    ["Laufzeit",    (x) => x.horizon],
+    ["Grid-Typ",    (x) => x.gridType],
+    ["ATR-Basis",   (x) => x.atrKey.toUpperCase().replace("ATR", "ATR") + ` (${x.atrPct.toFixed(2)}%)`],
+    ["Range unten", (x) => fmt(x.lower)],
+    ["Range oben",  (x) => fmt(x.upper)],
+    ["Hebel",       (x) => x.leverage + "×"],
+    ["Grids",       (x) => x.grids + `  (${fmt(x.gridStep)} Abstand)`],
+    ["Stop Loss",   (x) => fmt(x.stopLoss)],
+    ["Take Profit", (x) => x.takeProfit ? fmt(x.takeProfit) : "Range (kein TP)"],
+    ["Funding/Mon", (x) => x.fundingDrag ? x.fundingDrag + "%" : "0%"],
+    ["Positionsgrösse", (x) => fmt(x.positionSize) + " USDT"],
+    ["Effektiv",    (x) => fmt(x.effective) + " USDT"],
+    ["Sicherheit",  (x) => x.safety],
+  ];
+
+  let html = '<tr><th></th>' + r.tiers.map(x => `<th class="tier-head">${x.label}</th>`).join("") + "</tr>";
+  rows.forEach(([lbl, fn], i) => {
+    const sep = (lbl === "Range unten" || lbl === "Positionsgrösse") ? ' class="gb-sep"' : "";
+    html += `<tr${sep}><td class="lbl">${lbl}</td>` +
+      r.tiers.map(x => `<td${state.gbActiveTier === x.id ? ' class="on"' : ""}>${fn(x)}</td>`).join("") + "</tr>";
+  });
+  html += '<tr class="gb-sep"><td class="lbl"></td>' + r.tiers.map(x =>
+    `<td><button class="gb-show${state.gbActiveTier === x.id ? " active" : ""}" data-tier="${x.id}">${state.gbActiveTier === x.id ? "Im Chart ✓" : "Im Chart"}</button></td>`
+  ).join("") + "</tr>";
+  t.innerHTML = html;
+
+  t.querySelectorAll(".gb-show").forEach(b => {
+    b.addEventListener("click", () => {
+      const id = b.dataset.tier;
+      state.gbActiveTier = state.gbActiveTier === id ? null : id;
+      saveWorkspace();
+      gbRenderTiers();
+      gbDrawBands(state.gbActiveTier);
+    });
+  });
+
+  const w = document.getElementById("gbWarning");
+  w.textContent = r.warning + (r.missing.length ? "   ·   Fehlend: " + r.missing.join(", ") : "");
+  w.className = "gb-note" + (r.warning.startsWith("✅") ? "" : " warn");
+}
+
+function gbRenderData() {
+  const r = state.gbResult;
+  const box = document.getElementById("gbData");
+  if (!r) return;
+  const n = (v, d = 2, suf = "") => v == null ? "–" : v.toFixed(d) + suf;
+  const blk = (title, kvs) =>
+    `<div><div class="gb-blk-title">${title}</div>` +
+    kvs.map(([k, v]) => `<div class="gb-kv"><span>${k}</span><span>${v}</span></div>`).join("") + "</div>";
+
+  box.innerHTML =
+    blk("Markt & Trend", [
+      ["Preis", n(r.market.price, 0)],
+      ["SMA50", n(r.market.sma50, 0)],
+      ["SMA200", n(r.market.sma200, 0)],
+      ["Abstand SMA200", n(r.market.sma200Dist, 2, "%")],
+      ["RSI14 (Wilder)", n(r.market.rsi, 1)],
+      ["ATR14 / 90 / 200", `${n(r.market.atr14)} / ${n(r.market.atr90)} / ${n(r.market.atr200)}`],
+      ["Volumen", r.market.volumeSignal],
+    ]) +
+    blk("Sentiment & Derivate", [
+      ["Fear & Greed", r.derivatives.fng != null ? `${r.derivatives.fng} (${r.derivatives.fngLabel})` : "–"],
+      ["F&G Ø30 / Ø90", `${n(r.derivatives.fngAvg30, 1)} / ${n(r.derivatives.fngAvg90, 1)}`],
+      ["Funding 8h", n(r.derivatives.funding8h, 4, "%")],
+      ["Funding monatlich", n(r.derivatives.fundingMonthly, 2, "%")],
+      ["Open Interest", r.derivatives.oiNow != null ? n(r.derivatives.oiNow, 0) + " BTC" : "–"],
+      ["OI Δ30T / Δ90T", `${n(r.derivatives.oiChange30, 2, "%")} / ${n(r.derivatives.oiChange90, 2, "%")}`],
+      ["L/S Ratio", n(r.derivatives.lsRatio, 4)],
+      ["OI-Interpretation", r.oiInterpretation],
+    ]) +
+    blk("Konfluenz", [
+      ["Trend-Score", r.confluence.trendScore ?? "–"],
+      ["Derivate-Score", r.confluence.derivativeScore ?? "–"],
+      ["Summe", r.confluence.sum ?? "–"],
+      ["Extrem-Filter", r.confluence.extreme],
+      ["Roh-Bias (vor Filter)", r.rawBias],
+      ["Bias (final)", r.bias],
+      ["Regime", r.regime],
+    ]);
+}
+
+// ---------- Grid-Bänder im Chart ----------
+function gbClearBands() {
+  (state.gbBandIds || []).forEach(id => { try { chart.removeOverlay(id); } catch (e) {} });
+  state.gbBandIds = [];
+}
+
+function gbDrawBands(tierId) {
+  gbClearBands();
+  if (!tierId || !state.gbResult) return;
+  const t = state.gbResult.tiers.find(x => x.id === tierId);
+  if (!t) return;
+
+  const d = chart.getDataList();
+  if (!d || !d.length) return;
+  const ts = d[Math.max(0, d.length - 200)].timestamp;
+
+  try {
+    const id = chart.createOverlay({
+      name: "gridBands",
+      points: [{ timestamp: ts, value: t.upper }, { timestamp: d.at(-1).timestamp, value: t.lower }],
+      lock: true,
+      extendData: {
+        lower: t.lower, upper: t.upper, grids: t.grids, stopLoss: t.stopLoss,
+        takeProfit: t.takeProfit, label: t.label, direction: t.direction, leverage: t.leverage,
+      },
+    });
+    if (id) state.gbBandIds.push(id);
+  } catch (e) {}
+}
+
+function gbToggleBar(show) {
+  const bar = document.getElementById("gridBotBar");
+  const on = show != null ? show : bar.classList.contains("hidden");
+  bar.classList.toggle("hidden", !on);
+  document.getElementById("gridBotBtn").classList.toggle("active", on);
+  state.gbOpen = on;
+  saveWorkspace();
+  resize();
+  if (on && !state.gbResult) gbRefresh(false);
+}
+
+function gbSetCollapsed(c) {
+  document.getElementById("gbBody").classList.toggle("collapsed", c);
+  document.getElementById("gbChev").innerHTML = c
+    ? '<path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+    : '<path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+  state.gbCollapsed = c;
+  saveWorkspace();
+  resize();
+}
+
+// ---------- Einstellungs-Felder ----------
+function gbRenderSettings() {
+  const tg = document.getElementById("gbTierSettings");
+  tg.innerHTML = "";
+  state.gbTiers.forEach((t, i) => {
+    tg.innerHTML += `<span>${t.label} Faktor</span><input type="number" data-tier="${i}" data-k="factor" value="${t.factor}" step="0.1" min="0.5">`;
+    tg.innerHTML += `<span>${t.label} Profit %</span><input type="number" data-tier="${i}" data-k="targetProfit" value="${t.targetProfit}" step="0.1" min="0.1">`;
+    tg.innerHTML += `<span>${t.label} Hebel-Cap</span><input type="number" data-tier="${i}" data-k="leverageCap" value="${t.leverageCap}" step="1" min="1" max="20">`;
+  });
+  tg.querySelectorAll("input").forEach(inp => {
+    inp.addEventListener("change", () => {
+      state.gbTiers[+inp.dataset.tier][inp.dataset.k] = parseFloat(inp.value);
+      saveWorkspace();
+      gbRefresh(false);
+    });
+  });
+
+  const th = document.getElementById("gbThresholds");
+  const labels = {
+    rsiOversold: "RSI überverkauft ≤", rsiOverbought: "RSI überkauft ≥",
+    fngOversold: "F&G überverkauft ≤", fngOverbought: "F&G überkauft ≥",
+    fundingLong: "Funding Long <", fundingShort: "Funding Short >",
+    oiChangeHigh: "OI Δ30T hoch >", oiChangeLow: "OI Δ30T tief <",
+    lsLongCrowded: "L/S Long überfüllt ≥", lsShortCrowded: "L/S Short überfüllt ≤",
+    biasThreshold: "Bias-Schwelle |Σ| ≥",
+  };
+  th.innerHTML = "";
+  Object.entries(labels).forEach(([k, lbl]) => {
+    th.innerHTML += `<span>${lbl}</span><input type="number" data-th="${k}" value="${state.gbThresholds[k]}" step="0.01">`;
+  });
+  th.querySelectorAll("input").forEach(inp => {
+    inp.addEventListener("change", () => {
+      state.gbThresholds[inp.dataset.th] = parseFloat(inp.value);
+      saveWorkspace();
+      gbRefresh(false);
+    });
+  });
+}
+
+// ---------- Fibonacci-Einstellungen ----------
+// Levels aus config.js — dieselbe Quelle wie overlays.js zum Zeichnen.
+const FIB_MENU_LEVELS = FIB_LEVEL_SETS;
+
+let _fibTargetId = null;
+let _fibTargetName = null;
+
+function openFibMenu(event) {
+  const ov = event?.overlay;
+  if (!ov) return;
+  _fibTargetId = ov.id;
+  _fibTargetName = ov.name;
+  const ed = ov.extendData || {};
+
+  document.getElementById("fibMenuTitle").textContent =
+    ov.name === "fibExtension" ? "Fibonacci Extension" : "Fibonacci Retracement";
+
+  document.getElementById("fibShowLabels").checked  = ed.showLabels  !== false;
+  document.getElementById("fibShowLevels").checked  = ed.showLevels  !== false;
+  document.getElementById("fibShowPrices").checked  = ed.showPrices  !== false;
+  document.getElementById("fibShowFill").checked    = ed.showFill    !== false;
+  document.getElementById("fibExtendRight").checked = ed.extendRight === true;
+  const op = ed.fillOpacity != null ? ed.fillOpacity : 5;
+  document.getElementById("fibFillOpacity").value = op;
+  document.getElementById("fibFillVal").textContent = op + "%";
+  document.getElementById("fibLineWidth").value = ed.lineWidth || 1;
+
+  // Level-Checkboxen
+  const box = document.getElementById("fibLevels");
+  box.innerHTML = "";
+  const hidden = ed.hiddenLevels || {};
+  (FIB_MENU_LEVELS[ov.name] || FIB_MENU_LEVELS.fibRetracement).forEach(lv => {
+    const l = document.createElement("label");
+    l.className = "fib-lv";
+    l.innerHTML = `<input type="checkbox" data-lv="${lv.v}" ${hidden[String(lv.v)] ? "" : "checked"}>
+                   <span class="fib-lv-dot" style="background:${lv.color}"></span>${lv.v}`;
+    box.appendChild(l);
+  });
+
+  const menu = document.getElementById("fibMenu");
+  menu.classList.remove("hidden");
+  const x = Math.min(event.pageX ?? event.x ?? 100, window.innerWidth - 252);
+  const y = Math.min(event.pageY ?? event.y ?? 100, window.innerHeight - 420);
+  menu.style.left = Math.max(8, x) + "px";
+  menu.style.top  = Math.max(8, y) + "px";
+}
+
+function applyFibMenu() {
+  if (!_fibTargetId) return;
+  const hiddenLevels = {};
+  document.querySelectorAll("#fibLevels input[type=checkbox]").forEach(cb => {
+    if (!cb.checked) hiddenLevels[cb.dataset.lv] = true;
+  });
+  const extendData = {
+    showLabels:  document.getElementById("fibShowLabels").checked,
+    showLevels:  document.getElementById("fibShowLevels").checked,
+    showPrices:  document.getElementById("fibShowPrices").checked,
+    showFill:    document.getElementById("fibShowFill").checked,
+    extendRight: document.getElementById("fibExtendRight").checked,
+    fillOpacity: parseInt(document.getElementById("fibFillOpacity").value, 10),
+    lineWidth:   parseInt(document.getElementById("fibLineWidth").value, 10) || 1,
+    hiddenLevels,
+  };
+  try { chart.overrideOverlay({ id: _fibTargetId, extendData }); } catch (e) {}
+  closeFibMenu();
+}
+
+function closeFibMenu() {
+  document.getElementById("fibMenu").classList.add("hidden");
+  _fibTargetId = null;
+  _fibTargetName = null;
+}
+
+// Von overlays.js aus aufrufbar
+window.__tvOpenFibMenu = openFibMenu;
+
+// Gemeinsame Sizing-Quelle für Grid Bot und Position-Tool.
+// Eine Quelle, zwei Konsumenten — sonst hat man das Kapital an zwei
+// Orten und irgendwann divergieren sie.
+window.__tvSizing = () => ({
+  capital: parseFloat(document.getElementById("gbCapital")?.value) || 8000,
+  riskPct: parseFloat(document.getElementById("gbRisk")?.value) || 1,
+});
+
 // ---------- Pattern-Erkennung ----------
 // Scannt den aktuell sichtbaren Bereich und zeichnet gefundene Muster
 // als Overlays. Die sind per Rechtsklick einzeln löschbar wie jede
@@ -1507,7 +1922,12 @@ function scanPatterns() {
   const from = range ? Math.max(0, range.realFrom ?? range.from) : 0;
   const to   = range ? Math.min(data.length, (range.realTo ?? range.to) + 1) : data.length;
 
-  const found = PatternEngine.scan(data, { from, to }, state.patternOpts);
+  // Nur die angehakten Mustertypen suchen
+  const enabled = {};
+  document.querySelectorAll("#patTypes input[type=checkbox]").forEach(cb => {
+    if (!cb.checked) enabled[cb.dataset.pat] = false;
+  });
+  const found = PatternEngine.scan(data, { from, to }, { ...state.patternOpts, ...enabled });
 
   if (found.length === 0) {
     setStatus("Keine Muster im sichtbaren Bereich");
@@ -1532,6 +1952,9 @@ function scanPatterns() {
           quality: p.quality,
           neckline: p.neckline,
           target: p.target,
+          pivotCount: p.points.length,
+          hasHead: p.type === "headShoulders" || p.type === "invHeadShoulders",
+          slantedNeckline: p.necklineSlope != null,
         },
       });
       if (id) state.patternOverlayIds.push(id);
@@ -1539,7 +1962,7 @@ function scanPatterns() {
   });
 
   const confirmed = found.filter(p => p.confirmedAt != null).length;
-  setStatus(`${found.length} Muster gefunden (${confirmed} bestätigt) · Rechtsklick zum Löschen`);
+  setStatus(`${found.length} Muster (${confirmed} bestätigt) · Sym% = Symmetrie, keine Trefferquote · Rechtsklick löscht`);
 }
 
 // ---------- Y-Achse entsperren ----------
@@ -1621,6 +2044,11 @@ function currentLayoutSnapshot() {
     watchlist: state.watchlist,
     watchlistOpen: state.watchlistOpen,
     theme: state.theme,
+    gbOpen: state.gbOpen,
+    gbCollapsed: state.gbCollapsed,
+    gbActiveTier: state.gbActiveTier,
+    gbTiers: state.gbTiers,
+    gbThresholds: state.gbThresholds,
     chartStyle: state.chartStyle,
   };
 }
@@ -1750,6 +2178,9 @@ function resetChartStyle() {
 // ---------- Start ----------
 initDropdowns();
 syncLabels();
+gbRenderSettings();
+gbSetCollapsed(state.gbCollapsed);
+if (state.gbOpen) gbToggleBar(true);
 applyTheme();
 renderLayoutList();
 renderAssetList();
@@ -1785,6 +2216,46 @@ document.getElementById("wlSearch").addEventListener("input", (e) => renderWlSea
 // ---------- Theme-Handler ----------
 document.getElementById("themeBtn").addEventListener("click", toggleTheme);
 
+// ---------- Grid-Bot-Handler ----------
+document.getElementById("gridBotBtn").addEventListener("click", () => gbToggleBar());
+document.getElementById("gbClose").addEventListener("click", (e) => { e.stopPropagation(); gbToggleBar(false); });
+document.getElementById("gbToggle").addEventListener("click", (e) => {
+  e.stopPropagation();
+  gbSetCollapsed(!state.gbCollapsed);
+});
+document.getElementById("gbRefresh").addEventListener("click", (e) => { e.stopPropagation(); gbRefresh(true); });
+document.getElementById("gbStatus").addEventListener("click", (e) => {
+  if (e.target.closest(".gb-icon")) return;
+  gbSetCollapsed(!state.gbCollapsed);
+});
+document.querySelectorAll(".gb-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".gb-tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    const map = { strategy: "gbPaneStrategy", data: "gbPaneData", settings: "gbPaneSettings" };
+    Object.values(map).forEach(id => document.getElementById(id).classList.add("hidden"));
+    document.getElementById(map[tab.dataset.tab]).classList.remove("hidden");
+  });
+});
+["gbCapital", "gbRisk", "gbFee"].forEach(id => {
+  document.getElementById(id).addEventListener("change", () => { saveWorkspace(); gbRefresh(false); });
+});
+
+// ---------- Fibonacci-Menü-Handler ----------
+document.getElementById("fibApply").addEventListener("click", applyFibMenu);
+document.getElementById("fibClose").addEventListener("click", closeFibMenu);
+document.getElementById("fibDelete").addEventListener("click", () => {
+  if (_fibTargetId) { try { chart.removeOverlay(_fibTargetId); } catch (e) {} }
+  closeFibMenu();
+});
+document.getElementById("fibFillOpacity").addEventListener("input", (e) => {
+  document.getElementById("fibFillVal").textContent = e.target.value + "%";
+});
+document.addEventListener("click", (e) => {
+  const m = document.getElementById("fibMenu");
+  if (m && !m.classList.contains("hidden") && !m.contains(e.target)) closeFibMenu();
+});
+
 // ---------- Pattern-Handler ----------
 document.getElementById("patternBtn").addEventListener("click", scanPatterns);
 document.getElementById("patternClearBtn").addEventListener("click", () => {
@@ -1793,9 +2264,9 @@ document.getElementById("patternClearBtn").addEventListener("click", () => {
 });
 document.getElementById("patStrictness").addEventListener("change", (e) => {
   const presets = {
-    streng:  {},   // Engine-Defaults
-    mittel:  { lookback: 7, tolerance: 1.5, minDepth: 5.0, minQuality: 0.6 },
-    locker:  { lookback: 5, tolerance: 2.0, minDepth: 3.0, minQuality: 0.5 },
+    streng: {},   // Engine-Defaults
+    mittel: { lookback: 7, tolerance: 1.5, minDepth: 5.0, shoulderTol: 4.0, minHeadPct: 2.5, minQuality: 0.6 },
+    locker: { lookback: 5, tolerance: 2.0, minDepth: 3.0, shoulderTol: 5.0, minHeadPct: 2.0, minQuality: 0.5 },
   };
   state.patternOpts = presets[e.target.value] || {};
   saveWorkspace();

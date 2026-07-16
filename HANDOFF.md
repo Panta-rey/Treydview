@@ -24,8 +24,8 @@ TradingView-artiges Chart-Cockpit für Rey Gafner (GitHub: Panta-rey). Rein stat
 ```
 index.html        Layout, CDN-Tags, Menü-HTML (Overlay, Chart-Stil)
 css/style.css     Terminal-Theme (dark + light via [data-theme]), Gold #e8b64c, IBM Plex Mono
-js/config.js      CONFIG: Worker-URL, Symbole, TFs, INDICATORS-Registry
-                  (inputs+plots-Schema), DRAW_TOOLS, THEME, hexToRgba() (global)
+js/config.js      CONFIG: Worker-URL, Symbole, TFs, INDICATORS-Registry,
+                  DRAW_TOOLS, FIB_LEVEL_SETS (einzige Fib-Quelle), hexToRgba()
 js/indicators.js  Custom-Indikatoren via registerIndicator (IIFE)
 js/overlays.js    Custom-Zeichenwerkzeuge via registerOverlay (IIFE)
 js/data.js        DataLayer: Binance REST/WS + Pagination + Gold + Watchlist-Ticker
@@ -116,7 +116,13 @@ Transparente Canvas-Overlays, redraw bei onVisibleRangeChange + Live + Resize.
 
 **FRVP** (overlays.js, `needDefaultPointFigure:false`): transparente Hitbox, VAH/VAL durchgezogen orange, POC gestrichelt weiss, über ganzen Zeitbereich. Candle-Daten via `window.__tvGetDataList`.
 
-**Fibonacci** (overlays.js): `fibRetracement` (2 Punkte) und `fibExtension` (3 Punkte, Projektion A→B ab C). TradingView-Levels (0/0.236/0.382/0.5/0.618/0.786/1/1.618/2.618/3.618/4.236). Preis-Labels links im Format `0.618 (96'131.42)`. Flächenfüllung bei **5% Deckkraft** (dezent, auf Wunsch). Gemeinsame Helfer: `FIB_LEVELS`, `FIB_EXT_LEVELS`, `buildFibFigures()`, `hexA()`.
+**Fibonacci** (overlays.js): `fibRetracement` (2 Punkte) und `fibExtension` (3 Punkte, Projektion A→B ab C). TradingView-Levels (0/0.236/0.382/0.5/0.618/0.786/1/1.618/2.618/3.618/4.236). Gemeinsame Helfer: `FIB_LEVELS`, `FIB_EXT_LEVELS`, `buildFibFigures()`, `hexA()`, `labelColors()`.
+
+Labels sind **Chips mit Hintergrund** — `drawText` in KLC unterstützt `styles.backgroundColor` + `paddingLeft/Right/Top/Bottom` + `borderRadius`, gezeichnet via internem `drawRect`. Ohne Chip ist farbiger Text auf farbiger Füllung unlesbar. `labelColors()` liest `data-theme` und liefert passenden Chip-Hintergrund.
+
+**Fib-Einstellungen:** Rechtsklick auf ein Fib-Overlay → `window.__tvOpenFibMenu` (Hook in app.js, `openFibMenu()`). Panel: Beschriftung (Level/Preis einzeln), Flächenfüllung + Deckkraft-Regler, Linienstärke, nach rechts verlängern, jedes Level einzeln an/abwählbar. Speichert via `chart.overrideOverlay({id, extendData})`. Optionen in extendData: `showLabels`, `showLevels`, `showPrices`, `showFill`, `fillOpacity`, `lineWidth`, `extendRight`, `hiddenLevels: {"0.236": true}`.
+
+**Level-Quelle:** `FIB_LEVEL_SETS` in config.js. overlays.js (Zeichnen) und app.js (Menü) referenzieren sie beide — vorher standen zwei Kopien in beiden Dateien.
 
 ---
 
@@ -148,28 +154,128 @@ Eigenständiges Modul, exportiert `window.PatternEngine`. Auch in Node testbar (
 3. `detectDoubleTop()` / `detectDoubleBottom()` — Muster auf der Pivot-Sequenz
 4. `PatternEngine.scan(data, range, opts)` — Einstiegspunkt, rechnet Indizes auf den vollen Datensatz zurück
 
-**Erkennungslogik Double Top:** P1(H) – P2(L) – P3(H), wobei P1≈P3 (`tolerance` %), P2 deutlich tiefer (`minDepth` %), Abstand P1→P3 zwischen `minSpan` und `maxSpan`. Bestätigung = Close unter Neckline (P2) nach P3. Kursziel = Neckline − Musterhöhe.
+**Erkannte Muster (6):**
 
-**NULLMODELL-BEFUND (wichtig!):** Getestet auf 20× 500 Bars Zufallsrauschen mit BTC-artiger Volatilität:
-
-| Konfiguration | Fehlalarme / 500 Bars | höchste Qualität im Rauschen |
+| Muster | Pivots | Logik |
 |---|---|---|
-| lookback 4, tol 3.0, depth 2.0 | 11.3 | 1.00 |
-| lookback 5, tol 2.0, depth 3.0 | 8.3 | 1.00 |
-| lookback 7, tol 1.5, depth 5.0 | 4.5 | 0.96 |
-| **lookback 9, tol 1.0, depth 7.0, minQ 0.7** | **0.5** | 0.85 |
+| Double Top/Bottom | 3 | P1≈P3 (`tolerance`%), P2 tiefer/höher (`minDepth`%) |
+| Triple Top/Bottom | 5 | drei Extrema ≈ gleich hoch, zwei ähnliche Täler (Diff < `tolerance`×2.5) |
+| Head & Shoulders | 5 | Kopf überragt beide Schultern (`minHeadPct`%), Schultern ≈ gleich (`shoulderTol`%), **schräge Neckline** durch P2/P4 |
+| Inverse H&S | 5 | analog gespiegelt |
 
-Die lockeren Einstellungen finden im reinen Rauschen Muster mit Qualität 1.00. Deshalb sind die strengen Werte `DEFAULTS` in patterns.js. Die UI-Presets "mittel"/"locker" zeigen eine Warnung.
+Bestätigung = Close jenseits der Neckline nach dem letzten Pivot. Kursziel = Neckline ∓ Musterhöhe. Bei H&S wird die Neckline als Gerade interpoliert (`necklineSlope`), Steigung auf `shoulderTol`×2 begrenzt.
 
-**Rendering:** `scanPatterns()` in app.js scannt den sichtbaren Bereich, erzeugt pro Muster ein `pattern`-Overlay (overlays.js) mit `lock:true`. IDs in `state.patternOverlayIds`. Per Rechtsklick einzeln löschbar (nutzt das bestehende `openOverlayMenu`). Gezeichnet werden: Pivot-Verbindung, gestrichelte Neckline, Punktmarkierungen, Bestätigungspunkt, Label mit Qualität in %.
+`dedupe()` gewichtet nach Komplexität (H&S 3 > Triple 2 > Double 1), damit bei Überlappung das aussagekräftigere Muster gewinnt — ein H&S enthält strukturell oft ein Double Top.
 
-**UI:** Dropdown in der Topbar (Zickzack-Icon) mit Strenge-Auswahl, Scannen- und Löschen-Button.
+**NULLMODELL-BEFUND (wichtig!):** 30× 500 Bars Zufallsrauschen mit BTC-artiger Volatilität, alle 6 Muster:
+
+| Preset | Fehlalarme / 500 Bars | max. Qualität im Rauschen |
+|---|---|---|
+| locker (lookback 5, tol 2.0, depth 3.0) | 6.1 | 0.98 |
+| mittel (lookback 7, tol 1.5, depth 5.0) | 2.4 | 0.99 |
+| **streng = DEFAULTS (lookback 9, tol 1.0, depth 7.0, minQ 0.7)** | **0.6** | 0.88 |
+
+Aufschlüsselung bei "streng": Double Top 0.33/Lauf, Inverse H&S 0.17, Double Bottom 0.07 — **Triple Top/Bottom und H&S kommen gar nicht vor.** Die Triple-Muster sind also deutlich selektiver als Double-Muster; ein Triple Top ist ein stärkeres Signal als ein Double Top.
+
+Bei lockeren Einstellungen findet die Engine im reinen Rauschen Muster mit Qualität ~1.00. Deshalb sind die strengen Werte Default; die Presets "mittel"/"locker" zeigen eine Warnung in der UI.
+
+**Rendering:** `scanPatterns()` in app.js scannt den sichtbaren Bereich, erzeugt pro Muster ein `pattern`-Overlay (overlays.js) mit `lock:true`. IDs in `state.patternOverlayIds`. Per Rechtsklick einzeln löschbar. Das Overlay verarbeitet 3- und 5-Punkt-Muster; der letzte Punkt ist der Bestätigungspunkt, `extendData.pivotCount` unterscheidet. `slantedNeckline:true` → Neckline wird durch P2/P4 interpoliert (H&S), sonst waagrecht. `hasHead:true` → Kopf grösser markiert.
+
+**UI:** Dropdown in der Topbar (Zickzack-Icon): Strenge-Preset, sechs Muster einzeln an/abwählbar, Scannen- und Löschen-Button.
+
+**Messfunktionen (Council-Ergebnis, für Ausführung mit echten Daten):**
+- `PatternEngine.backtest(data, opts)` → `{n, hitRate, avgR, totalR, byType, rows}`. Einstieg am Bestätigungs-Bar, Stop hinter dem letzten Extrempunkt, Ziel = Neckline ∓ Höhe, Ergebnis in R. Konservativ: trifft eine Kerze Stop und Ziel, zählt der Stop. `avgR` ist die Expectancy.
+- `PatternEngine.backtestVsNull(data, opts, runs, blockLen)` → block-permutierte Vergleichsläufe (behalten Vola-Clustering, zerstören Musterstruktur). `pValue` = Anteil der Zufallsläufe, die mindestens so gut waren. < 0.05 heisst: echte Daten deutlich besser als Zufall.
+- `PatternEngine.thresholdFrequency(series, threshold, dir)` → `{pct, hits, quantiles}`. Misst, wie oft eine Schwelle feuert, ohne zu optimieren.
+
+**In der Browser-Konsole:**
+```js
+PatternEngine.backtest(chart.getDataList())
+PatternEngine.backtestVsNull(chart.getDataList(), {}, 20)
+```
+
+**GARCH-Nullmodell-Nachtrag:** Der Einwand, konstante Volatilität sei zu freundlich, wurde geprüft. GARCH(1,1) mit Vola-Clustering (ACF|r| = 0.198) und Fat Tails (Kurtosis 3.81) produziert **nicht mehr** Fehlalarme (0.38 statt 0.48 bei "streng"). Grund: Die Erkennung arbeitet mit relativen Preisdifferenzen; Vola-Cluster ändern die Häufigkeit von "zwei Tops auf ähnlicher Höhe" nicht systematisch. Die Defaults sind robuster als vermutet.
 
 **Nächste Etappen (nicht gebaut):**
-- Triple Top/Bottom, Head & Shoulders + Inverse — gleiche Pivot-Basis, direkt machbar
-- Wedges, Triangle, Rectangle, Flags, Pennants — brauchen lineare Regression auf Pivot-Hochs/-Tiefs + Konvergenz-Prüfung
+- Wedges, Triangle, Rectangle, Flags, Pennants — brauchen lineare Regression auf Pivot-Hochs/-Tiefs + Konvergenz-/Divergenz-Prüfung
 - Cup & Handle — Rundungserkennung, keine saubere mathematische Definition, nur Heuristik
 - **Vor jeder Erweiterung: Nullmodell-Test wiederholen.** Ein Muster, das im Rauschen genauso häufig auftritt wie auf echten Daten, ist wertlos.
+
+
+---
+
+## Grid Bot (js/derivatives.js + js/gridbot.js)
+
+Portierung von `Cockpit.xlsx`. Das Excel bleibt die lesbare Referenz; jede Funktion in gridbot.js nennt ihre Zellbezüge im Kommentar.
+
+### Datenschicht (derivatives.js)
+
+Vier öffentliche Endpoints, alle mit `Access-Control-Allow-Origin: *` — kein Worker nötig:
+
+| Feld | Endpoint |
+|---|---|
+| Funding 8h/täglich/monatlich/Ø30/Ø90 | `fapi.binance.com/fapi/v1/fundingRate?limit=270` |
+| OI + Δ30T/Δ90T | `fapi.binance.com/futures/data/openInterestHist?period=1d&limit=90` |
+| L/S Account Ratio | `fapi.binance.com/futures/data/globalLongShortAccountRatio` |
+| Fear & Greed + Ø30/Ø90 | `api.alternative.me/fng/?limit=90` |
+
+`fetchAll()` nutzt `Promise.allSettled` — einzelne Ausfälle reissen den Rest nicht mit, fehlende Blöcke kommen als `null` zurück und das Panel zeigt "–". Cache 5 Minuten (diese Werte ändern sich stündlich bis täglich; ohne Cache vier Requests pro Redraw).
+
+**Binance zahlt Funding alle 8h** → täglich = 8h-Rate × 3, monatlich × 90. Genau wie im Cockpit.
+
+### Logik (gridbot.js)
+
+```
+trendScore     = (Preis>SMA50 ? +1 : -1) + (Preis>SMA200 ? +1 : -1)      [E4]
+oiInterpretation(oiΔ30, L/S)                                             [E22]
+derivativeScore = Funding-Term + OI/LS-Term                              [E5]
+extremeFilter(RSI, F&G) -> "Überverkauft" | "Überkauft" | "—"            [E6]
+computeBias -> raw (E7) und final (B5, Filter sticht den Bias)
+computeTier -> LP/UP/Hebel/Grids/SL/TP/Size/Liq-Check                    [B37-B46]
+```
+
+**Der Extremfilter ist der Kern:** Er überschreibt den Bias auf Neutral, egal was die Konfluenz sagt. Kein Short in die Kapitulation, kein Long in die Euphorie.
+
+**Reihenfolge in computeTier ist die eigentliche Logik:** Range aus ATR → Hebel aus Range (`1/Breite`, gedeckelt) → Stop aus ATR → Size aus Risiko und Stop-Distanz. Der Hebel ist eine Folge der Grid-Breite, nicht eine freie Wahl. Die Grösse folgt aus dem Risiko, nicht umgekehrt.
+
+**VERIFIZIERT:** Gegen die Werte aus Cockpit.xlsx getestet — Headline, Bias, Trend-Score (−2), Derivat-Score (+1), Extremfilter (Überverkauft) und alle drei Tiers stimmen exakt (Makro: LP 45'213, UP 76'557, 2×, 25 Grids, SL 44'155, Size 291).
+
+### Schwellwerte
+
+`DEFAULT_THRESHOLDS` in gridbot.js, im Panel unter "Einstellungen" editierbar, persistent in `state.gbThresholds`.
+
+| Schwelle | Wert | Einschätzung |
+|---|---|---|
+| RSI 25/75 | enger als Standard 30/70 | bewusst gesetzt |
+| F&G 15/85 | enger als üblich 20/80 | bewusst gesetzt |
+| Funding −0.01/+0.05 | asymmetrisch, Faktor 5 | verteidigbar: BTC-Funding ist historisch überwiegend positiv, negatives Funding ist das seltenere und aussagekräftigere Signal |
+| OI ±10 | runde Zahl | Kandidat für Häufigkeitsprüfung |
+| L/S 0.45/0.55 | symmetrisch um 0.5 | Kandidat für Häufigkeitsprüfung |
+
+**Nicht optimieren, messen.** `PatternEngine.thresholdFrequency(series, threshold, dir)` gibt Häufigkeit + Quantile. Wenn RSI≤25 an 3% der Bars gilt, ist es ein echtes Extrem; bei 18% ist es Normalbetrieb und der Filter blockiert grundlos. Optimieren auf Rendite wäre die Metronom-Falle (`compression=0.70`).
+
+### Marktdaten
+
+`gbMarketData()` in app.js rechnet Preis, SMA50/200, RSI14 (Wilder) und ATR14/90/200 selbst aus `chart.getDataList()` — **nicht** aus den Indikator-Instanzen. Grund: die existieren nur, wenn der User sie aktiviert hat. Der Grid Bot muss auch ohne aktiven ATR200 funktionieren. Braucht 200+ Kerzen.
+
+### UI
+
+Bodenleiste (`position:absolute; bottom:0`), Roboter-Icon in der Topbar. Zweistufig: kollabierte Statuszeile (Bias-Pill, Regime, RSI, Funding, F&G) ↔ aufgeklappt mit drei Tabs (Strategie / Daten / Einstellungen). Zustand persistent.
+
+**Die Grid-Bänder im Chart überleben das Schliessen der Leiste** — bewusst: sonst müsste man sie offen halten, nur um die Visualisierung zu sehen, und das hebelt den Zweck des Wegklappens aus.
+
+Overlay `gridBands` (overlays.js): Range-Fläche, Grid-Linien (max. 60 gezeichnet, darüber nur noch Grau), LP/UP-Chips, gestrichelte SL-Linie, Tier-Label.
+
+### Long / Short Position
+
+Overlay `positionTool`, **Zeichenwerkzeug** in der Drawbar unter Messwerkzeuge — kein Panel. Drei Klicks: Einstieg, Stop, Ziel. Zeigt Risiko-/Gewinnzone, CRV, Positionsgrösse.
+
+**Gemeinsame Sizing-Quelle:** `window.__tvSizing()` liest die Felder Kapital/Risiko% aus dem Grid-Bot-Panel. Eine Quelle, zwei Konsumenten — sonst hat man das Kapital an zwei Orten und irgendwann divergieren sie.
+
+### Bewusst NICHT übernommen
+
+- **Journal** — Excel ist dafür besser (Sortieren, Filtern, Pivot, Export). Eine localStorage-Kopie wäre schlechter.
+- **Formeltransparenz** — im Excel nachschaubar. Deshalb sind aber alle Parameter (Faktor, Ziel-Profit, Hebel-Cap, alle 11 Schwellwerte) im Panel editierbar statt im Code vergraben.
 
 ---
 

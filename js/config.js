@@ -248,6 +248,7 @@ const CONFIG = {
     { overlay: "fibRetracement",        icon: "𝑓",  title: "Fib Retracement" },
     { overlay: "fibExtension",          icon: "𝑓",  title: "Fib Extension" },
     { overlay: "rectangle",              icon: "▭",  title: "Rechteck" },
+    { overlay: "positionTool",       icon: "⇅",  title: "Long / Short Position" },
     { overlay: "priceRange",             icon: "↕",  title: "Price Range" },
     { overlay: "dateRange",              icon: "↔",  title: "Date Range" },
     { overlay: "frvp",                   icon: "▤",  title: "Fixed Range Volume Profile" },
@@ -265,6 +266,41 @@ const CONFIG = {
     up: "#3fb68b", down: "#d05e5e", accent: "#e8b64c",
     text: "#8fa3b8", grid: "rgba(143,163,184,0.07)",
   },
+};
+
+
+// ---------- Fibonacci-Levels (einzige Quelle) ----------
+// Wird von overlays.js (Zeichnen) UND app.js (Einstellungsmenü) gelesen.
+// Vorher lagen zwei Kopien in beiden Dateien — Änderungen an einer Stelle
+// liefen ins Leere.
+const FIB_LEVEL_SETS = {
+  fibRetracement: [
+    { v: 0,     color: "#9aa5b1" },
+    { v: 0.236, color: "#c96868" },
+    { v: 0.382, color: "#c9973f" },
+    { v: 0.5,   color: "#6fae7a" },
+    { v: 0.618, color: "#5aa06b" },
+    { v: 0.786, color: "#4a9ba8" },
+    { v: 1,     color: "#9aa5b1" },
+    { v: 1.618, color: "#5a7fa8" },
+    { v: 2.618, color: "#a85f6f" },
+    { v: 3.618, color: "#8a5fa8" },
+    { v: 4.236, color: "#a85f7a" },
+  ],
+  fibExtension: [
+    { v: 0,     color: "#9aa5b1" },
+    { v: 0.236, color: "#c96868" },
+    { v: 0.382, color: "#c9973f" },
+    { v: 0.5,   color: "#6fae7a" },
+    { v: 0.618, color: "#5aa06b" },
+    { v: 1,     color: "#9aa5b1" },
+    { v: 1.272, color: "#4a9ba8" },
+    { v: 1.618, color: "#5a7fa8" },
+    { v: 2,     color: "#a85f6f" },
+    { v: 2.618, color: "#8a5fa8" },
+    { v: 3.618, color: "#a85f7a" },
+    { v: 4.236, color: "#a8735f" },
+  ],
 };
 
 // ---------- Farb-Helfer (global) ----------

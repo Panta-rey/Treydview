@@ -283,38 +283,10 @@
   // Extension:   3 Punkte (A→B Impuls, C Korrektur-Ende, Projektion ab C)
   // ============================================================
 
-  // Levels wie TradingView. Farben dezent gehalten.
-  const FIB_LEVELS = [
-    { v: 0,     color: "#9aa5b1" },
-    { v: 0.236, color: "#c96868" },
-    { v: 0.382, color: "#c9973f" },
-    { v: 0.5,   color: "#6fae7a" },
-    { v: 0.618, color: "#5aa06b" },
-    { v: 0.786, color: "#4a9ba8" },
-    { v: 1,     color: "#9aa5b1" },
-    { v: 1.618, color: "#5a7fa8" },
-    { v: 2.618, color: "#a85f6f" },
-    { v: 3.618, color: "#8a5fa8" },
-    { v: 4.236, color: "#a85f7a" },
-  ];
-
-  const FIB_EXT_LEVELS = [
-    { v: 0,     color: "#9aa5b1" },
-    { v: 0.236, color: "#c96868" },
-    { v: 0.382, color: "#c9973f" },
-    { v: 0.5,   color: "#6fae7a" },
-    { v: 0.618, color: "#5aa06b" },
-    { v: 1,     color: "#9aa5b1" },
-    { v: 1.272, color: "#4a9ba8" },
-    { v: 1.618, color: "#5a7fa8" },
-    { v: 2,     color: "#a85f6f" },
-    { v: 2.618, color: "#8a5fa8" },
-    { v: 3.618, color: "#a85f7a" },
-    { v: 4.236, color: "#a8735f" },
-  ];
-
-  // Dezente Füllung: nur leichter Schleier zwischen den Levels
-  const FILL_ALPHA = 0.05;
+  // Levels kommen aus config.js (FIB_LEVEL_SETS) — einzige Quelle,
+  // gemeinsam mit dem Einstellungsmenü in app.js.
+  const FIB_LEVELS     = FIB_LEVEL_SETS.fibRetracement;
+  const FIB_EXT_LEVELS = FIB_LEVEL_SETS.fibExtension;
 
   function hexA(hex, a) {
     const h = hex.replace("#", "");
@@ -328,54 +300,87 @@
     return p.toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  // Baut die Figuren für eine Reihe von Fib-Levels.
-  // priceAt(level) -> Preis, yAt(level) -> Pixel-Y
-  function buildFibFigures(levels, coords, yAt, priceAt, extendData) {
-    const figs = [];
-    const xLeft  = Math.min(...coords.map(c => c.x));
-    const xRight = Math.max(...coords.map(c => c.x));
-    const showFill   = extendData?.showFill   !== false;
-    const showLabels = extendData?.showLabels !== false;
+  // Theme-abhängige Label-Farben. Farbiger Text auf kontrastierendem Chip
+  // ist besser lesbar als farbiger Text direkt auf dem Chart.
+  function labelColors() {
+    const dark = document.documentElement.getAttribute("data-theme") !== "light";
+    return {
+      bg:     dark ? "rgba(13,17,23,0.85)"   : "rgba(255,255,255,0.92)",
+      border: dark ? "rgba(143,163,184,0.2)" : "rgba(60,80,100,0.2)",
+    };
+  }
 
-    // 1. Flächen zwischen benachbarten Levels
+  // Baut die Figuren für eine Reihe von Fib-Levels.
+  // yAt(level) -> Pixel-Y, priceAt(level) -> Preis
+  function buildFibFigures(levels, coords, yAt, priceAt, extendData) {
+    const ed = extendData || {};
+    const figs = [];
+    const xLeft   = Math.min(...coords.map(c => c.x));
+    let   xRight  = Math.max(...coords.map(c => c.x));
+
+    const showFill    = ed.showFill    !== false;
+    const showLabels  = ed.showLabels  !== false;
+    const showPrices  = ed.showPrices  !== false;
+    const showLevels  = ed.showLevels  !== false;
+    const extendRight = ed.extendRight === true;
+    const fillAlpha   = (ed.fillOpacity != null ? ed.fillOpacity : 5) / 100;
+    const lineWidth   = ed.lineWidth || 1;
+    const hidden      = ed.hiddenLevels || {};   // { "0.236": true, ... }
+
+    if (extendRight) xRight = xLeft + (xRight - xLeft) * 2.2;
+
+    const visible = levels.filter(lv => !hidden[String(lv.v)]);
+    const lc = labelColors();
+
+    // 1. Flächen zwischen benachbarten sichtbaren Levels
     if (showFill) {
-      for (let i = 0; i < levels.length - 1; i++) {
-        const y1 = yAt(levels[i].v), y2 = yAt(levels[i + 1].v);
+      for (let i = 0; i < visible.length - 1; i++) {
+        const y1 = yAt(visible[i].v), y2 = yAt(visible[i + 1].v);
         if (y1 == null || y2 == null) continue;
         figs.push({
           type: "rect",
           attrs: { x: xLeft, y: Math.min(y1, y2), width: xRight - xLeft, height: Math.abs(y2 - y1) },
-          styles: { style: "fill", color: hexA(levels[i + 1].color, FILL_ALPHA) },
+          styles: { style: "fill", color: hexA(visible[i + 1].color, fillAlpha) },
         });
       }
     }
 
     // 2. Level-Linien
-    levels.forEach(lv => {
+    visible.forEach(lv => {
       const y = yAt(lv.v);
       if (y == null) return;
       figs.push({
         type: "line",
         attrs: { coordinates: [{ x: xLeft, y }, { x: xRight, y }] },
-        styles: { style: "solid", color: hexA(lv.color, 0.85), size: 1 },
+        styles: { style: "solid", color: hexA(lv.color, 0.85), size: lineWidth },
       });
     });
 
-    // 3. Beschriftung links: "0.618 (96,131.42)"
+    // 3. Beschriftung als Chip mit Hintergrund (sonst auf farbiger
+    //    Füllung praktisch unlesbar)
     if (showLabels) {
-      levels.forEach(lv => {
+      visible.forEach(lv => {
         const y = yAt(lv.v);
         if (y == null) return;
+        let txt = "";
+        if (showLevels && showPrices) txt = `${lv.v} (${fmtPrice(priceAt(lv.v))})`;
+        else if (showLevels)          txt = String(lv.v);
+        else if (showPrices)          txt = fmtPrice(priceAt(lv.v));
+        if (!txt) return;
         figs.push({
           type: "text",
-          attrs: {
-            x: xLeft - 6,
-            y: y,
-            text: `${lv.v} (${fmtPrice(priceAt(lv.v))})`,
-            align: "right",
-            baseline: "middle",
+          attrs: { x: xLeft - 4, y: y, text: txt, align: "right", baseline: "middle" },
+          styles: {
+            style: "stroke_fill",
+            color: hexA(lv.color, 1),
+            backgroundColor: lc.bg,
+            borderColor: lc.border,
+            borderSize: 1,
+            borderRadius: 2,
+            size: 11,
+            family: "IBM Plex Mono, monospace",
+            paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
           },
-          styles: { color: hexA(lv.color, 0.95), size: 11, family: "IBM Plex Mono, monospace" },
         });
       });
     }
@@ -388,6 +393,10 @@
     name: "fibRetracement",
     totalStep: 3,
     needDefaultPointFigure: false,
+    onRightClick: (event) => {
+      if (window.__tvOpenFibMenu) { window.__tvOpenFibMenu(event); return true; }
+      return false;
+    },
     needDefaultXAxisFigure: true,
     needDefaultYAxisFigure: true,
     createPointFigures: ({ coordinates, overlay }) => {
@@ -417,6 +426,10 @@
     name: "fibExtension",
     totalStep: 4,
     needDefaultPointFigure: false,
+    onRightClick: (event) => {
+      if (window.__tvOpenFibMenu) { window.__tvOpenFibMenu(event); return true; }
+      return false;
+    },
     needDefaultXAxisFigure: true,
     needDefaultYAxisFigure: true,
     createPointFigures: ({ coordinates, overlay }) => {
@@ -446,72 +459,310 @@
 
   // ---------- Erkanntes Chart-Muster ----------
   // Wird von der Pattern-Engine erzeugt, nicht vom User gezeichnet.
-  // Punkte: [P1, P2, P3] + optional [P4] = Bestätigungspunkt.
+  // Punkte: 3 (Double) oder 5 (Triple, H&S) Pivots + optional
+  // 1 Bestätigungspunkt am Ende.
   // Per Rechtsklick löschbar wie jede andere Zeichnung.
   klinecharts.registerOverlay({
     name: "pattern",
-    totalStep: 1,               // wird programmatisch erzeugt, kein Klick-Flow
+    totalStep: 1,               // programmatisch erzeugt, kein Klick-Flow
     needDefaultPointFigure: false,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    styles: { point: { activeRadius: 0 } },
     createPointFigures: ({ coordinates, overlay }) => {
       if (coordinates.length < 3) return [];
       const ed = overlay.extendData || {};
       const bearish = ed.direction === "bearish";
-      const col   = bearish ? "#d05e5e" : "#3fb68b";
-      const colA  = bearish ? "rgba(208,94,94,0.9)" : "rgba(63,182,139,0.9)";
-      const [c1, c2, c3] = coordinates;
-      const c4 = coordinates[3] || null;
+      const col  = bearish ? "#d05e5e" : "#3fb68b";
+      const colA = bearish ? "rgba(208,94,94,0.9)" : "rgba(63,182,139,0.9)";
+
+      // Letzter Punkt ist der Bestätigungspunkt, falls vorhanden
+      const nPivots = ed.pivotCount || (coordinates.length >= 6 ? 5 : coordinates.length >= 4 && coordinates.length !== 5 ? 3 : coordinates.length);
+      const pivots  = coordinates.slice(0, nPivots);
+      const confirm = coordinates.length > nPivots ? coordinates[coordinates.length - 1] : null;
       const figs = [];
 
-      // Verbindung der drei Pivots (die Musterform selbst)
+      // Musterform: Verbindung aller Pivots
       figs.push({
         type: "line",
-        attrs: { coordinates: [c1, c2, c3] },
+        attrs: { coordinates: pivots },
         styles: { style: "solid", color: colA, size: 2 },
       });
 
-      // Neckline: waagrecht durch P2, bis zum Bestätigungspunkt verlängert
-      const xEnd = c4 ? c4.x : c3.x + (c3.x - c1.x) * 0.35;
-      figs.push({
-        type: "line",
-        attrs: { coordinates: [{ x: c1.x, y: c2.y }, { x: xEnd, y: c2.y }] },
-        styles: { style: "dashed", dashedValue: [5, 4], color: colA, size: 1 },
-      });
+      // Neckline. Bei H&S schräg (durch die beiden Täler), sonst waagrecht.
+      const xStart = pivots[0].x;
+      const xEnd   = confirm ? confirm.x : pivots[pivots.length - 1].x + (pivots[pivots.length - 1].x - xStart) * 0.3;
+      let neckFigure;
+      if (ed.slantedNeckline && pivots.length >= 5) {
+        // Gerade durch P2 und P4 verlängern
+        const a = pivots[1], b = pivots[3];
+        const m = (b.y - a.y) / (b.x - a.x || 1);
+        neckFigure = {
+          type: "line",
+          attrs: { coordinates: [
+            { x: xStart, y: a.y + m * (xStart - a.x) },
+            { x: xEnd,   y: a.y + m * (xEnd   - a.x) },
+          ]},
+        };
+      } else {
+        // Waagrecht durch das relevante Tal
+        const necklineY = pivots.length >= 5
+          ? (bearish ? Math.max(pivots[1].y, pivots[3].y) : Math.min(pivots[1].y, pivots[3].y))
+          : pivots[1].y;
+        neckFigure = {
+          type: "line",
+          attrs: { coordinates: [{ x: xStart, y: necklineY }, { x: xEnd, y: necklineY }] },
+        };
+      }
+      neckFigure.styles = { style: "dashed", dashedValue: [5, 4], color: colA, size: 1 };
+      figs.push(neckFigure);
 
-      // Markierung der beiden Extrempunkte
-      [c1, c3].forEach(c => {
+      // Extrempunkte markieren (Tops/Bottoms, nicht die Täler)
+      pivots.forEach((c, i) => {
+        if (i % 2 !== 0) return;
+        const isHead = pivots.length === 5 && i === 2 && ed.hasHead;
         figs.push({
           type: "circle",
-          attrs: { x: c.x, y: c.y, r: 3.5 },
+          attrs: { x: c.x, y: c.y, r: isHead ? 4.5 : 3.5 },
           styles: { style: "fill", color: col },
         });
       });
 
       // Bestätigungspunkt (Neckline-Bruch)
-      if (c4) {
+      if (confirm) {
         figs.push({
           type: "circle",
-          attrs: { x: c4.x, y: c4.y, r: 4 },
+          attrs: { x: confirm.x, y: confirm.y, r: 4 },
           styles: { style: "stroke_fill", color: colA, borderColor: "#ffffff", borderSize: 1 },
         });
       }
 
-      // Label über/unter dem Muster
-      const labelY = bearish ? Math.min(c1.y, c3.y) - 8 : Math.max(c1.y, c3.y) + 8;
-      const q = ed.quality != null ? ` ${Math.round(ed.quality * 100)}%` : "";
+      // Label mit Chip-Hintergrund (lesbar auf jedem Untergrund)
+      const ys = pivots.map(c => c.y);
+      const labelY = bearish ? Math.min(...ys) - 10 : Math.max(...ys) + 10;
+      // "Sym" statt nur "%": die Zahl misst Symmetrie/Ausprägung des Musters,
+      // NICHT die Trefferwahrscheinlichkeit. Ohne Label liest man sie als Konfidenz.
+      const q = ed.quality != null ? `  Sym ${Math.round(ed.quality * 100)}%` : "";
+      const lc = labelColors();
       figs.push({
         type: "text",
         attrs: {
-          x: (c1.x + c3.x) / 2,
+          x: (pivots[0].x + pivots[pivots.length - 1].x) / 2,
           y: labelY,
           text: (ed.label || "Muster") + q,
           align: "center",
           baseline: bearish ? "bottom" : "top",
         },
-        styles: { color: colA, size: 11, family: "IBM Plex Mono, monospace" },
+        styles: {
+          style: "stroke_fill",
+          color: colA,
+          backgroundColor: lc.bg,
+          borderColor: colA,
+          borderSize: 1,
+          borderRadius: 3,
+          size: 11,
+          family: "IBM Plex Mono, monospace",
+          paddingLeft: 6, paddingRight: 6, paddingTop: 3, paddingBottom: 3,
+        },
       });
+
+      return figs;
+    },
+  });
+
+  // ---------- Grid-Bänder (vom Grid Bot erzeugt) ----------
+  // Zeigt Range, Grid-Linien und Stop für das gewählte Tier.
+  // Der eigentliche Mehrwert gegenüber Excel: man SIEHT, ob die Range
+  // die letzten Monate überspannt hätte oder ob der Preis rausgelaufen wäre.
+  klinecharts.registerOverlay({
+    name: "gridBands",
+    totalStep: 1,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: true,
+    createPointFigures: ({ coordinates, overlay, bounding }) => {
+      if (coordinates.length < 2) return [];
+      const ed = overlay.extendData || {};
+      const yUp = coordinates[0].y, yLo = coordinates[1].y;
+      const x0 = 0, x1 = bounding?.width || coordinates[1].x;
+      const figs = [];
+
+      const dir = ed.direction;
+      const col = dir === "Long" ? "#3fb68b" : dir === "Short" ? "#d05e5e" : "#e8b64c";
+      const colA = (a) => hexA(col, a);
+
+      // Range-Fläche
+      figs.push({
+        type: "rect",
+        attrs: { x: x0, y: Math.min(yUp, yLo), width: x1 - x0, height: Math.abs(yLo - yUp) },
+        styles: { style: "fill", color: colA(0.06) },
+      });
+
+      // Grid-Linien innerhalb der Range
+      const n = Math.max(2, Math.min(60, ed.grids || 10));   // >60 wäre nur noch Grau
+      for (let i = 1; i < n; i++) {
+        const y = yUp + (yLo - yUp) * (i / n);
+        figs.push({
+          type: "line",
+          attrs: { coordinates: [{ x: x0, y }, { x: x1, y }] },
+          styles: { style: "solid", color: colA(0.13), size: 1 },
+        });
+      }
+
+      // Range-Grenzen
+      [[yUp, ed.upper, "UP"], [yLo, ed.lower, "LP"]].forEach(([y, val, tag]) => {
+        figs.push({
+          type: "line",
+          attrs: { coordinates: [{ x: x0, y }, { x: x1, y }] },
+          styles: { style: "solid", color: colA(0.85), size: 1 },
+        });
+        figs.push({
+          type: "text",
+          attrs: { x: x0 + 6, y: y, text: `${tag} ${fmtPrice(val)}`, align: "left", baseline: "middle" },
+          styles: {
+            style: "stroke_fill", color: colA(1), backgroundColor: labelColors().bg,
+            borderColor: colA(0.4), borderSize: 1, borderRadius: 2, size: 10,
+            family: "IBM Plex Mono, monospace",
+            paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2,
+          },
+        });
+      });
+
+      // Stop-Linie
+      if (ed.stopLoss != null && overlay.points?.[0]) {
+        const yStop = yLo + (yLo - yUp) * 0.06 * (ed.stopLoss < ed.lower ? 1 : -1);
+        figs.push({
+          type: "line",
+          attrs: { coordinates: [{ x: x0, y: yStop }, { x: x1, y: yStop }] },
+          styles: { style: "dashed", dashedValue: [5, 4], color: "rgba(208,94,94,0.8)", size: 1 },
+        });
+        figs.push({
+          type: "text",
+          attrs: { x: x0 + 6, y: yStop, text: `SL ${fmtPrice(ed.stopLoss)}`, align: "left", baseline: "middle" },
+          styles: {
+            style: "stroke_fill", color: "#d05e5e", backgroundColor: labelColors().bg,
+            borderColor: "rgba(208,94,94,0.4)", borderSize: 1, borderRadius: 2, size: 10,
+            family: "IBM Plex Mono, monospace",
+            paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2,
+          },
+        });
+      }
+
+      // Tier-Label
+      figs.push({
+        type: "text",
+        attrs: { x: x1 - 6, y: Math.min(yUp, yLo) + 2, text: `${ed.label} · ${ed.grids} Grids · ${ed.leverage}×`, align: "right", baseline: "top" },
+        styles: {
+          style: "stroke_fill", color: colA(1), backgroundColor: labelColors().bg,
+          borderColor: colA(0.4), borderSize: 1, borderRadius: 2, size: 10,
+          family: "IBM Plex Mono, monospace",
+          paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+        },
+      });
+
+      return figs;
+    },
+  });
+
+  // ---------- Long / Short Position ----------
+  // Drei Klicks: Einstieg, Stop, Ziel. CRV und Positionsgrösse fallen
+  // daraus. Nutzt dieselben Kapital/Risiko-Felder wie der Grid Bot —
+  // eine Quelle, zwei Konsumenten.
+  klinecharts.registerOverlay({
+    name: "positionTool",
+    totalStep: 4,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: true,
+    createPointFigures: ({ coordinates, overlay }) => {
+      if (coordinates.length < 2) return [];
+      const pts = overlay.points || [];
+      if (pts.length < 2 || pts[0].value == null) return [];
+
+      const entry = pts[0].value;
+      const stop  = pts[1]?.value;
+      const target = pts[2]?.value;
+      const cEntry = coordinates[0], cStop = coordinates[1], cTarget = coordinates[2];
+
+      const isLong = stop != null && stop < entry;
+      const x0 = Math.min(...coordinates.map(c => c.x));
+      const x1 = Math.max(...coordinates.map(c => c.x)) + 60;
+      const figs = [];
+
+      const risk = stop != null ? Math.abs(entry - stop) : null;
+      const reward = target != null ? Math.abs(target - entry) : null;
+      const rr = (risk && reward) ? reward / risk : null;
+
+      // Risiko-Zone (Einstieg -> Stop)
+      if (cStop) {
+        figs.push({
+          type: "rect",
+          attrs: { x: x0, y: Math.min(cEntry.y, cStop.y), width: x1 - x0, height: Math.abs(cStop.y - cEntry.y) },
+          styles: { style: "fill", color: "rgba(208,94,94,0.10)" },
+        });
+      }
+      // Gewinn-Zone (Einstieg -> Ziel)
+      if (cTarget) {
+        figs.push({
+          type: "rect",
+          attrs: { x: x0, y: Math.min(cEntry.y, cTarget.y), width: x1 - x0, height: Math.abs(cTarget.y - cEntry.y) },
+          styles: { style: "fill", color: "rgba(63,182,139,0.10)" },
+        });
+      }
+
+      const line = (y, color, style) => ({
+        type: "line",
+        attrs: { coordinates: [{ x: x0, y }, { x: x1, y }] },
+        styles: { style: style || "solid", color, size: 1, dashedValue: [4, 4] },
+      });
+      const chip = (y, text, color) => ({
+        type: "text",
+        attrs: { x: x1 - 4, y, text, align: "right", baseline: "middle" },
+        styles: {
+          style: "stroke_fill", color, backgroundColor: labelColors().bg,
+          borderColor: hexA(color.replace("rgba", "rgb").split(",").slice(0, 3).join(",") + ")", 0.4),
+          borderSize: 1, borderRadius: 2, size: 10, family: "IBM Plex Mono, monospace",
+          paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+        },
+      });
+
+      figs.push(line(cEntry.y, "rgba(154,165,177,0.9)"));
+      figs.push(chip(cEntry.y, `Einstieg ${fmtPrice(entry)}`, "#9aa5b1"));
+
+      if (cStop) {
+        figs.push(line(cStop.y, "rgba(208,94,94,0.9)"));
+        const rPct = ((Math.abs(entry - stop) / entry) * 100).toFixed(2);
+        figs.push(chip(cStop.y, `Stop ${fmtPrice(stop)}  −${rPct}%`, "#d05e5e"));
+      }
+      if (cTarget) {
+        figs.push(line(cTarget.y, "rgba(63,182,139,0.9)"));
+        const gPct = ((Math.abs(target - entry) / entry) * 100).toFixed(2);
+        figs.push(chip(cTarget.y, `Ziel ${fmtPrice(target)}  +${gPct}%`, "#3fb68b"));
+      }
+
+      // Kennzahlen-Block: CRV und Positionsgrösse
+      if (rr != null) {
+        const sizing = (window.__tvSizing && window.__tvSizing()) || null;
+        const lines = [`${isLong ? "Long" : "Short"}   CRV 1:${rr.toFixed(2)}`];
+        if (sizing && risk) {
+          const stopDist = risk / entry;
+          const size = Math.min(sizing.capital, Math.round((sizing.capital * sizing.riskPct / 100) / stopDist));
+          lines.push(`Size ${size.toLocaleString("de-CH")} USDT  (${sizing.riskPct}% von ${sizing.capital.toLocaleString("de-CH")})`);
+          lines.push(`Risiko ${Math.round(sizing.capital * sizing.riskPct / 100)} USDT  =  1R`);
+        }
+        const yTop = Math.min(...coordinates.map(c => c.y)) - 8;
+        lines.forEach((txt, i) => {
+          figs.push({
+            type: "text",
+            attrs: { x: x0 + 4, y: yTop - (lines.length - 1 - i) * 15, text: txt, align: "left", baseline: "bottom" },
+            styles: {
+              style: "stroke_fill", color: "#e8b64c", backgroundColor: labelColors().bg,
+              borderColor: "rgba(232,182,76,0.35)", borderSize: 1, borderRadius: 2,
+              size: 10, family: "IBM Plex Mono, monospace",
+              paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+            },
+          });
+        });
+      }
 
       return figs;
     },
