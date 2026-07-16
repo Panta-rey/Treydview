@@ -419,3 +419,33 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .cc-eye:hover{color:var(--accent);background:var(--bg-hover);}
 .compare-chip.hidden-asset{opacity:.45;}
 .compare-chip.hidden-asset .cc-label{text-decoration:line-through;}
+
+/* Cursor über Zeichnungen: KLineCharts setzt cursor:crosshair als
+   Inline-Style auf einen inneren Container — ohne !important verliert
+   unsere Regel. */
+#mainChart.cursor-pointer,
+#mainChart.cursor-pointer *{cursor:pointer !important;}
+#mainChart.cursor-crosshair,
+#mainChart.cursor-crosshair *{cursor:crosshair !important;}
+
+/* Layout: geöffnetes Layout aktualisieren */
+.layout-current{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;border-bottom:1px solid var(--border);}
+.layout-current.hidden{display:none;}
+.lc-label{font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.lc-label b{color:var(--accent);font-weight:600;}
+#layoutUpdateBtn{background:transparent;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:3px 9px;font-family:var(--font-mono);font-size:11px;cursor:pointer;white-space:nowrap;}
+#layoutUpdateBtn:hover{background:var(--accent);color:#0d1117;}
+
+/* Mehrere Watchlisten */
+.wl-select{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--font-mono);font-size:11px;padding:3px 5px;outline:none;cursor:pointer;min-width:0;}
+.wl-select:focus{border-color:var(--accent);}
+.wl-icon{background:transparent;border:none;color:var(--text-dim);cursor:pointer;padding:2px 4px;display:flex;align-items:center;border-radius:3px;flex-shrink:0;}
+.wl-icon:hover{color:var(--text);background:var(--bg-hover);}
+.wl-manage{padding:7px 10px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:6px;}
+.wl-manage.hidden{display:none;}
+.wl-mrow{display:flex;gap:5px;}
+.wl-mrow input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--font-mono);font-size:11px;padding:4px 6px;outline:none;min-width:0;}
+.wl-mrow input:focus{border-color:var(--accent);}
+#wlCreateBtn{background:var(--accent);border:none;color:#0d1117;border-radius:3px;width:26px;font-size:14px;font-weight:600;cursor:pointer;flex-shrink:0;}
+.wl-mdel{background:transparent;border:1px solid rgba(208,94,94,.3);color:var(--down);border-radius:3px;padding:4px;font-family:var(--font-mono);font-size:11px;cursor:pointer;}
+.wl-mdel:hover{background:rgba(208,94,94,.1);border-color:var(--down);}

@@ -768,4 +768,32 @@
     },
   });
 
+  // ---------- Freihand ----------
+  // KLineCharts' Overlay-System arbeitet mit diskreten Klick-Punkten
+  // (totalStep). Freihand braucht dagegen kontinuierliches Tracking bei
+  // gedrückter Maus. Deshalb sammelt app.js die Punkte selbst per
+  // mousemove und erzeugt das Overlay am Ende in einem Rutsch — dieses
+  // Overlay zeichnet nur noch die fertige Punktkette.
+  klinecharts.registerOverlay({
+    name: "freehand",
+    totalStep: 1,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, overlay }) => {
+      if (coordinates.length < 2) return [];
+      const ed = overlay.extendData || {};
+      return [{
+        type: "line",
+        attrs: { coordinates },
+        styles: {
+          style: "solid",
+          color: ed.color || "#e8b64c",
+          size: ed.size || 2,
+          smooth: true,
+        },
+      }];
+    },
+  });
+
 })();

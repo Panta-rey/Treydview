@@ -4,7 +4,7 @@
 const CONFIG = {
 
   // >>> HIER deine Cloudflare-Worker-Basis-URL eintragen <<<
-  WORKER_BASE_URL: "https://DEIN-WORKER.workers.dev",
+  WORKER_BASE_URL: "https://pantarey.rey-gafner.workers.dev",
   GOLD_ENDPOINT:   "/goldhistory",
   BINANCE_REST:    "https://api.binance.com/api/v3",
   BINANCE_WS:      "wss://stream.binance.com:9443/ws",

@@ -8,7 +8,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Archivo:wght@700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
-  <script src="https://unpkg.com/klinecharts@9.8.12/dist/umd/klinecharts.min.js"></script>
+  <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
+       Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
+  <script src="js/lib/klinecharts.min.js"></script>
 </head>
 <body>
 
@@ -148,9 +150,13 @@
         </svg>
       </button>
       <div class="dd-panel dd-panel--right" id="layoutPanel">
+        <div class="layout-current hidden" id="layoutCurrent">
+          <span class="lc-label">Geöffnet: <b id="layoutCurrentName"></b></span>
+          <button id="layoutUpdateBtn" title="Änderungen im geöffneten Layout speichern">Aktualisieren</button>
+        </div>
         <div class="layout-save">
-          <input type="text" id="layoutName" placeholder="Layout-Name…" autocomplete="off">
-          <button id="layoutSaveBtn" title="Aktuelles Layout speichern">Speichern</button>
+          <input type="text" id="layoutName" placeholder="Als neues Layout…" autocomplete="off">
+          <button id="layoutSaveBtn" title="Als neues Layout speichern">Speichern</button>
         </div>
         <div class="dd-list" id="layoutList"></div>
       </div>
@@ -285,8 +291,18 @@
   <!-- Watchlist -->
   <aside class="watchlist" id="watchlist">
     <div class="wl-header">
-      <span class="wl-title">Watchlist</span>
+      <select class="wl-select" id="wlSelect" title="Watchlist wählen"></select>
+      <button class="wl-icon" id="wlManageBtn" title="Listen verwalten">
+        <svg viewBox="0 0 24 24" width="13" height="13"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>
+      </button>
       <button class="wl-add" id="wlAddBtn" title="Symbol hinzufügen">+</button>
+    </div>
+    <div class="wl-manage hidden" id="wlManage">
+      <div class="wl-mrow">
+        <input type="text" id="wlNewName" placeholder="Neue Liste…" autocomplete="off">
+        <button id="wlCreateBtn" title="Anlegen">+</button>
+      </div>
+      <button class="wl-mdel" id="wlDeleteBtn">Aktuelle Liste löschen</button>
     </div>
     <div class="wl-search hidden" id="wlSearchBox">
       <input type="text" id="wlSearch" placeholder="Symbol suchen…" autocomplete="off">

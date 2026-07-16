@@ -42,7 +42,11 @@ const state = {
   compareAssets: [],   // [{ id, label, color, data: [{timestamp, close}] }]
 
   // Watchlist
-  watchlist:      _ws?.watchlist || [...CONFIG.WATCHLIST_DEFAULT],
+  // Mehrere Watchlisten. Migration: ein altes flaches Array wird zur
+  // Liste "Standard", damit bestehende Workspaces nicht verlorengehen.
+  watchlists: _ws?.watchlists
+    || (Array.isArray(_ws?.watchlist) ? { Standard: [..._ws.watchlist] } : { Standard: [...CONFIG.WATCHLIST_DEFAULT] }),
+  activeWatchlist: _ws?.activeWatchlist || "Standard",
   watchlistOpen:  _ws?.watchlistOpen !== false,
   wlPrices:       {},   // { SYMBOL: { price, changePct } }
   wlCloseStream:  null,
@@ -51,6 +55,7 @@ const state = {
   theme: _ws?.theme || "dark",
 
   // Grid Bot
+  currentLayout: _ws?.currentLayout || null,   // Name des offenen Layouts
   candleStreamOk: false,
   wlStreamOk: false,
   gbOpen: _ws?.gbOpen || false,
@@ -82,6 +87,14 @@ const state = {
   historyDone:    false,  // true wenn Binance keine älteren Daten mehr liefert
 
 };
+
+// state.watchlist zeigt immer auf die gerade aktive Liste. So funktioniert
+// der gesamte bestehende Code weiter, ohne dass jeder Zugriff angefasst
+// werden muss.
+Object.defineProperty(state, "watchlist", {
+  get() { return this.watchlists[this.activeWatchlist] || []; },
+  set(v) { this.watchlists[this.activeWatchlist] = v; },
+});
 
 // Farbpalette für Vergleichs-Assets
 // 15 gut unterscheidbare Farben. Reihenfolge so gewählt, dass benachbarte
@@ -980,7 +993,92 @@ function autoZoom() {
 // Mauszeiger über dem Chart setzen. "" stellt das Fadenkreuz wieder her.
 function setChartCursor(cursor) {
   const el = document.getElementById("mainChart");
-  if (el) el.style.cursor = cursor;
+  if (el) el.classList.toggle("cursor-pointer", cursor === "pointer");
+}
+
+// ---------- Freihand-Zeichnen ----------
+// Sonderweg: KLineCharts kennt nur Klick-für-Klick-Werkzeuge. Freihand
+// braucht Tracking bei gedrückter Maus, also sammeln wir die Punkte
+// selbst und erzeugen das Overlay erst beim Loslassen.
+let _fhPoints = null;
+
+function startFreehand() {
+  state.activeTool = "freehand";
+  renderDrawbar();
+  setStatus("Freihand: Maus gedrückt halten und ziehen");
+  const el = document.getElementById("mainChart");
+  el.classList.add("cursor-crosshair");
+
+  const toPoint = (ev) => {
+    const rect = el.getBoundingClientRect();
+    const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
+    const y = (ev.touches ? ev.touches[0].clientY : ev.clientY) - rect.top;
+    try {
+      const v = chart.convertFromPixel({ x, y }, { paneId: "candle_pane" });
+      return (v && v.timestamp != null && v.value != null) ? { timestamp: v.timestamp, value: v.value } : null;
+    } catch (e) { return null; }
+  };
+
+  const onDown = (ev) => {
+    if (ev.button != null && ev.button !== 0) return;
+    const p = toPoint(ev);
+    if (!p) return;
+    _fhPoints = [p];
+    ev.preventDefault();
+  };
+  const onMove = (ev) => {
+    if (!_fhPoints) return;
+    const p = toPoint(ev);
+    // Nur neue Punkte aufnehmen — sonst hunderte identische bei Stillstand
+    if (p && (_fhPoints.length === 0 || p.timestamp !== _fhPoints.at(-1).timestamp || p.value !== _fhPoints.at(-1).value)) {
+      _fhPoints.push(p);
+    }
+    ev.preventDefault();
+  };
+  const onUp = () => {
+    if (!_fhPoints) return;
+    const pts = _fhPoints;
+    _fhPoints = null;
+    if (pts.length >= 2) {
+      try {
+        chart.createOverlay({
+          name: "freehand",
+          points: pts,
+          extendData: { color: state.drawStyle.color, size: state.drawStyle.width || 2 },
+          onRightClick: (e) => { openOverlayMenu(e); return true; },
+          onMouseEnter: () => { setChartCursor("pointer"); return false; },
+          onMouseLeave: () => { setChartCursor(""); return false; },
+        });
+      } catch (e) {}
+    }
+    if (!state.pinTool) stopFreehand();
+  };
+
+  _fhHandlers = { onDown, onMove, onUp, el };
+  el.addEventListener("mousedown", onDown);
+  el.addEventListener("touchstart", onDown, { passive: false });
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("touchmove", onMove, { passive: false });
+  document.addEventListener("mouseup", onUp);
+  document.addEventListener("touchend", onUp);
+}
+
+let _fhHandlers = null;
+
+function stopFreehand() {
+  if (!_fhHandlers) return;
+  const { onDown, onMove, onUp, el } = _fhHandlers;
+  el.removeEventListener("mousedown", onDown);
+  el.removeEventListener("touchstart", onDown);
+  document.removeEventListener("mousemove", onMove);
+  document.removeEventListener("touchmove", onMove);
+  document.removeEventListener("mouseup", onUp);
+  document.removeEventListener("touchend", onUp);
+  el.classList.remove("cursor-crosshair");
+  _fhHandlers = null;
+  _fhPoints = null;
+  state.activeTool = null;
+  renderDrawbar();
 }
 
 // ---------- Drawing-Toolbar ----------
@@ -1017,17 +1115,32 @@ function currentOverlayStyles() {
 }
 
 function startTool(overlayName) {
+  // Freihand läuft über eigene Maus-Handler, nicht über KLineCharts
+  if (overlayName === "freehand") { startFreehand(); return; }
+  stopFreehand();
   state.activeTool = overlayName;
   const overlayConfig = {
     name: overlayName,
     mode: state.magnetMode,
     styles: currentOverlayStyles(),
-    onDrawEnd: () => {
+    onDrawEnd: (e) => {
+      // simpleAnnotation liest seinen Text aus extendData. Ohne den bleibt
+      // nur die Linie mit Pfeil übrig — sieht aus wie ein Bug, ist aber
+      // schlicht ein leeres Label.
+      if (overlayName === "simpleAnnotation" && e?.overlay?.id) {
+        const txt = window.prompt("Text für die Notiz:", "");
+        if (txt && txt.trim()) {
+          try { chart.overrideOverlay({ id: e.overlay.id, extendData: txt.trim() }); } catch (err) {}
+        } else {
+          try { chart.removeOverlay(e.overlay.id); } catch (err) {}
+        }
+      }
       state.drawingId = null;
       if (state.pinTool) {
         setTimeout(() => startTool(overlayName), 0);
       } else {
         state.activeTool = null;
+        document.getElementById("posToolTopBtn")?.classList.remove("active");
         renderDrawbar();
       }
       return false;
@@ -1226,7 +1339,7 @@ const DRAW_CATEGORIES = [
     icon: `<svg viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
     tools: [
       { overlay: "simpleAnnotation", label: "Textfeld",  desc: "Notiz an eine Kerze heften" },
-      { overlay: "simpleTag",        label: "Preis-Tag", desc: "Markierung auf der Preisachse" },
+      { overlay: "freehand",         label: "Freihand",  desc: "Frei zeichnen mit gedrückter Maus" },
     ],
   },
 ];
@@ -1245,36 +1358,6 @@ function renderDrawbar() {
   bar.appendChild(styleBtn);
 
   const sep0 = document.createElement("div"); sep0.className = "draw-sep"; bar.appendChild(sep0);
-
-  // Long/Short Position: eigener Button statt in einem Untermenü.
-  // Es liefert Stop und Positionsgrösse — die Zahlen, um die es beim
-  // Handeln tatsächlich geht. Ein Dropdown davor wäre eine Hürde an der
-  // falschen Stelle.
-  const posBtn = document.createElement("button");
-  posBtn.id = "posToolBtn";
-  posBtn.className = "draw-cat-btn draw-pos" + (state.activeTool === "positionTool" ? " active" : "");
-  posBtn.title = "Long / Short Position — Einstieg, Stop, Ziel klicken";
-  posBtn.innerHTML = `<svg viewBox="0 0 24 24" style="width:21px;height:21px">
-    <rect x="3" y="4" width="18" height="6.5" rx="1" fill="rgba(63,182,139,.22)" stroke="#3fb68b" stroke-width="1.6"/>
-    <rect x="3" y="13.5" width="18" height="6.5" rx="1" fill="rgba(208,94,94,.22)" stroke="#d05e5e" stroke-width="1.6"/>
-    <line x1="1.5" y1="12" x2="22.5" y2="12" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 2"/>
-  </svg>`;
-  posBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    // Zweiter Klick bricht ab — gleiche Logik wie der ESC-Handler
-    if (state.activeTool === "positionTool") {
-      if (state.drawingId != null) { try { chart.removeOverlay(state.drawingId); } catch (err) {} state.drawingId = null; }
-      state.activeTool = null;
-      renderDrawbar();
-      setStatus("Abgebrochen");
-      return;
-    }
-    startTool("positionTool");
-    setStatus("Long/Short: 1. Einstieg klicken  →  2. Stop  →  3. Ziel");
-  });
-  bar.appendChild(posBtn);
-
-  const sepPos = document.createElement("div"); sepPos.className = "draw-sep"; bar.appendChild(sepPos);
 
   // Kategorie-Gruppen
   DRAW_CATEGORIES.forEach(cat => {
@@ -1367,7 +1450,9 @@ document.addEventListener("keydown", (e) => {
       chart.removeOverlay(state.drawingId);
       state.drawingId = null;
     }
+    stopFreehand();
     state.activeTool = null;
+    document.getElementById("posToolTopBtn")?.classList.remove("active");
     renderDrawbar();
   } else if ((e.key === "Delete" || e.key === "Backspace") && state.selectedOverlayId != null) {
     // Nicht löschen wenn der Fokus in einem Eingabefeld liegt
@@ -1462,6 +1547,7 @@ function saveWorkspace() {
       watchlist: state.watchlist,
       watchlistOpen: state.watchlistOpen,
       theme: state.theme,
+    currentLayout: state.currentLayout,
     gbOpen: state.gbOpen,
     gbCollapsed: state.gbCollapsed,
     gbHeight: state.gbHeight,
@@ -1474,11 +1560,60 @@ function saveWorkspace() {
 }
 
 // ---------- Watchlist ----------
+// ---------- Watchlisten verwalten ----------
+function renderWlSelect() {
+  const sel = document.getElementById("wlSelect");
+  if (!sel) return;
+  const names = Object.keys(state.watchlists);
+  if (names.length === 0) {
+    state.watchlists = { Standard: [] };
+    state.activeWatchlist = "Standard";
+    return renderWlSelect();
+  }
+  if (!state.watchlists[state.activeWatchlist]) state.activeWatchlist = names[0];
+  sel.innerHTML = names.map(n =>
+    `<option value="${n}"${n === state.activeWatchlist ? " selected" : ""}>${n}</option>`).join("");
+}
+
+function switchWatchlist(name) {
+  if (!state.watchlists[name]) return;
+  state.activeWatchlist = name;
+  saveWorkspace();
+  renderWatchlist();
+  restartWatchlistStream();
+}
+
+function createWatchlist(name) {
+  const n = (name || "").trim();
+  if (!n) { setStatus("Name fehlt"); return; }
+  if (state.watchlists[n]) { setStatus(`"${n}" existiert bereits`); return; }
+  state.watchlists[n] = [];
+  state.activeWatchlist = n;
+  saveWorkspace();
+  renderWlSelect();
+  renderWatchlist();
+  restartWatchlistStream();
+  setStatus(`Watchlist "${n}" angelegt`);
+}
+
+function deleteWatchlist(name) {
+  const names = Object.keys(state.watchlists);
+  if (names.length <= 1) { setStatus("Die letzte Liste kann nicht gelöscht werden"); return; }
+  delete state.watchlists[name];
+  state.activeWatchlist = Object.keys(state.watchlists)[0];
+  saveWorkspace();
+  renderWlSelect();
+  renderWatchlist();
+  restartWatchlistStream();
+  setStatus(`"${name}" gelöscht`);
+}
+
 function renderWatchlist() {
   const panel = document.getElementById("watchlist");
   const list  = document.getElementById("wlList");
   if (!panel || !list) return;
   panel.classList.toggle("hidden", !state.watchlistOpen);
+  renderWlSelect();
   list.innerHTML = "";
 
   if (state.watchlist.length === 0) {
@@ -1611,20 +1746,14 @@ function switchSymbol(sym) {
 // Alle User-Zeichnungen entfernen. Grid-Bänder und Muster bleiben, die
 // werden vom jeweiligen Modul selbst verwaltet.
 function clearAllDrawings() {
-  try {
-    const store = chart.getOverlayStore?.();
-    const all = store?.getCompleteOverlays?.() || [];
-    all.forEach(o => {
-      // Vom System erzeugte Overlays nicht anfassen
-      if (o.name === "gridBands" || o.name === "pattern") return;
-      try { chart.removeOverlay(o.id); } catch (e) {}
-    });
-  } catch (e) { /* interne API — bei Versionswechsel prüfen */ }
-  // Muster und Grid-Bänder gehören ebenfalls zum alten Asset
-  clearPatterns();
-  gbClearBands();
+  // removeOverlay() ohne id löscht ALLE Overlays. chart.getOverlayStore()
+  // existiert in 9.8.12 nicht — der frühere Versuch lief still ins Leere.
+  try { chart.removeOverlay(); } catch (e) {}
+  state.patternOverlayIds = [];
+  state.gbBandIds = [];
   state.gbActiveTier = null;
   state.selectedOverlayId = null;
+  state.drawingId = null;
 }
 
 // ---------- Lazy Loading: ältere Kerzen beim Zurückscrollen ----------
@@ -2280,9 +2409,11 @@ function currentLayoutSnapshot() {
     active: [...state.active],
     chartType: state.chartType,
     legendCollapsed: state.legendCollapsed,
-    watchlist: state.watchlist,
+    watchlists: state.watchlists,
+    activeWatchlist: state.activeWatchlist,
     watchlistOpen: state.watchlistOpen,
     theme: state.theme,
+    currentLayout: state.currentLayout,
     gbOpen: state.gbOpen,
     gbCollapsed: state.gbCollapsed,
     gbHeight: state.gbHeight,
@@ -2298,20 +2429,44 @@ function saveNamedLayout(name) {
   const layouts = loadLayouts();
   layouts[name.trim()] = currentLayoutSnapshot();
   saveLayouts(layouts);
+  state.currentLayout = name.trim();
+  saveWorkspace();
   renderLayoutList();
+  renderLayoutCurrent();
   setStatus(`Layout "${name.trim()}" gespeichert`);
+}
+
+// Punkt 5: Änderungen ins geöffnete Layout zurückschreiben, ohne
+// einen neuen Namen tippen zu müssen.
+function updateCurrentLayout() {
+  if (!state.currentLayout) return;
+  const layouts = loadLayouts();
+  if (!layouts[state.currentLayout]) { state.currentLayout = null; renderLayoutCurrent(); return; }
+  layouts[state.currentLayout] = currentLayoutSnapshot();
+  saveLayouts(layouts);
+  setStatus(`Layout "${state.currentLayout}" aktualisiert`);
+}
+
+function renderLayoutCurrent() {
+  const box = document.getElementById("layoutCurrent");
+  if (!box) return;
+  const has = !!state.currentLayout && !!loadLayouts()[state.currentLayout];
+  box.classList.toggle("hidden", !has);
+  if (has) document.getElementById("layoutCurrentName").textContent = state.currentLayout;
 }
 
 function applyNamedLayout(name) {
   const layouts = loadLayouts();
   const l = layouts[name];
   if (!l) return;
+  state.currentLayout = name;
 
   state.symbol      = l.symbol || state.symbol;
   state.timeframe   = CONFIG.TIMEFRAMES.find(t => t.id === l.timeframeId) || state.timeframe;
   state.chartType   = l.chartType || state.chartType;
   state.legendCollapsed = !!l.legendCollapsed;
-  state.watchlist   = l.watchlist || state.watchlist;
+  if (l.watchlists) { state.watchlists = l.watchlists; state.activeWatchlist = l.activeWatchlist || Object.keys(l.watchlists)[0]; }
+  else if (l.watchlist) { state.watchlists = { Standard: l.watchlist }; state.activeWatchlist = "Standard"; }
   state.watchlistOpen = l.watchlistOpen !== false;
   state.theme       = l.theme || state.theme;
   state.chartStyle  = l.chartStyle || state.chartStyle;
@@ -2434,6 +2589,7 @@ function resetChartStyle() {
 initDropdowns();
 syncLabels();
 gbRenderSettings();
+renderLayoutCurrent();
 gbInitResize();
 gbSetCollapsed(state.gbCollapsed);
 if (state.gbOpen) gbToggleBar(true);
@@ -2472,11 +2628,41 @@ document.getElementById("wlSearch").addEventListener("input", (e) => renderWlSea
 // ---------- Theme-Handler ----------
 document.getElementById("themeBtn").addEventListener("click", toggleTheme);
 
+document.getElementById("layoutUpdateBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  updateCurrentLayout();
+});
+
+// ---------- Watchlisten-Handler ----------
+document.getElementById("wlSelect").addEventListener("change", (e) => switchWatchlist(e.target.value));
+document.getElementById("wlManageBtn").addEventListener("click", () => {
+  document.getElementById("wlManage").classList.toggle("hidden");
+});
+document.getElementById("wlCreateBtn").addEventListener("click", () => {
+  const inp = document.getElementById("wlNewName");
+  createWatchlist(inp.value);
+  inp.value = "";
+});
+document.getElementById("wlNewName").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("wlCreateBtn").click();
+});
+document.getElementById("wlDeleteBtn").addEventListener("click", () => {
+  if (confirm(`Watchlist "${state.activeWatchlist}" löschen?`)) deleteWatchlist(state.activeWatchlist);
+});
+
 // ---------- Grid-Bot-Handler ----------
-document.getElementById("posToolTopBtn").addEventListener("click", (e) => {
-  // Identisch mit dem Drawbar-Button
-  const pb = document.getElementById("posToolBtn");
-  if (pb) pb.click();
+document.getElementById("posToolTopBtn").addEventListener("click", () => {
+  // Zweiter Klick bricht ab — gleiche Logik wie der ESC-Handler
+  if (state.activeTool === "positionTool") {
+    if (state.drawingId != null) { try { chart.removeOverlay(state.drawingId); } catch (err) {} state.drawingId = null; }
+    state.activeTool = null;
+    document.getElementById("posToolTopBtn").classList.remove("active");
+    setStatus("Abgebrochen");
+    return;
+  }
+  startTool("positionTool");
+  document.getElementById("posToolTopBtn").classList.add("active");
+  setStatus("Long/Short: 1. Einstieg klicken  →  2. Stop  →  3. Ziel");
 });
 document.getElementById("gridBotBtn").addEventListener("click", () => gbToggleBar());
 document.getElementById("gbClose").addEventListener("click", (e) => { e.stopPropagation(); gbToggleBar(false); });
