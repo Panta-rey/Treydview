@@ -290,3 +290,16 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
 /* Dropdown-Eintrag mit Zahnrad */
 .dd-item--gear{display:flex;align-items:center;justify-content:space-between;gap:6px;}
+
+/* ---- Pattern-Panel ---- */
+.pat-header{font-size:12px;font-weight:600;color:var(--text);padding:8px 10px;border-bottom:1px solid var(--border);}
+.pat-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;}
+.pat-row label{font-size:12px;color:var(--text-dim);}
+.pat-row select{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:11px;padding:4px 6px;outline:none;cursor:pointer;}
+.pat-warn{margin:0 10px 8px;padding:6px 8px;background:rgba(208,94,94,.1);border:1px solid rgba(208,94,94,.25);border-radius:4px;font-size:10px;color:var(--down);line-height:1.4;}
+.pat-warn.hidden{display:none;}
+.pat-info{padding:0 10px 8px;font-size:10px;color:var(--text-dim);line-height:1.4;}
+.pat-actions{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--border);}
+.pat-scan{flex:1;background:var(--accent);color:#0d1117;border:none;border-radius:4px;padding:6px;font-family:var(--font-mono);font-size:12px;font-weight:600;cursor:pointer;}
+.pat-clear{background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:4px;padding:6px 10px;font-family:var(--font-mono);font-size:12px;cursor:pointer;}
+.pat-clear:hover{color:var(--down);border-color:var(--down);}

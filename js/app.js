@@ -50,6 +50,10 @@ const state = {
   // Theme: "dark" | "light"
   theme: _ws?.theme || "dark",
 
+  // Pattern-Erkennung
+  patternOverlayIds: [],
+  patternOpts: _ws?.patternOpts || {},   // leer = Engine-Defaults (streng)
+
   // Chart-Darstellung (Kerzen-/Linienfarben)
   chartStyle: _ws?.chartStyle || {
     upColor:     "#3fb68b",
@@ -340,6 +344,8 @@ async function loadData() {
     return;
   }
   chart.applyNewData(candles);
+  // Y-Achse für vertikales Draggen entsperren (nach Auto-Skalierung)
+  setTimeout(unlockYAxis, 80);
   updatePriceHeader(candles.at(-1), candles.at(-2));
   updateLegend();
   setStatus(`${candles.length} Candles · ${state.symbol.label} · ${state.timeframe.label}`);
@@ -369,7 +375,7 @@ function initDropdowns() {
       document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
     }
   });
-  ["assetDropdown", "compareDropdown", "tfDropdown", "typeDropdown", "indDropdown", "layoutDropdown"].forEach(id => {
+  ["assetDropdown", "compareDropdown", "tfDropdown", "typeDropdown", "indDropdown", "layoutDropdown", "patternDropdown"].forEach(id => {
     const dd = document.getElementById(id);
     if (!dd) return;
     const trigger = dd.querySelector(".dd-trigger, .action-btn");
@@ -860,11 +866,9 @@ function takeScreenshot() {
 }
 
 function autoZoom() {
-  // Y-Achse automatisch an sichtbaren Bereich anpassen
-  chart.setPaneOptions({ id: "candle_pane", axisOptions: { name: "normal", scrollZoomEnabled: true } });
-  chart.resize();
-  // Re-Fit: ganze Datenbreite zeigen
+  // Ganze Datenbreite zeigen und Y-Achse neu automatisch skalieren
   chart.scrollToRealTime();
+  autoScaleY();
 }
 
 // ---------- Drawing-Toolbar ----------
@@ -1088,7 +1092,8 @@ const DRAW_CATEGORIES = [
     id: "fib", title: "Fibonacci",
     icon: `<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3,2"/><line x1="3" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
     tools: [
-      { overlay: "fibonacciLine", label: "Fibonacci Retracement", desc: "Korrektur-Ziele" },
+      { overlay: "fibRetracement", label: "Fib Retracement", desc: "Korrektur-Ziele nach Impuls" },
+      { overlay: "fibExtension",   label: "Fib Extension",   desc: "Kursziele projizieren (3 Punkte)" },
     ],
   },
   {
@@ -1479,6 +1484,94 @@ function syncLabels() {
   if (c) c.textContent = state.chartType === "area" ? "Linie" : "Kerzen";
 }
 
+// ---------- Pattern-Erkennung ----------
+// Scannt den aktuell sichtbaren Bereich und zeichnet gefundene Muster
+// als Overlays. Die sind per Rechtsklick einzeln löschbar wie jede
+// andere Zeichnung.
+function clearPatterns() {
+  (state.patternOverlayIds || []).forEach(id => {
+    try { chart.removeOverlay(id); } catch (e) {}
+  });
+  state.patternOverlayIds = [];
+}
+
+function scanPatterns() {
+  if (typeof PatternEngine === "undefined") { setStatus("Pattern-Engine nicht geladen"); return; }
+  clearPatterns();
+
+  const data = chart.getDataList();
+  if (!data || data.length < 40) { setStatus("Zu wenig Daten"); return; }
+
+  let range;
+  try { range = chart.getVisibleRange(); } catch (e) { range = null; }
+  const from = range ? Math.max(0, range.realFrom ?? range.from) : 0;
+  const to   = range ? Math.min(data.length, (range.realTo ?? range.to) + 1) : data.length;
+
+  const found = PatternEngine.scan(data, { from, to }, state.patternOpts);
+
+  if (found.length === 0) {
+    setStatus("Keine Muster im sichtbaren Bereich");
+    return;
+  }
+
+  state.patternOverlayIds = [];
+  found.forEach(p => {
+    const points = p.points.map(pt => ({ timestamp: data[pt.index].timestamp, value: pt.price }));
+    // Vierter Punkt = Bestätigung (Neckline-Bruch)
+    if (p.confirmedAt != null && data[p.confirmedAt]) {
+      points.push({ timestamp: data[p.confirmedAt].timestamp, value: p.neckline });
+    }
+    try {
+      const id = chart.createOverlay({
+        name: "pattern",
+        points,
+        lock: true,   // nicht versehentlich verschiebbar
+        extendData: {
+          label: p.label,
+          direction: p.direction,
+          quality: p.quality,
+          neckline: p.neckline,
+          target: p.target,
+        },
+      });
+      if (id) state.patternOverlayIds.push(id);
+    } catch (e) {}
+  });
+
+  const confirmed = found.filter(p => p.confirmedAt != null).length;
+  setStatus(`${found.length} Muster gefunden (${confirmed} bestätigt) · Rechtsklick zum Löschen`);
+}
+
+// ---------- Y-Achse entsperren ----------
+// KLineCharts erlaubt vertikales Draggen nur wenn autoCalcTickFlag=false ist.
+// Beim Start ist es true (Achse skaliert automatisch), deshalb blockiert das
+// Draggen bis man die Achse einmal manuell anfasst. Wir übernehmen den
+// automatisch berechneten Bereich als manuellen — Skalierung bleibt korrekt,
+// Draggen geht sofort.
+function unlockYAxis() {
+  try {
+    const pane = chart.getDrawPaneById("candle_pane");
+    if (!pane) return;
+    const yAxis = pane.getAxisComponent();
+    if (!yAxis) return;
+    const r = yAxis.getRange();
+    if (r && r.range > 0) yAxis.setRange(r);
+  } catch (e) { /* interne API — bei Versionswechsel still ignorieren */ }
+}
+
+// Auto-Zoom: Achse neu automatisch skalieren, danach wieder entsperren
+function autoScaleY() {
+  try {
+    const pane = chart.getDrawPaneById("candle_pane");
+    if (!pane) return;
+    const yAxis = pane.getAxisComponent();
+    if (!yAxis) return;
+    yAxis.setAutoCalcTickFlag(true);
+    chart.adjustPaneViewport?.(false, true, true, true, true);
+    setTimeout(unlockYAxis, 60);
+  } catch (e) {}
+}
+
 // ---------- Theme (Hell / Dunkel) ----------
 function applyTheme() {
   document.documentElement.setAttribute("data-theme", state.theme);
@@ -1691,6 +1784,24 @@ document.getElementById("wlSearch").addEventListener("input", (e) => renderWlSea
 
 // ---------- Theme-Handler ----------
 document.getElementById("themeBtn").addEventListener("click", toggleTheme);
+
+// ---------- Pattern-Handler ----------
+document.getElementById("patternBtn").addEventListener("click", scanPatterns);
+document.getElementById("patternClearBtn").addEventListener("click", () => {
+  clearPatterns();
+  setStatus("Muster entfernt");
+});
+document.getElementById("patStrictness").addEventListener("change", (e) => {
+  const presets = {
+    streng:  {},   // Engine-Defaults
+    mittel:  { lookback: 7, tolerance: 1.5, minDepth: 5.0, minQuality: 0.6 },
+    locker:  { lookback: 5, tolerance: 2.0, minDepth: 3.0, minQuality: 0.5 },
+  };
+  state.patternOpts = presets[e.target.value] || {};
+  saveWorkspace();
+  const warn = document.getElementById("patWarn");
+  if (warn) warn.classList.toggle("hidden", e.target.value === "streng");
+});
 
 // ---------- Layout-Handler ----------
 document.getElementById("layoutSaveBtn").addEventListener("click", () => {

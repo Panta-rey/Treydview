@@ -277,4 +277,244 @@
       return figures;
     },
   });
+  // ============================================================
+  // FIBONACCI — TradingView-Stil
+  // Retracement: 2 Punkte (Bewegung von 0 nach 1)
+  // Extension:   3 Punkte (A→B Impuls, C Korrektur-Ende, Projektion ab C)
+  // ============================================================
+
+  // Levels wie TradingView. Farben dezent gehalten.
+  const FIB_LEVELS = [
+    { v: 0,     color: "#9aa5b1" },
+    { v: 0.236, color: "#c96868" },
+    { v: 0.382, color: "#c9973f" },
+    { v: 0.5,   color: "#6fae7a" },
+    { v: 0.618, color: "#5aa06b" },
+    { v: 0.786, color: "#4a9ba8" },
+    { v: 1,     color: "#9aa5b1" },
+    { v: 1.618, color: "#5a7fa8" },
+    { v: 2.618, color: "#a85f6f" },
+    { v: 3.618, color: "#8a5fa8" },
+    { v: 4.236, color: "#a85f7a" },
+  ];
+
+  const FIB_EXT_LEVELS = [
+    { v: 0,     color: "#9aa5b1" },
+    { v: 0.236, color: "#c96868" },
+    { v: 0.382, color: "#c9973f" },
+    { v: 0.5,   color: "#6fae7a" },
+    { v: 0.618, color: "#5aa06b" },
+    { v: 1,     color: "#9aa5b1" },
+    { v: 1.272, color: "#4a9ba8" },
+    { v: 1.618, color: "#5a7fa8" },
+    { v: 2,     color: "#a85f6f" },
+    { v: 2.618, color: "#8a5fa8" },
+    { v: 3.618, color: "#a85f7a" },
+    { v: 4.236, color: "#a8735f" },
+  ];
+
+  // Dezente Füllung: nur leichter Schleier zwischen den Levels
+  const FILL_ALPHA = 0.05;
+
+  function hexA(hex, a) {
+    const h = hex.replace("#", "");
+    const r = parseInt(h.substring(0, 2), 16);
+    const g = parseInt(h.substring(2, 4), 16);
+    const b = parseInt(h.substring(4, 6), 16);
+    return `rgba(${r},${g},${b},${a})`;
+  }
+
+  function fmtPrice(p) {
+    return p.toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  // Baut die Figuren für eine Reihe von Fib-Levels.
+  // priceAt(level) -> Preis, yAt(level) -> Pixel-Y
+  function buildFibFigures(levels, coords, yAt, priceAt, extendData) {
+    const figs = [];
+    const xLeft  = Math.min(...coords.map(c => c.x));
+    const xRight = Math.max(...coords.map(c => c.x));
+    const showFill   = extendData?.showFill   !== false;
+    const showLabels = extendData?.showLabels !== false;
+
+    // 1. Flächen zwischen benachbarten Levels
+    if (showFill) {
+      for (let i = 0; i < levels.length - 1; i++) {
+        const y1 = yAt(levels[i].v), y2 = yAt(levels[i + 1].v);
+        if (y1 == null || y2 == null) continue;
+        figs.push({
+          type: "rect",
+          attrs: { x: xLeft, y: Math.min(y1, y2), width: xRight - xLeft, height: Math.abs(y2 - y1) },
+          styles: { style: "fill", color: hexA(levels[i + 1].color, FILL_ALPHA) },
+        });
+      }
+    }
+
+    // 2. Level-Linien
+    levels.forEach(lv => {
+      const y = yAt(lv.v);
+      if (y == null) return;
+      figs.push({
+        type: "line",
+        attrs: { coordinates: [{ x: xLeft, y }, { x: xRight, y }] },
+        styles: { style: "solid", color: hexA(lv.color, 0.85), size: 1 },
+      });
+    });
+
+    // 3. Beschriftung links: "0.618 (96,131.42)"
+    if (showLabels) {
+      levels.forEach(lv => {
+        const y = yAt(lv.v);
+        if (y == null) return;
+        figs.push({
+          type: "text",
+          attrs: {
+            x: xLeft - 6,
+            y: y,
+            text: `${lv.v} (${fmtPrice(priceAt(lv.v))})`,
+            align: "right",
+            baseline: "middle",
+          },
+          styles: { color: hexA(lv.color, 0.95), size: 11, family: "IBM Plex Mono, monospace" },
+        });
+      });
+    }
+
+    return figs;
+  }
+
+  // ---------- Fibonacci Retracement ----------
+  klinecharts.registerOverlay({
+    name: "fibRetracement",
+    totalStep: 3,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: true,
+    needDefaultYAxisFigure: true,
+    createPointFigures: ({ coordinates, overlay }) => {
+      if (coordinates.length < 2) return [];
+      const [c0, c1] = coordinates;
+      const pts = overlay.points || [];
+      if (pts.length < 2 || pts[0].value == null || pts[1].value == null) return [];
+
+      const p0 = pts[0].value, p1 = pts[1].value;
+      // Level 0 liegt beim ersten Punkt, Level 1 beim zweiten.
+      const priceAt = (lv) => p0 + (p1 - p0) * lv;
+      const yAt     = (lv) => c0.y + (c1.y - c0.y) * lv;
+
+      const figs = buildFibFigures(FIB_LEVELS, [c0, c1], yAt, priceAt, overlay.extendData);
+      // Verbindungslinie der beiden Ankerpunkte (gestrichelt, dezent)
+      figs.push({
+        type: "line",
+        attrs: { coordinates: [c0, c1] },
+        styles: { style: "dashed", dashedValue: [4, 4], color: "rgba(154,165,177,0.5)", size: 1 },
+      });
+      return figs;
+    },
+  });
+
+  // ---------- Fibonacci Extension ----------
+  klinecharts.registerOverlay({
+    name: "fibExtension",
+    totalStep: 4,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: true,
+    needDefaultYAxisFigure: true,
+    createPointFigures: ({ coordinates, overlay }) => {
+      if (coordinates.length < 3) return [];
+      const [cA, cB, cC] = coordinates;
+      const pts = overlay.points || [];
+      if (pts.length < 3 || pts.some(p => p.value == null)) return [];
+
+      const pA = pts[0].value, pB = pts[1].value, pC = pts[2].value;
+      // Projektion: Impuls A→B wird ab C fortgesetzt.
+      const diff = pB - pA;
+      const priceAt = (lv) => pC + diff * lv;
+      // Pixel analog: Distanz A→B ab C
+      const dy = cB.y - cA.y;
+      const yAt = (lv) => cC.y + dy * lv;
+
+      const figs = buildFibFigures(FIB_EXT_LEVELS, [cB, cC], yAt, priceAt, overlay.extendData);
+      // Hilfslinien A→B→C
+      figs.push({
+        type: "line",
+        attrs: { coordinates: [cA, cB, cC] },
+        styles: { style: "dashed", dashedValue: [4, 4], color: "rgba(154,165,177,0.5)", size: 1 },
+      });
+      return figs;
+    },
+  });
+
+  // ---------- Erkanntes Chart-Muster ----------
+  // Wird von der Pattern-Engine erzeugt, nicht vom User gezeichnet.
+  // Punkte: [P1, P2, P3] + optional [P4] = Bestätigungspunkt.
+  // Per Rechtsklick löschbar wie jede andere Zeichnung.
+  klinecharts.registerOverlay({
+    name: "pattern",
+    totalStep: 1,               // wird programmatisch erzeugt, kein Klick-Flow
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    styles: { point: { activeRadius: 0 } },
+    createPointFigures: ({ coordinates, overlay }) => {
+      if (coordinates.length < 3) return [];
+      const ed = overlay.extendData || {};
+      const bearish = ed.direction === "bearish";
+      const col   = bearish ? "#d05e5e" : "#3fb68b";
+      const colA  = bearish ? "rgba(208,94,94,0.9)" : "rgba(63,182,139,0.9)";
+      const [c1, c2, c3] = coordinates;
+      const c4 = coordinates[3] || null;
+      const figs = [];
+
+      // Verbindung der drei Pivots (die Musterform selbst)
+      figs.push({
+        type: "line",
+        attrs: { coordinates: [c1, c2, c3] },
+        styles: { style: "solid", color: colA, size: 2 },
+      });
+
+      // Neckline: waagrecht durch P2, bis zum Bestätigungspunkt verlängert
+      const xEnd = c4 ? c4.x : c3.x + (c3.x - c1.x) * 0.35;
+      figs.push({
+        type: "line",
+        attrs: { coordinates: [{ x: c1.x, y: c2.y }, { x: xEnd, y: c2.y }] },
+        styles: { style: "dashed", dashedValue: [5, 4], color: colA, size: 1 },
+      });
+
+      // Markierung der beiden Extrempunkte
+      [c1, c3].forEach(c => {
+        figs.push({
+          type: "circle",
+          attrs: { x: c.x, y: c.y, r: 3.5 },
+          styles: { style: "fill", color: col },
+        });
+      });
+
+      // Bestätigungspunkt (Neckline-Bruch)
+      if (c4) {
+        figs.push({
+          type: "circle",
+          attrs: { x: c4.x, y: c4.y, r: 4 },
+          styles: { style: "stroke_fill", color: colA, borderColor: "#ffffff", borderSize: 1 },
+        });
+      }
+
+      // Label über/unter dem Muster
+      const labelY = bearish ? Math.min(c1.y, c3.y) - 8 : Math.max(c1.y, c3.y) + 8;
+      const q = ed.quality != null ? ` ${Math.round(ed.quality * 100)}%` : "";
+      figs.push({
+        type: "text",
+        attrs: {
+          x: (c1.x + c3.x) / 2,
+          y: labelY,
+          text: (ed.label || "Muster") + q,
+          align: "center",
+          baseline: bearish ? "bottom" : "top",
+        },
+        styles: { color: colA, size: 11, family: "IBM Plex Mono, monospace" },
+      });
+
+      return figs;
+    },
+  });
+
 })();
