@@ -87,6 +87,16 @@
       </svg>
     </button>
 
+    <!-- Long/Short Position: direkt nach dem Roboter-Button, weil es
+         dasselbe Kapital- und Risiko-Konzept bedient wie der Grid Bot -->
+    <button class="action-btn" id="posToolTopBtn" title="Long / Short Position — Einstieg, Stop, Ziel klicken">
+      <svg viewBox="0 0 24 24" class="ab-icon">
+        <rect x="2.5" y="3.5" width="19" height="7" rx="1" fill="rgba(63,182,139,.22)" stroke="#3fb68b" stroke-width="1.6"/>
+        <rect x="2.5" y="13.5" width="19" height="7" rx="1" fill="rgba(208,94,94,.22)" stroke="#d05e5e" stroke-width="1.6"/>
+        <line x1="1" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 2"/>
+      </svg>
+    </button>
+
     <!-- Pattern-Erkennung -->
     <div class="dropdown" id="patternDropdown">
       <button class="action-btn" id="patternTrigger" title="Chart-Muster erkennen">
@@ -174,6 +184,15 @@
       </svg>
     </button>
 
+    <!-- FAQ / Hilfe -->
+    <button class="action-btn" id="faqBtn" title="FAQ / Hilfe">
+      <svg viewBox="0 0 24 24" class="ab-icon">
+        <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M9.5 9a2.5 2.5 0 0 1 5 .8c0 2-3 2.5-3 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="12" cy="17.5" r="1" fill="currentColor" stroke="none"/>
+      </svg>
+    </button>
+
     <div class="live-badge" id="liveBadge">
       <span class="dot"></span><span id="liveText">–</span>
     </div>
@@ -212,6 +231,10 @@
         <span class="gb-stat" id="gbRsi"></span>
         <span class="gb-stat" id="gbFunding"></span>
         <span class="gb-stat" id="gbFng"></span>
+        <span class="gb-sep-v"></span>
+        <button class="gb-tab active" data-tab="strategy">Strategie</button>
+        <button class="gb-tab" data-tab="data">Daten</button>
+        <button class="gb-tab" data-tab="settings">Einstellungen</button>
         <span class="gb-spacer"></span>
         <span class="gb-stat gb-dim" id="gbUpdated"></span>
         <button class="gb-icon" id="gbRefresh" title="Daten neu laden">
@@ -226,12 +249,6 @@
       </div>
     
       <div class="gb-body" id="gbBody">
-        <div class="gb-tabs">
-          <button class="gb-tab active" data-tab="strategy">Strategie</button>
-          <button class="gb-tab" data-tab="data">Daten</button>
-          <button class="gb-tab" data-tab="settings">Einstellungen</button>
-        </div>
-    
         <div class="gb-pane" id="gbPaneStrategy">
           <table class="gb-table" id="gbTiers"></table>
           <div class="gb-note" id="gbWarning"></div>

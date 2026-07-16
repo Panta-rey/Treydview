@@ -51,6 +51,8 @@ const state = {
   theme: _ws?.theme || "dark",
 
   // Grid Bot
+  candleStreamOk: false,
+  wlStreamOk: false,
   gbOpen: _ws?.gbOpen || false,
   gbCollapsed: _ws?.gbCollapsed || false,
   gbHeight: _ws?.gbHeight || 250,
@@ -371,7 +373,17 @@ async function loadData() {
         if (state.active.has("vrvp")) requestAnimationFrame(drawVrvp);
         if (state.compareAssets.length > 0) requestAnimationFrame(() => { try { drawCompare(); } catch (e) {} });
       },
-      s => setLive(s, s === "live" ? "Live" : "Reconnect …")
+      (s) => {
+        state.candleStreamOk = s === "live";
+        // Nur auf "Reconnect" gehen, wenn BEIDE Streams weg sind.
+        // Der MiniTicker-Stream liefert weiterhin Preise, also ist der
+        // Chart nicht wirklich offline — nur der Kerzen-Update fehlt kurz.
+        if (state.candleStreamOk || state.wlStreamOk) {
+          setLive("live", "Live");
+        } else {
+          setLive("offline", "Reconnect …");
+        }
+      }
     );
   } else {
     setLive("offline", "Daily");
@@ -1459,6 +1471,7 @@ function restartWatchlistStream() {
   if (state.watchlist.length === 0) return;
   loadWatchlistPrices();
   const wanted = new Set(state.watchlist);
+  state.wlStreamOk = false;
   state.wlCloseStream = DataLayer.openMiniTickerStream((ticks) => {
     let changed = false;
     ticks.forEach(t => {
@@ -1470,7 +1483,12 @@ function restartWatchlistStream() {
         changePct: t.open ? ((t.price - t.open) / t.open) * 100 : prev.changePct,
       };
       changed = true;
-    });
+    },
+    (s) => {
+      state.wlStreamOk = s === "live";
+      if (state.wlStreamOk) setLive("live", "Live");
+    }
+  );
     if (changed) requestAnimationFrame(renderWatchlist);
   });
 }
@@ -2313,6 +2331,11 @@ document.getElementById("wlSearch").addEventListener("input", (e) => renderWlSea
 document.getElementById("themeBtn").addEventListener("click", toggleTheme);
 
 // ---------- Grid-Bot-Handler ----------
+document.getElementById("posToolTopBtn").addEventListener("click", (e) => {
+  // Identisch mit dem Drawbar-Button
+  const pb = document.getElementById("posToolBtn");
+  if (pb) pb.click();
+});
 document.getElementById("gridBotBtn").addEventListener("click", () => gbToggleBar());
 document.getElementById("gbClose").addEventListener("click", (e) => { e.stopPropagation(); gbToggleBar(false); });
 document.getElementById("gbToggle").addEventListener("click", (e) => {
@@ -2325,16 +2348,24 @@ document.getElementById("gbStatus").addEventListener("click", (e) => {
   gbSetCollapsed(!state.gbCollapsed);
 });
 document.querySelectorAll(".gb-tab").forEach(tab => {
-  tab.addEventListener("click", () => {
+  tab.addEventListener("click", (e) => {
+    e.stopPropagation();
     document.querySelectorAll(".gb-tab").forEach(t => t.classList.remove("active"));
     tab.classList.add("active");
     const map = { strategy: "gbPaneStrategy", data: "gbPaneData", settings: "gbPaneSettings" };
     Object.values(map).forEach(id => document.getElementById(id).classList.add("hidden"));
     document.getElementById(map[tab.dataset.tab]).classList.remove("hidden");
+    // Pane öffnen falls kollabiert
+    if (state.gbCollapsed) gbSetCollapsed(false);
   });
 });
 ["gbCapital", "gbRisk", "gbFee"].forEach(id => {
   document.getElementById(id).addEventListener("change", () => { saveWorkspace(); gbRefresh(false); });
+});
+
+// ---------- FAQ-Handler ----------
+document.getElementById("faqBtn").addEventListener("click", () => {
+  window.open("https://github.com/Panta-rey/Treydview/wiki", "_blank");
 });
 
 // ---------- Fibonacci-Menü-Handler ----------

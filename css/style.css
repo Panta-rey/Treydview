@@ -158,7 +158,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
 /* ---- Topbar-Aktionen ---- */
 .topbar-actions{display:flex;gap:4px;margin-left:4px;}
-.action-btn{width:34px;height:32px;display:flex;align-items:center;justify-content:center;background:transparent;color:var(--text-dim);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-size:15px;transition:color .12s,border-color .12s,background .12s;}
+.action-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:transparent;color:var(--text-dim);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;padding:0;transition:color .12s,border-color .12s,background .12s;}
 .action-btn:hover{color:var(--text);border-color:rgba(232,182,76,.5);background:var(--bg-hover);}
 
 /* ---- Chart-Typ-Dropdown erbt .dropdown-Styles ---- */
@@ -254,9 +254,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
 /* ---- Topbar: Icon-Buttons rechtsbündig ---- */
 .topbar-actions{display:flex;align-items:center;gap:6px;margin-left:auto;}
-.action-btn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid transparent;border-radius:var(--radius);color:var(--text-dim);cursor:pointer;padding:0;transition:color .12s,border-color .12s,background .12s;}
-.action-btn:hover{color:var(--text);border-color:var(--border);background:var(--bg-hover);}
-.ab-icon{width:17px;height:17px;fill:none;stroke:currentColor;}
+.ab-icon{width:18px;height:18px;fill:none;stroke:currentColor;}
 
 /* ---- Layout-Panel ---- */
 .dd-panel--right{right:0;left:auto;min-width:210px;}
@@ -389,19 +387,19 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 /* Daten- und Einstellungs-Tab: gleiche Schriftgrösse wie Strategie (12px) */
 .gb-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px 26px;align-items:start;}
 .gb-blk-title{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;padding-bottom:5px;border-bottom:1px solid var(--border);margin-bottom:3px;}
-.gb-kv{display:flex;justify-content:space-between;gap:16px;font-size:12px;padding:3px 0;border-bottom:1px solid rgba(128,140,155,.07);}
+.gb-kv{display:grid;grid-template-columns:auto 1fr;gap:0 14px;font-size:12px;padding:3px 0;border-bottom:1px solid rgba(128,140,155,.07);align-items:baseline;}
 .gb-kv:last-child{border-bottom:none;}
-.gb-kv:hover{background:var(--bg-hover);}
+.gb-kv:hover{background:var(--bg-hover);margin:0 -4px;padding-left:4px;padding-right:4px;}
 .gb-kv span:first-child{color:var(--text-dim);}
-.gb-kv span:last-child{color:var(--text);text-align:right;}
+.gb-kv span:last-child{color:var(--text);white-space:nowrap;}
 
 .gb-set-block{display:flex;flex-direction:column;gap:2px;}
 .gb-set-title{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;padding-bottom:5px;border-bottom:1px solid var(--border);margin-bottom:4px;}
-.gb-set-block > label{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;color:var(--text-dim);padding:3px 0;border-bottom:1px solid rgba(128,140,155,.07);}
+.gb-set-block > label{display:grid;grid-template-columns:auto 80px;gap:0 14px;align-items:center;font-size:12px;color:var(--text-dim);padding:3px 0;border-bottom:1px solid rgba(128,140,155,.07);}
 .gb-set-block > label:hover{background:var(--bg-hover);}
 .gb-set-block input{width:78px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;outline:none;text-align:right;}
 .gb-set-block input:focus{border-color:var(--accent);}
-.gb-tier-grid,.gb-th-grid{display:grid;grid-template-columns:1fr 78px;gap:0 12px;align-items:center;}
+.gb-tier-grid,.gb-th-grid{display:grid;grid-template-columns:auto 80px;gap:0 14px;align-items:center;}
 .gb-tier-grid > span,.gb-th-grid > span{font-size:12px;color:var(--text-dim);padding:3px 0;border-bottom:1px solid rgba(128,140,155,.07);}
 .gb-tier-grid > input,.gb-th-grid > input{background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;outline:none;text-align:right;margin:2px 0;}
 .gb-tier-grid > input:focus,.gb-th-grid > input:focus{border-color:var(--accent);}
@@ -409,3 +407,9 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
 /* Long/Short: eigener Platz in der Drawbar, kein Untermenü */
 .draw-pos.active{background:rgba(232,182,76,.14);border-color:var(--accent);}
+
+/* Tabs in der Statuszeile (kein eigener Tab-Block mehr) */
+.gb-sep-v{width:1px;background:var(--border);height:16px;flex-shrink:0;margin:0 4px;}
+.gb-status .gb-tab{background:transparent;border:none;color:var(--text-dim);font-family:var(--font-mono);font-size:11px;padding:4px 10px;cursor:pointer;border-radius:3px;height:24px;}
+.gb-status .gb-tab:hover{color:var(--text);background:var(--bg-hover);}
+.gb-status .gb-tab.active{background:var(--bg);color:var(--accent);}
