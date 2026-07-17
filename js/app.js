@@ -60,10 +60,12 @@ const state = {
   wlStreamOk: false,
   gbOpen: _ws?.gbOpen || false,
   gbCollapsed: _ws?.gbCollapsed || false,
+  gbProfile: _ws?.gbProfile || "Moderat",
   gbHeight: _ws?.gbHeight || 250,
   gbActiveTier: _ws?.gbActiveTier || null,
   gbBandIds: [],
   gbResult: null,
+  gbCapital: _ws?.gbCapital ?? 8000,
   gbTiers: _ws?.gbTiers || JSON.parse(JSON.stringify(GridBot.DEFAULT_TIERS)),
   gbThresholds: _ws?.gbThresholds || { ...GridBot.DEFAULT_THRESHOLDS },
 
@@ -1574,8 +1576,10 @@ function saveWorkspace() {
     currentLayout: state.currentLayout,
     gbOpen: state.gbOpen,
     gbCollapsed: state.gbCollapsed,
+    gbProfile: state.gbProfile,
     gbHeight: state.gbHeight,
     gbActiveTier: state.gbActiveTier,
+    gbCapital: state.gbCapital,
     gbTiers: state.gbTiers,
     gbThresholds: state.gbThresholds,
       chartStyle: state.chartStyle,
@@ -1847,6 +1851,21 @@ function gbMarketData() {
     return s.reduce((a, b) => a + b, 0) / n;
   };
 
+  // Kaufman Efficiency Ratio, Periode 20 (Dashboard-Spalte "ER", verifiziert
+  // gegen BTC_Marktdaten_1D auf 6 Stellen).
+  //
+  // Netto-Bewegung geteilt durch die Summe aller Einzelschritte:
+  // 1.0 = schnurgerade (reiner Trend), 0 = viel Weg, kein Fortschritt (Range).
+  // Sagt, ob ein Grid überhaupt etwas zu ernten hat.
+  const efficiencyRatio = (period = 20) => {
+    if (closes.length < period + 1) return null;
+    const seg = closes.slice(-(period + 1));
+    const direction = Math.abs(seg[seg.length - 1] - seg[0]);
+    let volatility = 0;
+    for (let i = 1; i < seg.length; i++) volatility += Math.abs(seg[i] - seg[i - 1]);
+    return volatility > 0 ? direction / volatility : 0;
+  };
+
   // RSI 14 nach Wilder (identisch zur Formel in indicators.js)
   const rsiWilder = (period = 14) => {
     if (closes.length < period + 1) return null;
@@ -1893,10 +1912,16 @@ function gbMarketData() {
      : a14 > a90 * 1.3 ? "Volatilitäts-Expansion" : "Normale Volatilität")
     : "—";
 
+  const sma200v = sma(200);
   return {
-    price, sma50: sma(50), sma200: sma(200), rsi: rsiWilder(14),
+    price, sma50: sma(50), sma200: sma200v, rsi: rsiWilder(14),
     atr14: a14, atr90: a90, atr200: a200,
     volumeSignal: volSignal, marketContext: context,
+    // Mayer Multiple = Preis / SMA200 (Dashboard F13, exakt verifiziert).
+    // Zentrale Zyklus-Metrik: unter 0.9 traf historisch jeden
+    // Akkumulations-Boden seit 2015, über 2.0 wird es teuer.
+    mayer: sma200v ? price / sma200v : null,
+    er: efficiencyRatio(20),
   };
 }
 
@@ -1916,9 +1941,9 @@ async function gbRefresh(force) {
   }
 
   const opts = {
-    capital: parseFloat(document.getElementById("gbCapital").value) || 8000,
-    riskPct: parseFloat(document.getElementById("gbRisk").value) || 1,
-    feePct:  parseFloat(document.getElementById("gbFee").value) || 0.1,
+    capital: state.gbCapital,
+    riskPct: null,                       // null -> Risiko-Budget kommt aus dem Profil
+    feePct:  GridBot.getThresholds().feeRoundtrip,
     tiers:   state.gbTiers,
   };
   GridBot.setThresholds(state.gbThresholds);
@@ -1933,77 +1958,101 @@ async function gbRefresh(force) {
 function gbRenderStatus() {
   const r = state.gbResult;
   if (!r) return;
+
+  // Die Statuszeile beantwortet in einem Blick: soll ich überhaupt?
+  const rec = r.recommendation || {};
   const pill = document.getElementById("gbHeadline");
-  pill.textContent = r.bias === "Long" ? "LONG-GRID" : r.bias === "Short" ? "SHORT-GRID" : "NEUTRAL-GRID";
-  pill.className = "gb-pill" + (r.bias === "Long" ? " long" : r.bias === "Short" ? " short" : "");
+  const short = { defensive: "Defensiv", "accumulate-spot": "Spot/DCA", "accumulate-grid": "Makro-Grid",
+                  range: "Kurzfrist", "long-bias": "Long-Bias", wait: "Beobachten" }[rec.stage] || "—";
+  pill.textContent = short;
+  pill.className = "gb-pill " + ({ defensive: "stop", "accumulate-spot": "long", "accumulate-grid": "long",
+                                   range: "", "long-bias": "long", wait: "wait" }[rec.stage] || "");
 
-  const reg = document.getElementById("gbRegime");
-  const isExtreme = r.confluence.extreme !== "—";
-  reg.textContent = isExtreme ? "⚠ " + r.confluence.extreme : r.market.marketContext;
-  reg.className = "gb-stat" + (isExtreme ? " warn" : "");
+  const set = (id, txt, cls) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = txt;
+    el.className = "gb-stat" + (cls ? " " + cls : "");
+  };
 
-  const rsi = r.market.rsi;
-  const rsiEl = document.getElementById("gbRsi");
-  rsiEl.textContent = rsi != null ? "RSI " + rsi.toFixed(0) : "RSI –";
-  rsiEl.className = "gb-stat" + (rsi <= 30 ? " good" : rsi >= 70 ? " warn" : "");
+  const m = r.mayer;
+  set("gbRegime", m != null ? "Mayer " + m.toFixed(2) : "Mayer –",
+      m == null ? "" : m > GridBot.CYCLE.mayerExpensive ? "warn" : m < GridBot.CYCLE.mayerCheap ? "good" : "");
 
-  const fm = r.derivatives.fundingMonthly;
-  const fEl = document.getElementById("gbFunding");
-  fEl.textContent = fm != null ? `Funding ${fm > 0 ? "+" : ""}${fm.toFixed(1)}%/M` : "Funding –";
-  fEl.className = "gb-stat" + (fm != null && Math.abs(fm) > 3 ? " warn" : "");
+  const er = r.er;
+  set("gbRsi", er != null ? "ER " + er.toFixed(2) : "ER –",
+      er == null ? "" : er >= GridBot.CYCLE.erTrend ? "warn" : er < GridBot.CYCLE.erRange ? "good" : "");
 
-  const fng = r.derivatives.fng;
-  document.getElementById("gbFng").textContent = fng != null ? "F&G " + fng : "F&G –";
+  const fng = r.derivatives?.fng;
+  set("gbFunding", fng != null ? "F&G " + fng : "F&G –",
+      fng == null ? "" : fng > GridBot.CYCLE.fngGreed ? "warn" : fng < GridBot.CYCLE.fngFear ? "good" : "");
 
-  document.getElementById("gbUpdated").textContent =
-    r.missing.length ? `${r.missing.length} Quelle(n) fehlen` : new Date().toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
+  const rsi = r.market?.rsi;
+  set("gbFng", rsi != null ? "RSI " + rsi.toFixed(0) : "RSI –",
+      rsi == null ? "" : (rsi >= 75 || rsi <= 25) ? "warn" : "");
+
+  document.getElementById("gbUpdated").textContent = state.gbUpdated || "";
 }
 
 function gbRenderTiers() {
   const r = state.gbResult;
   const t = document.getElementById("gbTiers");
-  if (!r || !r.tiers.length) { t.innerHTML = '<tbody><tr><td class="lbl">Keine Daten</td></tr></tbody>'; return; }
+  const box = document.getElementById("gbRecoBox");
+  if (!r || !r.tiers.length) {
+    t.innerHTML = '<tbody><tr><td class="lbl">Keine Daten</td></tr></tbody>';
+    if (box) box.innerHTML = "";
+    return;
+  }
+
+  // ---- Empfehlung: die eine Aussage, um die es geht ----
+  const rec = r.recommendation || {};
+  const stageClass = { defensive: "reco-stop", "accumulate-spot": "reco-go", "accumulate-grid": "reco-go",
+                       range: "reco-go", "long-bias": "reco-go", wait: "reco-wait" }[rec.stage] || "reco-wait";
+  if (box) {
+    box.className = "gb-reco " + stageClass;
+    box.innerHTML = `<div class="reco-main">${rec.label || "—"}</div>`
+      + `<div class="reco-why">${rec.why || ""}</div>`
+      + `<div class="reco-meta">`
+        + `<span>Grid-Eignung: <b>${r.gridSuitability?.label || "—"}</b></span>`
+        + `<span>Profil: <b>${r.profile?.name || "—"}</b></span>`
+        + (r.tiers.some(x => x.leverageGuard) ? `<span class="reco-guard">⚠ Hebel-Leitplanke aktiv → max 1×</span>` : "")
+      + `</div>`;
+  }
 
   const fmt = (n) => n == null ? "–" : n.toLocaleString("de-CH", { maximumFractionDigits: 0 });
+  const sign = (n) => (n > 0 ? "+" : "") + n.toFixed(1) + "%";
 
-  // Gruppiert: erst was der Bot ist, dann die Range, dann das Geld.
-  const groups = [
-    ["Konfiguration", [
-      ["Laufzeit",    (x) => x.horizon],
-      ["Grid-Typ",    (x) => x.gridType],
-      ["ATR-Basis",   (x) => x.atrKey.toUpperCase() + " · " + x.atrPct.toFixed(2) + "%"],
-    ]],
-    ["Grid", [
-      ["Range oben",  (x) => fmt(x.upper)],
-      ["Range unten", (x) => fmt(x.lower)],
-      ["Grids",       (x) => x.grids],
-      ["Grid-Abstand",(x) => fmt(x.gridStep)],
-      ["Hebel",       (x) => x.leverage + "×"],
-    ]],
-    ["Ausstieg", [
-      ["Stop Loss",   (x) => fmt(x.stopLoss)],
-      ["Take Profit", (x) => x.takeProfit ? fmt(x.takeProfit) : "Range"],
-      ["Sicherheit",  (x) => x.safety],
-    ]],
-    ["Kapital", [
-      ["Positionsgrösse", (x) => fmt(x.positionSize) + " USDT"],
-      ["Effektiv (×Hebel)", (x) => fmt(x.effective) + " USDT"],
-      ["Funding/Monat", (x) => (x.fundingDrag ? x.fundingDrag : 0) + "%"],
-    ]],
+  // Nur was man in Pionex tatsächlich eintippt oder zum Entscheiden braucht.
+  // Alles andere (Scores, ATR, Faktoren) rechnet im Hintergrund.
+  const rows = [
+    ["Range oben",   (x) => fmt(x.upper)],
+    ["Range unten",  (x) => fmt(x.lower)],
+    ["Grids",        (x) => x.grids],
+    ["Hebel",        (x) => x.leverage + "×" + (x.leverageGuard ? " ⚠" : "")],
+    ["Investment",   (x) => fmt(x.positionSize) + " USDT"],
+    ["Stop Loss",    (x) => fmt(x.stopLoss)],
+    ["Sicherheit",   (x) => x.safety],
+    ["Netto-Erwartung", (x) => x.viability ? sign(x.viability.net) : "–"],
   ];
 
   const nCols = r.tiers.length + 1;
-  let html = "<thead><tr><th></th>" + r.tiers.map(x => `<th class="tier-head">${x.label}</th>`).join("") + "</tr></thead><tbody>";
-  groups.forEach(([title, rows]) => {
-    html += `<tr class="gb-group"><td colspan="${nCols}">${title}</td></tr>`;
-    rows.forEach(([lbl, fn]) => {
-      html += `<tr><td class="lbl">${lbl}</td>` +
-        r.tiers.map(x => `<td${state.gbActiveTier === x.id ? ' class="on"' : ""}>${fn(x)}</td>`).join("") + "</tr>";
-    });
+  let html = "<thead><tr><th></th>" + r.tiers.map(x => {
+    const isReco = rec.tier === x.id;
+    return `<th class="tier-head${isReco ? " tier-reco" : ""}">${x.label}${isReco ? " ★" : ""}<span class="tier-hz">${x.horizon}</span></th>`;
+  }).join("") + "</tr></thead><tbody>";
+
+  rows.forEach(([lbl, fn]) => {
+    html += `<tr><td class="lbl">${lbl}</td>` + r.tiers.map(x => {
+      const isReco = rec.tier === x.id;
+      let cls = isReco ? "on" : "";
+      if (lbl === "Netto-Erwartung" && x.viability && !x.viability.ok) cls = "neg";
+      return `<td${cls ? ` class="${cls}"` : ""}>${fn(x)}</td>`;
+    }).join("") + "</tr>";
   });
-  html += '<tr class="gb-group"><td colspan="' + nCols + '">Im Chart anzeigen</td></tr><tr><td class="lbl"></td>' +
-    r.tiers.map(x => `<td><button class="gb-show${state.gbActiveTier === x.id ? " active" : ""}" data-tier="${x.id}">${state.gbActiveTier === x.id ? "Aktiv ✓" : "Anzeigen"}</button></td>`).join("") +
-    "</tr></tbody>";
+
+  html += '<tr><td class="lbl"></td>' + r.tiers.map(x =>
+    `<td><button class="gb-show${state.gbActiveTier === x.id ? " active" : ""}" data-tier="${x.id}">${state.gbActiveTier === x.id ? "Im Chart ✓" : "Im Chart"}</button></td>`
+  ).join("") + "</tr></tbody>";
   t.innerHTML = html;
 
   t.querySelectorAll(".gb-show").forEach(b => {
@@ -2017,8 +2066,8 @@ function gbRenderTiers() {
   });
 
   const w = document.getElementById("gbWarning");
-  w.textContent = r.warning + (r.missing.length ? "   ·   Fehlend: " + r.missing.join(", ") : "");
-  w.className = "gb-note" + (r.warning.startsWith("✅") ? "" : " warn");
+  w.textContent = r.missing.length ? "Quellen fehlen: " + r.missing.join(", ") : "";
+  w.className = "gb-note" + (r.missing.length ? " warn" : "");
 }
 
 function gbRenderData() {
@@ -2165,41 +2214,176 @@ function gbSetCollapsed(c) {
 
 // ---------- Einstellungs-Felder ----------
 function gbRenderSettings() {
-  const tg = document.getElementById("gbTierSettings");
-  tg.innerHTML = "";
-  state.gbTiers.forEach((t, i) => {
-    tg.innerHTML += `<span>${t.label} Faktor</span><input type="number" data-tier="${i}" data-k="factor" value="${t.factor}" step="0.1" min="0.5">`;
-    tg.innerHTML += `<span>${t.label} Profit %</span><input type="number" data-tier="${i}" data-k="targetProfit" value="${t.targetProfit}" step="0.1" min="0.1">`;
-    tg.innerHTML += `<span>${t.label} Hebel-Cap</span><input type="number" data-tier="${i}" data-k="leverageCap" value="${t.leverageCap}" step="1" min="1" max="20">`;
-  });
-  tg.querySelectorAll("input").forEach(inp => {
-    inp.addEventListener("change", () => {
-      state.gbTiers[+inp.dataset.tier][inp.dataset.k] = parseFloat(inp.value);
-      saveWorkspace();
-      gbRefresh(false);
-    });
+  const box = document.getElementById("gbPaneSettings");
+  if (!box) return;
+
+  // Vier Felder. Der Rest ist bewusst fest.
+  //
+  // Aus der Parameter-Referenz zum Dashboard:
+  //   "Schwellen nie direkt ändern (fest in Formel).
+  //    Aggressivität über Profil (I16) steuern."
+  //
+  // Der Grund: Mayer < 0.9 traf jeden Akkumulations-Boden seit 2015. Wer
+  // die Schwelle hochdreht, weil "Defensiv" erscheint, senkt nicht das
+  // Risiko — nur die Warnung. Die Werte, die hier stehen dürfen, sind die
+  // über DEIN Setup (Kapital, Börse), nicht die über den Markt.
+  const th = GridBot.getThresholds();
+  const prof = GridBot.profileValues();
+
+  box.innerHTML = `
+    <div class="gb-set-wrap">
+      <div class="gb-set-block">
+        <div class="gb-set-title">Dein Setup</div>
+        <label>Kapital (USDT)<input type="number" id="gbCapital" value="${state.gbCapital}" min="10" step="100"></label>
+        <label>Gebühr Roundtrip %<input type="number" id="gbFee" value="${th.feeRoundtrip}" min="0" max="1" step="0.01"></label>
+        <label>Füllungen je Grid/Monat<input type="number" id="gbFills" value="${th.fillsPerGrid}" min="1" max="8" step="1"></label>
+      </div>
+
+      <div class="gb-set-block">
+        <div class="gb-set-title">Aggressivität</div>
+        <label>Risiko-Profil<select id="gbProfile">
+          ${Object.keys(GridBot.PROFILES).map(p =>
+            `<option value="${p}"${p === prof.name ? " selected" : ""}>${p}</option>`).join("")}
+        </select></label>
+        <div class="gb-prof-info" id="gbProfInfo"></div>
+      </div>
+    </div>
+
+    <div class="gb-set-note">
+      Alle Schwellwerte — Mayer 0.9 / 2.0, Fear&amp;Greed 35 / 80, ER 0.3 / 0.5, RSI 25 / 75 —
+      sind bewusst fest verdrahtet und nicht editierbar. Sie sind historisch kalibriert:
+      Mayer unter 0.9 traf jeden BTC-Akkumulationsboden seit 2015. Wer sie verschiebt, weil
+      das Ergebnis nicht gefällt, senkt nicht das Risiko, sondern nur die Warnung.
+      Aggressivität steuerst du über das Profil. Was genau gerechnet wird, steht im FAQ.
+    </div>
+  `;
+
+  const renderProfInfo = () => {
+    const p = GridBot.PROFILES[document.getElementById("gbProfile").value];
+    document.getElementById("gbProfInfo").innerHTML =
+      `<div class="pi-row"><span>Hebel max</span><b>${p.leverageCap}×</b></div>`
+      + `<div class="pi-row"><span>Risiko je Bot</span><b>${p.riskBudget}%</b></div>`
+      + `<div class="pi-row"><span>Gap-Puffer</span><b>${p.gapBuffer}%</b></div>`;
+  };
+  renderProfInfo();
+
+  document.getElementById("gbProfile").addEventListener("change", (e) => {
+    GridBot.setProfile(e.target.value);
+    state.gbProfile = e.target.value;
+    renderProfInfo();
+    saveWorkspace();
+    gbRefresh();
   });
 
-  const th = document.getElementById("gbThresholds");
-  const labels = {
-    rsiOversold: "RSI überverkauft ≤", rsiOverbought: "RSI überkauft ≥",
-    fngOversold: "F&G überverkauft ≤", fngOverbought: "F&G überkauft ≥",
-    fundingLong: "Funding Long <", fundingShort: "Funding Short >",
-    oiChangeHigh: "OI Δ30T hoch >", oiChangeLow: "OI Δ30T tief <",
-    lsLongCrowded: "L/S Long überfüllt ≥", lsShortCrowded: "L/S Short überfüllt ≤",
-    biasThreshold: "Bias-Schwelle |Σ| ≥",
-  };
-  th.innerHTML = "";
-  Object.entries(labels).forEach(([k, lbl]) => {
-    th.innerHTML += `<span>${lbl}</span><input type="number" data-th="${k}" value="${state.gbThresholds[k]}" step="0.01">`;
-  });
-  th.querySelectorAll("input").forEach(inp => {
-    inp.addEventListener("change", () => {
-      state.gbThresholds[inp.dataset.th] = parseFloat(inp.value);
+  const num = (id, key) => {
+    document.getElementById(id).addEventListener("change", (e) => {
+      const v = parseFloat(e.target.value);
+      if (isNaN(v)) return;
+      if (key === "capital") { state.gbCapital = v; }
+      else { GridBot.setThresholds({ [key]: v }); state.gbThresholds = GridBot.getThresholds(); }
       saveWorkspace();
-      gbRefresh(false);
+      gbRefresh();
     });
-  });
+  };
+  num("gbCapital", "capital");
+  num("gbFee", "feeRoundtrip");
+  num("gbFills", "fillsPerGrid");
+}
+
+function gbDrawBands(tierId) {
+  gbClearBands();
+  if (!tierId || !state.gbResult) return;
+  const t = state.gbResult.tiers.find(x => x.id === tierId);
+  if (!t) return;
+
+  const d = chart.getDataList();
+  if (!d || !d.length) return;
+  const ts = d[Math.max(0, d.length - 200)].timestamp;
+
+  try {
+    const id = chart.createOverlay({
+      name: "gridBands",
+      points: [{ timestamp: ts, value: t.upper }, { timestamp: d.at(-1).timestamp, value: t.lower }],
+      lock: true,
+      onMouseEnter: () => { setChartCursor("pointer"); return false; },
+      onMouseLeave: () => { setChartCursor(""); return false; },
+      extendData: {
+        lower: t.lower, upper: t.upper, grids: t.grids, stopLoss: t.stopLoss,
+        takeProfit: t.takeProfit, label: t.label, direction: t.direction, leverage: t.leverage,
+      },
+    });
+    if (id) state.gbBandIds.push(id);
+  } catch (e) {}
+}
+
+// Höhe der Leiste per Handle verstellbar — damit man alle Zahlen
+// ohne Scrollen sehen kann, wenn man will.
+function gbInitResize() {
+  const handle = document.getElementById("gbResize");
+  const bar = document.getElementById("gridBotBar");
+  let dragging = false, startY = 0, startH = 0;
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    const max = document.querySelector(".chart-col").clientHeight - 160;
+    const h = Math.max(34, Math.min(max, startH + (startY - y)));
+    bar.style.height = h + "px";
+    state.gbHeight = h;
+    resize();
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.cursor = "";
+    saveWorkspace();
+  };
+
+  const onDown = (e) => {
+    dragging = true;
+    startY = e.touches ? e.touches[0].clientY : e.clientY;
+    startH = bar.getBoundingClientRect().height;
+    document.body.style.cursor = "ns-resize";
+    e.preventDefault();
+  };
+
+  handle.addEventListener("mousedown", onDown);
+  handle.addEventListener("touchstart", onDown, { passive: false });
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("touchmove", onMove, { passive: false });
+  document.addEventListener("mouseup", onUp);
+  document.addEventListener("touchend", onUp);
+}
+
+function gbApplyHeight() {
+  const bar = document.getElementById("gridBotBar");
+  if (state.gbCollapsed) { bar.style.height = ""; return; }
+  bar.style.height = (state.gbHeight || 250) + "px";
+}
+
+function gbToggleBar(show) {
+  const bar = document.getElementById("gridBotBar");
+  const on = show != null ? show : bar.classList.contains("hidden");
+  bar.classList.toggle("hidden", !on);
+  document.getElementById("gbResize").classList.toggle("hidden", !on || state.gbCollapsed);
+  document.getElementById("gridBotBtn").classList.toggle("active", on);
+  if (on) gbApplyHeight();
+  state.gbOpen = on;
+  saveWorkspace();
+  resize();
+  if (on && !state.gbResult) gbRefresh(false);
+}
+
+function gbSetCollapsed(c) {
+  document.getElementById("gbBody").classList.toggle("collapsed", c);
+  document.getElementById("gbResize").classList.toggle("hidden", c || !state.gbOpen);
+  document.getElementById("gbChev").innerHTML = c
+    ? '<path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+    : '<path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+  state.gbCollapsed = c;
+  gbApplyHeight();
+  saveWorkspace();
+  resize();
 }
 
 // ---------- Fibonacci-Einstellungen ----------
@@ -2282,8 +2466,8 @@ window.__tvOpenFibMenu = openFibMenu;
 // Eine Quelle, zwei Konsumenten — sonst hat man das Kapital an zwei
 // Orten und irgendwann divergieren sie.
 window.__tvSizing = () => ({
-  capital: parseFloat(document.getElementById("gbCapital")?.value) || 8000,
-  riskPct: parseFloat(document.getElementById("gbRisk")?.value) || 1,
+  capital: state.gbCapital,
+  riskPct: GridBot.profileValues().riskBudget,   // Profil statt freies Feld
 });
 
 // ---------- Pattern-Erkennung ----------
@@ -2464,8 +2648,10 @@ function currentLayoutSnapshot() {
     currentLayout: state.currentLayout,
     gbOpen: state.gbOpen,
     gbCollapsed: state.gbCollapsed,
+    gbProfile: state.gbProfile,
     gbHeight: state.gbHeight,
     gbActiveTier: state.gbActiveTier,
+    gbCapital: state.gbCapital,
     gbTiers: state.gbTiers,
     gbThresholds: state.gbThresholds,
     chartStyle: state.chartStyle,
@@ -2630,6 +2816,8 @@ function resetChartStyle() {
 // ---------- Start ----------
 initDropdowns();
 syncLabels();
+GridBot.setThresholds(state.gbThresholds);
+GridBot.setProfile(state.gbProfile);
 gbRenderSettings();
 gbInitResize();
 gbSetCollapsed(state.gbCollapsed);
@@ -2723,10 +2911,6 @@ document.querySelectorAll(".gb-tab").forEach(tab => {
     if (state.gbCollapsed) gbSetCollapsed(false);
   });
 });
-["gbCapital", "gbRisk", "gbFee"].forEach(id => {
-  document.getElementById(id).addEventListener("change", () => { saveWorkspace(); gbRefresh(false); });
-});
-
 // ---------- FAQ-Handler ----------
 document.getElementById("faqBtn").addEventListener("click", () => {
   document.getElementById("faqModal").classList.remove("hidden");

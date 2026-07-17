@@ -265,6 +265,7 @@
     
       <div class="gb-body" id="gbBody">
         <div class="gb-pane" id="gbPaneStrategy">
+      <div class="gb-reco" id="gbRecoBox"></div>
           <table class="gb-table" id="gbTiers"></table>
           <div class="gb-note" id="gbWarning"></div>
         </div>
@@ -275,96 +276,122 @@
     
         <div class="gb-pane hidden" id="gbPaneFaq">
       <div class="faq-cols">
+
         <div class="faq-block">
-          <h4>Wie der Bias entsteht</h4>
-          <p>Zwei Scores werden addiert. <b>Trend</b>: Preis über SMA50 gibt +1, darunter −1; dasselbe für SMA200. Bereich −2 bis +2. <b>Derivate</b>: Funding unter −0.01 % gibt +1 (Shorts zahlen), über +0.05 % gibt −1 (Longs zahlen teuer), dazu ±1 aus der OI-Interpretation.</p>
-          <p>Summe ab +2 → Long, ab −2 → Short, sonst Neutral.</p>
+          <h4>Was der Bot beantwortet</h4>
+          <p>Nicht „Long oder Short", sondern: <b>Wo stehen wir im Zyklus, und ist ein Grid überhaupt das richtige Werkzeug?</b></p>
+          <p>Zwei Zahlen entscheiden das. Alles andere rechnet im Hintergrund.</p>
         </div>
 
         <div class="faq-block">
-          <h4>Der Extremfilter sticht alles</h4>
-          <p>RSI ≤ 25 <i>oder</i> Fear&amp;Greed ≤ 15 → „Überverkauft". RSI ≥ 75 oder F&amp;G ≥ 85 → „Überkauft". In beiden Fällen wird der Bias auf <b>Neutral</b> gesetzt, egal was die Konfluenz sagt.</p>
-          <p>Der Gedanke: kein Short in die Kapitulation, kein Long in die Euphorie. Der Roh-Bias darf recht haben — der Filter sticht ihn trotzdem.</p>
+          <h4>Mayer Multiple — wo im Zyklus</h4>
+          <p><code>Mayer = Preis / SMA200</code></p>
+          <p>Unter <b>0.9</b> war BTC historisch in der Akkumulationszone — diese Schwelle traf jeden Boden seit 2015. Über <b>2.0</b> wird es teuer; 2.4 wäre der historische Extremwert.</p>
         </div>
 
         <div class="faq-block">
-          <h4>OI-Interpretation</h4>
-          <p>Steigendes Open Interest heisst Hebelaufbau. Wer dabei in der Mehrheit ist, ist das Futter für den Squeeze in die Gegenrichtung.</p>
-          <p><b>OI Δ30T &lt; −10 %</b> → Hebel bereinigt, gesunder Boden.<br>
-          <b>OI &gt; +10 % und L/S ≥ 0.55</b> → zu viele Longs → Long-Squeeze-Risiko.<br>
-          <b>OI &gt; +10 % und L/S ≤ 0.45</b> → zu viele Shorts → Short-Squeeze-Treibstoff.</p>
+          <h4>ER — ob Grid überhaupt taugt</h4>
+          <p><code>ER = |Netto-Bewegung| / Summe aller Schritte</code> (Kaufman, Periode 20)</p>
+          <p>1.0 heisst schnurgerade — reiner Trend. 0 heisst viel Weg, kein Fortschritt — Range.</p>
+          <p>Ein Grid verdient am <b>Pendeln</b>. Ab ER 0.5 gibt es nichts zu ernten: der Bot kämpft gegen die Strömung, zahlt Funding und trägt Hebelrisiko. Unter 0.3 ist die Range ideal.</p>
         </div>
 
         <div class="faq-block">
-          <h4>Die drei Laufzeiten</h4>
-          <p><b>Kurzfrist</b> (1–7 Tage): ATR14, Faktor 1.5, Ziel-Profit 0.8 %, Hebel max. 2×. Enges Grid, viele Trades.</p>
-          <p><b>Swing</b> (1–8 Wochen): ATR90, Faktor 3.5, Ziel 1.5 %, max. 3×.</p>
-          <p><b>Makro</b> (3–12 Monate): ATR200, Faktor 5.5, Ziel 2.0 %, max. 2×. Breite Range, überlebt grössere Schwankungen.</p>
+          <h4>Die fünf Stufen</h4>
+          <p><b>⛔ Defensiv</b> (Mayer&gt;2 oder F&amp;G&gt;80): teuer und gierig. Kein neuer Bot.</p>
+          <p><b>🟢 Akkumulation</b> (Mayer&lt;0.9 und F&amp;G&lt;35): beste Risiko/Chance-Zone. Bei Range → Makro-Grid, bei Trend → Spot/DCA.</p>
+          <p><b>⚡ Kurzfrist</b>: kein Extrem, aber saubere Range → neutral pendeln.</p>
+          <p><b>🔵 Long-Bias</b> (Mayer&lt;1): Aufschwung → gerichtetes Grid.</p>
+          <p><b>🟡 Beobachten</b>: kein Extrem, keine Range → warten.</p>
         </div>
 
         <div class="faq-block">
-          <h4>Warum der Hebel aus der Range folgt</h4>
-          <p><code>Hebel = MIN(Cap, 1 / (ATR% × Faktor))</code></p>
-          <p>Je breiter das Grid, desto weniger Hebel ist tragbar — sonst liegt der Liquidationspreis innerhalb der eigenen Range. Der Hebel ist also <b>keine freie Wahl</b>, sondern eine Folge der Grid-Breite.</p>
+          <h4>Warum manchmal Spot statt Grid?</h4>
+          <p>Der Fall Akkumulation + Trend sieht wie ein Widerspruch aus: „billig, kaufen" und gleichzeitig „Grid riskant". Beides stimmt — für verschiedene Werkzeuge.</p>
+          <p>Das asymmetrische Aufwärtspotenzial der Akkumulationszone liefert das blosse <b>Halten</b> durch den Zyklus, nicht der Bot. Deshalb: Spot kaufen (ungehebelt, ins eigene Wallet), Grid wartet auf Range.</p>
+          <p>Kurz: Die Zyklus-These bestimmt <b>ob</b> du kaufst, die Marktstruktur bestimmt <b>womit</b>.</p>
+        </div>
+
+        <div class="faq-block faq-warn">
+          <h4>Hebel-Leitplanke</h4>
+          <p>Bei Mayer &gt; 2 oder F&amp;G &gt; 80 wird der Hebel <b>zwingend auf 1×</b> gedeckelt — unabhängig von Profil und Bot-Einstellung.</p>
+          <p>In Euphorien darf kein Risikoprofil vollen Hebel rechtfertigen. Die Leitplanke schläft die meiste Zeit und wacht genau dann auf, wenn es sich am besten anfühlt.</p>
         </div>
 
         <div class="faq-block">
-          <h4>Warum die Grösse aus dem Risiko folgt</h4>
-          <p><code>Size = MIN(Kapital, (Kapital × Risiko%) / Stop-Distanz%)</code></p>
-          <p>Zuerst steht der Stop, daraus fällt die Grösse. Nicht umgekehrt. Bei 1 % Risiko und 8'000 USDT sind das 80 USDT pro Bot — das ist dein 1R.</p>
+          <h4>Warum der Hebel nicht frei wählbar ist</h4>
+          <p><code>Hebel = MIN(Profil-Cap, 1 / (Grid-Breite + Wartungsmarge + Slippage))</code></p>
+          <p>Je breiter das Grid, desto weniger Hebel ist tragbar — sonst liegt der Liquidationspreis innerhalb der eigenen Range. Der Hebel <b>folgt</b> aus der Range, er ist keine Entscheidung.</p>
         </div>
 
         <div class="faq-block">
-          <h4>Range, Grids und Abstand</h4>
-          <p><code>LP/UP = Preis ∓ (ATR% × Faktor)</code><br>
-          <code>Grids = (UP−LP) / Preis / (Ziel-Profit% + Gebühr%)</code></p>
-          <p>Mehr Grids heisst engere Stufen und mehr Trades, aber jeder Trade verdient weniger. Die Gebühr steht deshalb in der Formel: unter ihr lohnt kein Grid.</p>
+          <h4>Warum die Grösse nicht frei wählbar ist</h4>
+          <p><code>Size = Risiko-Budget / (Hebel × (Stopdistanz + Gap-Puffer))</code></p>
+          <p>Zuerst steht der Stop, daraus fällt die Grösse. Der Gap-Puffer fängt Kurslücken ab, gegen die ein Stop nicht schützt — deshalb ist er im Nenner.</p>
+          <p>Umgekehrt — erst Grösse, dann Stop — bestimmt der Markt dein Risiko.</p>
         </div>
 
         <div class="faq-block">
-          <h4>Sicherheits-Check</h4>
-          <p>„SL vor Liq" heisst: Dein Stop greift, bevor die Börse liquidiert. „Liq vor SL" ist ein Konstruktionsfehler — dann ist der Hebel zu hoch für die Range.</p>
-          <p>Die Liquidation liegt grob bei 1/Hebel Abstand, bei 2× also rund 50 %.</p>
+          <h4>Netto-Erwartung</h4>
+          <p><code>Grid-Ertrag − Funding-Kosten</code></p>
+          <p>Ertrag = Füllungen/Monat × Laufzeit × (Ziel-Profit − Gebühr) × Hebel.<br>
+          Funding = Hebel × Ø-Rate × Tage × 3 (Binance zahlt alle 8 h).</p>
+          <p>Ein Neutral-Bot zahlt netto kein Funding. Wird die Zahl rot, frisst die Finanzierung den Ertrag — dann läuft der Bot, aber du verdienst nichts.</p>
         </div>
 
         <div class="faq-block">
-          <h4>Funding-Drag</h4>
-          <p>Binance zahlt alle 8 Stunden, also 3× täglich und rund 90× im Monat. Bei Long kostet positives Funding, bei Short bringt es ein.</p>
-          <p>Über 3 %/Monat wird es zum eigenen Faktor — bei einem Makro-Bot über 12 Monate ist das keine Nebensache mehr.</p>
+          <h4>Das Risiko-Profil</h4>
+          <p>Ein Schalter statt drei Zahlen. Er stellt Hebel-Cap, Risiko-Budget und Gap-Puffer gemeinsam:</p>
+          <p><code>Konservativ &nbsp;&nbsp;1× · 1% · 8%<br>
+          Moderat &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2× · 2% · 5%<br>
+          Risikofreudig 3× · 3% · 3%</code></p>
+          <p>Konservativ heisst: kleinste Positionen, grösstes Polster.</p>
+        </div>
+
+        <div class="faq-block faq-warn">
+          <h4>Warum die Schwellen fest sind</h4>
+          <p>Mayer 0.9/2.0, F&amp;G 35/80, ER 0.3/0.5, RSI 25/75 lassen sich nicht editieren. Das ist Absicht.</p>
+          <p>Diese Werte sind historisch kalibriert. Wer sie hochdreht, weil „Defensiv" erscheint, senkt nicht das Risiko — nur die Warnung. Aggressivität gehört ins Profil, nicht in die Messlatte.</p>
+          <p>Frei sind nur Werte über <b>dein</b> Setup: Kapital, Gebühr deiner Börse, Füllungs-Schätzung.</p>
         </div>
 
         <div class="faq-block">
-          <h4>Woher die Daten kommen</h4>
-          <p>Preis, SMA, RSI und ATR rechnet TreydView selbst aus den Chart-Daten — unabhängig davon, welche Indikatoren du aktiviert hast. Funding, Open Interest und L/S kommen von Binance Futures, Fear&amp;Greed von alternative.me.</p>
-          <p>Fällt eine Quelle aus, zeigt die Statuszeile „Quelle(n) fehlen" und der betroffene Score wird als 0 gewertet.</p>
+          <h4>Was im Hintergrund noch einfliesst</h4>
+          <p><b>Konfluenz:</b> Preis vs. SMA50/200 (Trend), Funding-Rate, Open Interest und Long/Short-Ratio (Positionierung) → Richtungs-Bias.</p>
+          <p><b>Extremfilter:</b> RSI ≤ 25 oder F&amp;G ≤ 15 setzt den Bias auf Neutral — kein Short in die Kapitulation, kein Long in die Euphorie.</p>
+          <p><b>Squeeze-Erkennung:</b> steigendes OI plus einseitige L/S-Ratio zeigt, wer das Futter für die Gegenbewegung ist.</p>
+          <p>Diese Werte stehen im Daten-Tab, brauchen aber keine Entscheidung von dir.</p>
+        </div>
+
+        <div class="faq-block">
+          <h4>In Pionex eintragen</h4>
+          <p><b>Isolated Margin</b>, nie Cross — die ganze Liquidationsmathematik gilt nur isoliert.</p>
+          <p><b>Auto Reserve deaktivieren</b>, sonst verteilt Pionex das Geld selbst und der Liquidationspreis passt nicht zu deinem Profil.</p>
+          <p>Der Liquidationspreis verbessert sich über die Laufzeit von selbst: realisierte Grid-Profite fliessen in die Margin zurück. Das ist Polster, das hier nicht eingepreist ist.</p>
+        </div>
+
+        <div class="faq-block">
+          <h4>Wann aussteigen?</h4>
+          <p>Ein Range-Grid hat kein Kursziel — es gibt keinen Preis, bei dem „fertig" wäre. Fünf Auslöser, nach Dringlichkeit:</p>
+          <p>1. Stop greift (automatisch)<br>
+          2. Grid-Eignung kippt auf 🔴 Trend<br>
+          3. Preis verlässt die Range nachhaltig (Tagesschluss, nicht ein Docht)<br>
+          4. Netto-Erwartung wird negativ<br>
+          5. Laufzeit abgelaufen → neu bewerten</p>
         </div>
 
         <div class="faq-block faq-warn">
           <h4>Was dieses Werkzeug nicht ist</h4>
-          <p>Es ist ein Rechner, kein Signalgeber. Die Schwellwerte sind gesetzt, nicht kalibriert — RSI 25/75 und F&amp;G 15/85 sind bewusst gewählt, OI ±10 und L/S 0.45/0.55 sind runde Zahlen ohne empirische Prüfung.</p>
-          <p>Alle Werte sind unter „Einstellungen" änderbar. Wenn du sie änderst, ändert sich der Bias — das allein zeigt, wie viel Gewicht auf Annahmen liegt.</p>
+          <p>Ein Rechner, kein Signalgeber. Er sagt dir, was aus deinen Zahlen folgt — nicht, was der Markt tut.</p>
+          <p>Die Empfehlung „🟡 Beobachten" ist kein Fehler, sondern das wichtigste Ergebnis: ein übersprungener Trade ohne Vorteil ist kein verpasster Gewinn.</p>
         </div>
+
       </div>
     </div>
 
-    <div class="gb-pane hidden" id="gbPaneSettings">
-          <div class="gb-cols">
-            <div class="gb-set-block">
-              <div class="gb-set-title">Kapital &amp; Risiko</div>
-              <label>Gesamtkapital (USDT) <input type="number" id="gbCapital" value="8000" min="100" step="100"></label>
-              <label>Max. Risiko je Bot (%) <input type="number" id="gbRisk" value="1" min="0.1" max="10" step="0.1"></label>
-              <label>Gebühr Roundtrip (%) <input type="number" id="gbFee" value="0.1" min="0" max="1" step="0.01"></label>
-            </div>
-            <div class="gb-set-block">
-              <div class="gb-set-title">Tier-Parameter</div>
-              <div class="gb-tier-grid" id="gbTierSettings"></div>
-            </div>
-            <div class="gb-set-block">
-              <div class="gb-set-title">Schwellwerte</div>
-              <div class="gb-th-grid" id="gbThresholds"></div>
-            </div>
-          </div>
-        </div>
+    <!-- Inhalt wird von gbRenderSettings() erzeugt — bewusst nur vier
+         Felder. Schwellwerte sind fest, siehe FAQ-Tab. -->
+    <div class="gb-pane hidden" id="gbPaneSettings"></div>
       </div>
     </div>
 

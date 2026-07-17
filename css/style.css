@@ -475,3 +475,28 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .faq-block.faq-warn h4{color:var(--down);}
 .gb-pane .faq-block{margin-bottom:12px;}
 @media (max-width:800px){.faq-cols{columns:1;}}
+
+/* Grid Bot: Empfehlungs-Box — die eine Aussage, um die es geht */
+.gb-reco{border-radius:5px;padding:10px 12px;margin-bottom:12px;border-left:3px solid var(--text-dim);background:var(--bg-hover);}
+.gb-reco.reco-go{border-left-color:var(--up);background:rgba(63,182,139,.07);}
+.gb-reco.reco-stop{border-left-color:var(--down);background:rgba(208,94,94,.07);}
+.gb-reco.reco-wait{border-left-color:var(--accent);background:rgba(232,182,76,.06);}
+.reco-main{font-size:14px;font-weight:600;color:var(--text);margin-bottom:3px;}
+.reco-why{font-size:12px;color:var(--text-dim);line-height:1.45;}
+.reco-meta{display:flex;gap:18px;margin-top:7px;padding-top:7px;border-top:1px solid rgba(128,140,155,.12);font-size:11px;color:var(--text-dim);flex-wrap:wrap;}
+.reco-meta b{color:var(--text);font-weight:600;}
+.reco-guard{color:var(--down);font-weight:600;}
+.gb-pill.stop{background:rgba(208,94,94,.15);color:var(--down);}
+.gb-pill.wait{background:rgba(232,182,76,.15);color:var(--accent);}
+.gb-table th.tier-reco{color:var(--up);}
+.tier-hz{display:block;font-size:9px;color:var(--text-dim);font-weight:400;margin-top:1px;}
+.gb-table td.neg{color:var(--down);}
+
+/* Einstellungen: kompakt, vier Felder */
+.gb-set-wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px 26px;align-items:start;}
+.gb-set-block select{background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;outline:none;cursor:pointer;width:110px;}
+.gb-set-block select:focus{border-color:var(--accent);}
+.gb-prof-info{margin-top:6px;padding-top:6px;border-top:1px solid var(--border);}
+.pi-row{display:grid;grid-template-columns:auto 1fr;gap:0 14px;font-size:11px;color:var(--text-dim);padding:2px 0;}
+.pi-row b{color:var(--accent);text-align:right;font-weight:600;}
+.gb-set-note{margin-top:14px;padding:9px 11px;background:var(--bg);border:1px solid var(--border);border-left:2px solid var(--accent);border-radius:0 3px 3px 0;font-size:11px;line-height:1.5;color:var(--text-dim);}
