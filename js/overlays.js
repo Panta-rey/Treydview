@@ -468,7 +468,7 @@
     needDefaultPointFigure: false,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, overlay }) => {
+    createPointFigures: ({ coordinates, overlay, bounding }) => {
       if (coordinates.length < 3) return [];
       const ed = overlay.extendData || {};
       const bearish = ed.direction === "bearish";
@@ -543,10 +543,17 @@
       // NICHT die Trefferwahrscheinlichkeit. Ohne Label liest man sie als Konfidenz.
       const q = ed.quality != null ? `  Sym ${Math.round(ed.quality * 100)}%` : "";
       const lc = labelColors();
+      // Scrollt das Muster halb aus dem Bild, liegt die Mitte zwischen erstem
+      // und letztem Pivot ausserhalb — dann sieht man nur noch die Punkte und
+      // weiss nicht mehr, wofür sie stehen. Deshalb ins Sichtfeld klemmen.
+      const W = bounding?.width || 1200;
+      const rawX = (pivots[0].x + pivots[pivots.length - 1].x) / 2;
+      const labelX = Math.max(60, Math.min(W - 60, rawX));
+
       figs.push({
         type: "text",
         attrs: {
-          x: (pivots[0].x + pivots[pivots.length - 1].x) / 2,
+          x: labelX,
           y: labelY,
           text: (ed.label || "Muster") + q,
           align: "center",
@@ -806,7 +813,7 @@
     needDefaultPointFigure: false,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, overlay }) => {
+    createPointFigures: ({ coordinates, overlay, bounding }) => {
       if (coordinates.length < 4) return [];
       const ed = overlay.extendData || {};
       const bearish = ed.direction === "bearish";
@@ -854,9 +861,13 @@
       // Label
       const lc = labelColors();
       const q = ed.quality != null ? `  Sym ${Math.round(ed.quality * 100)}%` : "";
+      // Label ins Sichtfeld klemmen — sonst bleiben beim Rausscrollen nur
+      // die Linien ohne Bezeichnung übrig.
+      const W2 = bounding?.width || 1200;
+      const lx = Math.max(70, Math.min(W2 - 70, (ul.x + ur.x) / 2));
       figs.push({
         type: "text",
-        attrs: { x: (ul.x + ur.x) / 2, y: Math.min(ul.y, ur.y) - 8, text: (ed.label || "Muster") + q,
+        attrs: { x: lx, y: Math.min(ul.y, ur.y) - 8, text: (ed.label || "Muster") + q,
                  align: "center", baseline: "bottom" },
         styles: {
           style: "stroke_fill", color: colA(1), backgroundColor: lc.bg,

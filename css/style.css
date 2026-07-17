@@ -385,9 +385,10 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .gb-note.warn{color:var(--down);}
 
 /* Daten- und Einstellungs-Tab: gleiche Schriftgrösse wie Strategie (12px) */
-.gb-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px 26px;align-items:start;}
+.gb-cols{display:flex;gap:34px;align-items:flex-start;flex-wrap:wrap;}
+.gb-cols > div{flex:0 0 auto;min-width:0;}
 .gb-blk-title{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;padding-bottom:5px;border-bottom:1px solid var(--border);margin-bottom:3px;}
-.gb-kv{display:grid;grid-template-columns:auto 1fr;gap:0 14px;font-size:12px;padding:3px 0;border-bottom:1px solid rgba(128,140,155,.07);align-items:baseline;}
+.gb-kv{display:grid;grid-template-columns:max-content max-content;gap:0 16px;justify-content:start;font-size:12px;padding:3px 0;border-bottom:1px solid rgba(128,140,155,.07);align-items:baseline;}
 .gb-kv:last-child{border-bottom:none;}
 .gb-kv:hover{background:var(--bg-hover);margin:0 -4px;padding-left:4px;padding-right:4px;}
 .gb-kv span:first-child{color:var(--text-dim);}
@@ -395,7 +396,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
 .gb-set-block{display:flex;flex-direction:column;gap:2px;}
 .gb-set-title{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;padding-bottom:5px;border-bottom:1px solid var(--border);margin-bottom:4px;}
-.gb-set-block > label{display:grid;grid-template-columns:auto 80px;gap:0 14px;align-items:center;font-size:12px;color:var(--text-dim);padding:3px 0;border-bottom:1px solid rgba(128,140,155,.07);}
+.gb-set-block > label{display:grid;grid-template-columns:max-content 80px;gap:0 16px;align-items:center;justify-content:start;font-size:12px;color:var(--text-dim);padding:3px 0;border-bottom:1px solid rgba(128,140,155,.07);}
 .gb-set-block > label:hover{background:var(--bg-hover);}
 .gb-set-block input{width:78px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;outline:none;text-align:right;}
 .gb-set-block input:focus{border-color:var(--accent);}
@@ -493,10 +494,20 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .gb-table td.neg{color:var(--down);}
 
 /* Einstellungen: kompakt, vier Felder */
-.gb-set-wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px 26px;align-items:start;}
+/* auto-fit + 1fr streckt die Spalten über die volle Breite und reisst
+   Bezeichnung und Wert auseinander. max-content = nur so breit wie nötig. */
+.gb-set-wrap{display:flex;gap:34px;align-items:flex-start;flex-wrap:wrap;}
+.gb-set-wrap > .gb-set-block{flex:0 0 auto;min-width:0;}
 .gb-set-block select{background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;outline:none;cursor:pointer;width:110px;}
 .gb-set-block select:focus{border-color:var(--accent);}
 .gb-prof-info{margin-top:6px;padding-top:6px;border-top:1px solid var(--border);}
-.pi-row{display:grid;grid-template-columns:auto 1fr;gap:0 14px;font-size:11px;color:var(--text-dim);padding:2px 0;}
-.pi-row b{color:var(--accent);text-align:right;font-weight:600;}
-.gb-set-note{margin-top:14px;padding:9px 11px;background:var(--bg);border:1px solid var(--border);border-left:2px solid var(--accent);border-radius:0 3px 3px 0;font-size:11px;line-height:1.5;color:var(--text-dim);}
+.pi-row{display:grid;grid-template-columns:max-content max-content;gap:0 16px;justify-content:start;font-size:11px;color:var(--text-dim);padding:2px 0;}
+.pi-row b{color:var(--accent);font-weight:600;}
+.gb-set-note{margin-top:14px;max-width:760px;padding:9px 11px;background:var(--bg);border:1px solid var(--border);border-left:2px solid var(--accent);border-radius:0 3px 3px 0;font-size:11px;line-height:1.5;color:var(--text-dim);}
+
+
+/* Strategie-Tab: Leiste ist breit, nicht hoch -> nebeneinander statt untereinander */
+.gb-strat-row{display:flex;gap:20px;align-items:flex-start;}
+.gb-strat-table{flex:0 0 auto;}
+.gb-strat-row .gb-reco{flex:1 1 auto;margin-bottom:0;min-width:260px;max-width:520px;}
+@media (max-width:900px){.gb-strat-row{flex-direction:column;}.gb-strat-row .gb-reco{max-width:none;}}

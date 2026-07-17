@@ -65,6 +65,7 @@ const state = {
   gbActiveTier: _ws?.gbActiveTier || null,
   gbBandIds: [],
   gbResult: null,
+  drawings: _ws?.drawings || [],   // gezeichnete Overlays, für Layouts
   gbCapital: _ws?.gbCapital ?? 8000,
   gbTiers: _ws?.gbTiers || JSON.parse(JSON.stringify(GridBot.DEFAULT_TIERS)),
   gbThresholds: _ws?.gbThresholds || { ...GridBot.DEFAULT_THRESHOLDS },
@@ -1013,6 +1014,74 @@ function setChartCursor(cursor) {
   if (el) el.classList.toggle("cursor-pointer", cursor === "pointer");
 }
 
+// ---------- Zeichnungs-Register ----------
+// KLineCharts hat keine API, um alle Overlays auszulesen (getOverlayStore
+// existiert nicht). Für "Zeichnungen im Layout speichern" müssen wir also
+// selbst mitschreiben: jedes fertige Overlay landet hier, gelöschte fliegen
+// raus. Grid-Bänder und Muster gehören NICHT dazu — die erzeugen ihre
+// Module selbst neu.
+const SAVED_OVERLAYS = new Set([
+  "segment", "horizontalStraightLine", "verticalStraightLine", "priceLine",
+  "rectangle", "rayLine", "priceChannelLine", "parallelStraightLine",
+  "frvp", "fibRetracement", "fibExtension", "priceRange", "dateRange",
+  "simpleAnnotation", "freehand", "positionTool",
+]);
+
+function registerDrawing(id, name, points, extendData, styles) {
+  if (!SAVED_OVERLAYS.has(name)) return;
+  state.drawings.push({
+    id, name,
+    points: points.map(p => ({ timestamp: p.timestamp, value: p.value })),
+    extendData: extendData ?? null,
+    styles: styles ?? null,
+  });
+  saveWorkspace();
+}
+
+function unregisterDrawing(id) {
+  const i = state.drawings.findIndex(d => d.id === id);
+  if (i >= 0) { state.drawings.splice(i, 1); saveWorkspace(); }
+}
+
+// Nach dem Zeichnen die tatsächlichen Punkte aus dem Overlay holen und
+// registrieren. Muss NACH onDrawEnd laufen, sonst sind die Punkte noch leer.
+function captureDrawing(id) {
+  setTimeout(() => {
+    try {
+      const o = chart.getOverlayById(id);
+      if (o && o.points?.length) {
+        registerDrawing(id, o.name, o.points, o.extendData, o.styles);
+      }
+    } catch (e) {}
+  }, 30);
+}
+
+// Gespeicherte Zeichnungen wiederherstellen
+function restoreDrawings(list) {
+  if (!list || !list.length) return;
+  state.drawings = [];
+  list.forEach(d => {
+    try {
+      const id = chart.createOverlay({
+        name: d.name,
+        points: d.points,
+        extendData: d.extendData ?? undefined,
+        styles: d.styles ?? undefined,
+        onSelected:   (e) => { state.selectedOverlayId = e.overlay.id; return false; },
+        onDeselected: () => { state.selectedOverlayId = null; return false; },
+        onMouseEnter: () => { setChartCursor("pointer"); return false; },
+        onMouseLeave: () => { setChartCursor(""); return false; },
+        onRightClick: (e) => {
+          if (d.name === "frvp") openFrvpMenu(e.overlay, e); else openOverlayMenu(e.overlay, e);
+          return true;
+        },
+        onRemoved: (e) => { unregisterDrawing(e.overlay.id); return false; },
+      });
+      if (id) state.drawings.push({ ...d, id });
+    } catch (e) {}
+  });
+}
+
 // ---------- Freihand-Zeichnen ----------
 // Sonderweg: KLineCharts kennt nur Klick-für-Klick-Werkzeuge. Freihand
 // braucht Tracking bei gedrückter Maus, also sammeln wir die Punkte
@@ -1063,14 +1132,17 @@ function startFreehand() {
     _fhPoints = null;
     if (pts.length >= 2) {
       try {
-        chart.createOverlay({
+        const ed = { color: state.drawStyle.color, size: state.drawStyle.width || 2 };
+        const id = chart.createOverlay({
           name: "freehand",
           points: pts,
-          extendData: { color: state.drawStyle.color, size: state.drawStyle.width || 2 },
-          onRightClick: (e) => { openOverlayMenu(e); return true; },
+          extendData: ed,
+          onRightClick: (e) => { openOverlayMenu(e.overlay, e); return true; },
           onMouseEnter: () => { setChartCursor("pointer"); return false; },
           onMouseLeave: () => { setChartCursor(""); return false; },
+          onRemoved: (e) => { unregisterDrawing(e.overlay.id); return false; },
         });
+        if (id) registerDrawing(id, "freehand", pts, ed, null);
       } catch (e) {}
     }
     if (!state.pinTool) stopFreehand();
@@ -1161,6 +1233,8 @@ function startTool(overlayName) {
           try { chart.removeOverlay(e.overlay.id); } catch (err) {}
         }
       }
+      // Ins Register aufnehmen, damit Layouts die Zeichnung sichern können
+      if (e?.overlay?.id) captureDrawing(e.overlay.id);
       state.drawingId = null;
       if (state.pinTool) {
         setTimeout(() => startTool(overlayName), 0);
@@ -1173,6 +1247,7 @@ function startTool(overlayName) {
     },
     onSelected:   (e) => { state.selectedOverlayId = e.overlay.id; return false; },
     onDeselected: () => { state.selectedOverlayId = null; return false; },
+    onRemoved:    (e) => { unregisterDrawing(e.overlay.id); return false; },
     // 2.15: Zeigt an, dass die Zeichnung anklickbar ist. Ohne das sieht
     // man dem Fadenkreuz nicht an, dass hier etwas zu holen ist.
     onMouseEnter: () => { setChartCursor("pointer"); return false; },
@@ -1200,13 +1275,28 @@ function startTool(overlayName) {
 }
 
 // ---------- Generisches Overlay-Menü (Einzellöschen per Rechtsklick) ----------
+// KLineCharts liefert Klick-Koordinaten relativ zum Chart-Canvas. Das Menü
+// liegt per position:fixed im Fenster — ohne den Offset des Containers
+// erscheint es systematisch versetzt statt an der Zeichnung.
+function menuPosition(event, menuW = 130, menuH = 70) {
+  const rect = document.getElementById("mainChart").getBoundingClientRect();
+  const cx = event?.pointerCoordinate?.x ?? event?.x;
+  const cy = event?.pointerCoordinate?.y ?? event?.y;
+  // Fallback: Mitte des Charts, falls das Event keine Koordinaten trägt
+  const x = rect.left + (cx != null ? cx : rect.width / 2);
+  const y = rect.top  + (cy != null ? cy : rect.height / 2);
+  return {
+    x: Math.max(6, Math.min(x + 4, window.innerWidth  - menuW)),
+    y: Math.max(6, Math.min(y + 4, window.innerHeight - menuH)),
+  };
+}
+
 function openOverlayMenu(overlay, event) {
   const menu = document.getElementById("overlayMenu");
   if (!menu) return;
-  const x = event?.pointerCoordinate?.x || event?.x || 200;
-  const y = event?.pointerCoordinate?.y || event?.y || 200;
-  menu.style.left = Math.min(x, window.innerWidth  - 120) + "px";
-  menu.style.top  = Math.min(y, window.innerHeight - 60)  + "px";
+  const { x, y } = menuPosition(event);
+  menu.style.left = x + "px";
+  menu.style.top  = y + "px";
   menu.classList.remove("hidden");
   document.getElementById("overlayDelete").onclick = () => {
     chart.removeOverlay(overlay.id);
@@ -1234,10 +1324,9 @@ function openFrvpMenu(overlay, event) {
   document.getElementById("frvpColorVAL").value  = ext.colorVAL  ? rgbToHex(ext.colorVAL)  : "#e8b64c";
   document.getElementById("frvpColorPOC").value  = ext.colorPOC  ? rgbToHex(ext.colorPOC)  : "#ffffff";
 
-  const x = (event?.pointerCoordinate?.x) || (event?.x) || 200;
-  const y = (event?.pointerCoordinate?.y) || (event?.y) || 200;
-  menu.style.left = Math.min(x, window.innerWidth  - 260) + "px";
-  menu.style.top  = Math.min(y, window.innerHeight - 380) + "px";
+  const p = menuPosition(event, 260, 380);
+  menu.style.left = p.x + "px";
+  menu.style.top  = p.y + "px";
   menu.classList.remove("hidden");
 
   document.getElementById("frvpApply").onclick = () => {
@@ -1579,6 +1668,7 @@ function saveWorkspace() {
     gbProfile: state.gbProfile,
     gbHeight: state.gbHeight,
     gbActiveTier: state.gbActiveTier,
+    drawings: state.drawings,
     gbCapital: state.gbCapital,
     gbTiers: state.gbTiers,
     gbThresholds: state.gbThresholds,
@@ -1777,6 +1867,7 @@ function clearAllDrawings() {
   // removeOverlay() ohne id löscht ALLE Overlays. chart.getOverlayStore()
   // existiert in 9.8.12 nicht — der frühere Versuch lief still ins Leere.
   try { chart.removeOverlay(); } catch (e) {}
+  state.drawings = [];
   state.patternOverlayIds = [];
   state.gbBandIds = [];
   state.gbActiveTier = null;
@@ -2638,6 +2729,9 @@ function currentLayoutSnapshot() {
     // Nur die Kennung sichern, nicht die Kursdaten — die werden beim
     // Laden ohnehin neu geholt und wären sonst mehrere MB im localStorage.
     compareAssets: state.compareAssets.map(a => ({ id: a.id, label: a.label })),
+    // Zeichnungen gehören zur Arbeitsfläche — ohne sie ist ein Layout
+    // nur die halbe Ansicht. Ohne id gespeichert, die vergibt KLineCharts neu.
+    drawings: state.drawings.map(({ id, ...rest }) => rest),
     active: [...state.active],
     chartType: state.chartType,
     legendCollapsed: state.legendCollapsed,
@@ -2651,6 +2745,7 @@ function currentLayoutSnapshot() {
     gbProfile: state.gbProfile,
     gbHeight: state.gbHeight,
     gbActiveTier: state.gbActiveTier,
+    drawings: state.drawings,
     gbCapital: state.gbCapital,
     gbTiers: state.gbTiers,
     gbThresholds: state.gbThresholds,
@@ -2712,6 +2807,10 @@ function applyNamedLayout(name) {
   applyAllActive();
   loadData();
   restartWatchlistStream();
+
+  // Zeichnungen wiederherstellen. Muss nach loadData laufen, sonst kennt
+  // der Chart die Zeitachse noch nicht und die Punkte landen daneben.
+  setTimeout(() => restoreDrawings(l.drawings), 220);
 
   // Kerzen aus- bzw. wieder einblenden — je nachdem ob das Layout
   // Vergleiche enthält. Muss NACH loadData laufen.
@@ -2904,7 +3003,7 @@ document.querySelectorAll(".gb-tab").forEach(tab => {
     e.stopPropagation();
     document.querySelectorAll(".gb-tab").forEach(t => t.classList.remove("active"));
     tab.classList.add("active");
-    const map = { strategy: "gbPaneStrategy", data: "gbPaneData", settings: "gbPaneSettings", faq: "gbPaneFaq" };
+    const map = { strategy: "gbPaneStrategy", data: "gbPaneData", settings: "gbPaneSettings" };
     Object.values(map).forEach(id => document.getElementById(id).classList.add("hidden"));
     document.getElementById(map[tab.dataset.tab]).classList.remove("hidden");
     // Pane öffnen falls kollabiert

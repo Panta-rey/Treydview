@@ -4,7 +4,7 @@
 const CONFIG = {
 
   // >>> HIER deine Cloudflare-Worker-Basis-URL eintragen <<<
-  WORKER_BASE_URL: "https://DEIN-WORKER.workers.dev",
+  WORKER_BASE_URL: "https://pantarey.rey-gafner.workers.dev",
   GOLD_ENDPOINT:   "/goldhistory",
   BINANCE_REST:    "https://api.binance.com/api/v3",
   BINANCE_WS:      "wss://stream.binance.com:9443/ws",
@@ -333,11 +333,28 @@ function textOn(bgHex) {
   return luminance(bgHex) > 0.42 ? "#0d1117" : "#ffffff";
 }
 
+// Kontrastverhältnis zweier Farben nach WCAG (1 = identisch, 21 = max).
+function contrastRatio(hexA, hexB) {
+  const a = luminance(hexA), b = luminance(hexB);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
 // Für einen Indikator mit mehreren Linien: KLineCharts erlaubt nur EINE
-// Textfarbe je Indikator, also die wählen, die für die Mehrheit der
-// sichtbaren Linien funktioniert.
+// Textfarbe je Indikator, der Balken übernimmt aber je Linie deren Farbe.
+//
+// Die Mehrheit zu fragen ("sind die meisten Linien hell?") ist das falsche
+// Kriterium: setzt man bei vier Linien nur EINE auf Weiss, ist die Mehrheit
+// dunkel, die Wahl fällt auf weissen Text — und genau die weisse Linie wird
+// unlesbar. Ein unlesbares Label ist schlimmer als vier mittelmässige.
+//
+// Deshalb: die Farbe wählen, deren SCHLECHTESTER Kontrast über alle Linien
+// am höchsten ist. Minimax statt Mehrheit.
 function textForLines(colors) {
   if (!colors || !colors.length) return "#ffffff";
-  const light = colors.filter(c => luminance(c) > 0.42).length;
-  return light >= colors.length / 2 ? "#0d1117" : "#ffffff";
+  let best = "#ffffff", bestWorst = -1;
+  for (const cand of ["#0d1117", "#ffffff"]) {
+    const worst = Math.min(...colors.map(c => contrastRatio(c, cand)));
+    if (worst > bestWorst) { bestWorst = worst; best = cand; }
+  }
+  return best;
 }
