@@ -128,6 +128,18 @@
           <label><input type="checkbox" data-pat="tripleBottom" checked> Triple Bottom</label>
           <label><input type="checkbox" data-pat="headShoulders" checked> Head &amp; Shoulders</label>
           <label><input type="checkbox" data-pat="invHeadShoulders" checked> Inverse H&amp;S</label>
+          <div class="pat-group">Trendlinien</div>
+          <label><input type="checkbox" data-pat="ascTriangle" checked> Aufsteig. Dreieck</label>
+          <label><input type="checkbox" data-pat="descTriangle" checked> Absteig. Dreieck</label>
+          <label><input type="checkbox" data-pat="symTriangle" checked> Symm. Dreieck</label>
+          <label><input type="checkbox" data-pat="risingWedge" checked> Steigender Keil</label>
+          <label><input type="checkbox" data-pat="fallingWedge" checked> Fallender Keil</label>
+          <label><input type="checkbox" data-pat="rectangle" checked> Rechteck / Range</label>
+          <div class="pat-group">Fortsetzung (mit Impuls)</div>
+          <label><input type="checkbox" data-pat="bullFlag" checked> Bull-Flagge</label>
+          <label><input type="checkbox" data-pat="bearFlag" checked> Bear-Flagge</label>
+          <label><input type="checkbox" data-pat="bullPennant" checked> Bull-Wimpel</label>
+          <label><input type="checkbox" data-pat="bearPennant" checked> Bear-Wimpel</label>
         </div>
         <div class="pat-info">
           Scannt den sichtbaren Bereich.
@@ -150,10 +162,6 @@
         </svg>
       </button>
       <div class="dd-panel dd-panel--right" id="layoutPanel">
-        <div class="layout-current hidden" id="layoutCurrent">
-          <span class="lc-label">Geöffnet: <b id="layoutCurrentName"></b></span>
-          <button id="layoutUpdateBtn" title="Änderungen im geöffneten Layout speichern">Aktualisieren</button>
-        </div>
         <div class="layout-save">
           <input type="text" id="layoutName" placeholder="Als neues Layout…" autocomplete="off">
           <button id="layoutSaveBtn" title="Als neues Layout speichern">Speichern</button>
@@ -241,6 +249,7 @@
         <button class="gb-tab active" data-tab="strategy">Strategie</button>
         <button class="gb-tab" data-tab="data">Daten</button>
         <button class="gb-tab" data-tab="settings">Einstellungen</button>
+        <button class="gb-tab" data-tab="faq">FAQ</button>
         <span class="gb-spacer"></span>
         <span class="gb-stat gb-dim" id="gbUpdated"></span>
         <button class="gb-icon" id="gbRefresh" title="Daten neu laden">
@@ -264,7 +273,81 @@
           <div class="gb-cols" id="gbData"></div>
         </div>
     
-        <div class="gb-pane hidden" id="gbPaneSettings">
+        <div class="gb-pane hidden" id="gbPaneFaq">
+      <div class="faq-cols">
+        <div class="faq-block">
+          <h4>Wie der Bias entsteht</h4>
+          <p>Zwei Scores werden addiert. <b>Trend</b>: Preis über SMA50 gibt +1, darunter −1; dasselbe für SMA200. Bereich −2 bis +2. <b>Derivate</b>: Funding unter −0.01 % gibt +1 (Shorts zahlen), über +0.05 % gibt −1 (Longs zahlen teuer), dazu ±1 aus der OI-Interpretation.</p>
+          <p>Summe ab +2 → Long, ab −2 → Short, sonst Neutral.</p>
+        </div>
+
+        <div class="faq-block">
+          <h4>Der Extremfilter sticht alles</h4>
+          <p>RSI ≤ 25 <i>oder</i> Fear&amp;Greed ≤ 15 → „Überverkauft". RSI ≥ 75 oder F&amp;G ≥ 85 → „Überkauft". In beiden Fällen wird der Bias auf <b>Neutral</b> gesetzt, egal was die Konfluenz sagt.</p>
+          <p>Der Gedanke: kein Short in die Kapitulation, kein Long in die Euphorie. Der Roh-Bias darf recht haben — der Filter sticht ihn trotzdem.</p>
+        </div>
+
+        <div class="faq-block">
+          <h4>OI-Interpretation</h4>
+          <p>Steigendes Open Interest heisst Hebelaufbau. Wer dabei in der Mehrheit ist, ist das Futter für den Squeeze in die Gegenrichtung.</p>
+          <p><b>OI Δ30T &lt; −10 %</b> → Hebel bereinigt, gesunder Boden.<br>
+          <b>OI &gt; +10 % und L/S ≥ 0.55</b> → zu viele Longs → Long-Squeeze-Risiko.<br>
+          <b>OI &gt; +10 % und L/S ≤ 0.45</b> → zu viele Shorts → Short-Squeeze-Treibstoff.</p>
+        </div>
+
+        <div class="faq-block">
+          <h4>Die drei Laufzeiten</h4>
+          <p><b>Kurzfrist</b> (1–7 Tage): ATR14, Faktor 1.5, Ziel-Profit 0.8 %, Hebel max. 2×. Enges Grid, viele Trades.</p>
+          <p><b>Swing</b> (1–8 Wochen): ATR90, Faktor 3.5, Ziel 1.5 %, max. 3×.</p>
+          <p><b>Makro</b> (3–12 Monate): ATR200, Faktor 5.5, Ziel 2.0 %, max. 2×. Breite Range, überlebt grössere Schwankungen.</p>
+        </div>
+
+        <div class="faq-block">
+          <h4>Warum der Hebel aus der Range folgt</h4>
+          <p><code>Hebel = MIN(Cap, 1 / (ATR% × Faktor))</code></p>
+          <p>Je breiter das Grid, desto weniger Hebel ist tragbar — sonst liegt der Liquidationspreis innerhalb der eigenen Range. Der Hebel ist also <b>keine freie Wahl</b>, sondern eine Folge der Grid-Breite.</p>
+        </div>
+
+        <div class="faq-block">
+          <h4>Warum die Grösse aus dem Risiko folgt</h4>
+          <p><code>Size = MIN(Kapital, (Kapital × Risiko%) / Stop-Distanz%)</code></p>
+          <p>Zuerst steht der Stop, daraus fällt die Grösse. Nicht umgekehrt. Bei 1 % Risiko und 8'000 USDT sind das 80 USDT pro Bot — das ist dein 1R.</p>
+        </div>
+
+        <div class="faq-block">
+          <h4>Range, Grids und Abstand</h4>
+          <p><code>LP/UP = Preis ∓ (ATR% × Faktor)</code><br>
+          <code>Grids = (UP−LP) / Preis / (Ziel-Profit% + Gebühr%)</code></p>
+          <p>Mehr Grids heisst engere Stufen und mehr Trades, aber jeder Trade verdient weniger. Die Gebühr steht deshalb in der Formel: unter ihr lohnt kein Grid.</p>
+        </div>
+
+        <div class="faq-block">
+          <h4>Sicherheits-Check</h4>
+          <p>„SL vor Liq" heisst: Dein Stop greift, bevor die Börse liquidiert. „Liq vor SL" ist ein Konstruktionsfehler — dann ist der Hebel zu hoch für die Range.</p>
+          <p>Die Liquidation liegt grob bei 1/Hebel Abstand, bei 2× also rund 50 %.</p>
+        </div>
+
+        <div class="faq-block">
+          <h4>Funding-Drag</h4>
+          <p>Binance zahlt alle 8 Stunden, also 3× täglich und rund 90× im Monat. Bei Long kostet positives Funding, bei Short bringt es ein.</p>
+          <p>Über 3 %/Monat wird es zum eigenen Faktor — bei einem Makro-Bot über 12 Monate ist das keine Nebensache mehr.</p>
+        </div>
+
+        <div class="faq-block">
+          <h4>Woher die Daten kommen</h4>
+          <p>Preis, SMA, RSI und ATR rechnet TreydView selbst aus den Chart-Daten — unabhängig davon, welche Indikatoren du aktiviert hast. Funding, Open Interest und L/S kommen von Binance Futures, Fear&amp;Greed von alternative.me.</p>
+          <p>Fällt eine Quelle aus, zeigt die Statuszeile „Quelle(n) fehlen" und der betroffene Score wird als 0 gewertet.</p>
+        </div>
+
+        <div class="faq-block faq-warn">
+          <h4>Was dieses Werkzeug nicht ist</h4>
+          <p>Es ist ein Rechner, kein Signalgeber. Die Schwellwerte sind gesetzt, nicht kalibriert — RSI 25/75 und F&amp;G 15/85 sind bewusst gewählt, OI ±10 und L/S 0.45/0.55 sind runde Zahlen ohne empirische Prüfung.</p>
+          <p>Alle Werte sind unter „Einstellungen" änderbar. Wenn du sie änderst, ändert sich der Bias — das allein zeigt, wie viel Gewicht auf Annahmen liegt.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="gb-pane hidden" id="gbPaneSettings">
           <div class="gb-cols">
             <div class="gb-set-block">
               <div class="gb-set-title">Kapital &amp; Risiko</div>
@@ -370,6 +453,130 @@
   </div>
 </div>
 
+
+<!-- ---------- FAQ / Hilfe ---------- -->
+<div class="faq-modal hidden" id="faqModal">
+  <div class="faq-box">
+    <div class="faq-head">
+      <span>TreydView — Hilfe</span>
+      <button class="faq-close" id="faqClose">✕</button>
+    </div>
+    <div class="faq-nav" id="faqNav">
+      <button class="faq-navbtn active" data-sec="start">Erste Schritte</button>
+      <button class="faq-navbtn" data-sec="chart">Chart</button>
+      <button class="faq-navbtn" data-sec="draw">Zeichnen</button>
+      <button class="faq-navbtn" data-sec="ind">Indikatoren</button>
+      <button class="faq-navbtn" data-sec="pat">Muster</button>
+      <button class="faq-navbtn" data-sec="pos">Position</button>
+      <button class="faq-navbtn" data-sec="ws">Watchlist &amp; Layouts</button>
+      <button class="faq-navbtn" data-sec="limits">Grenzen</button>
+    </div>
+    <div class="faq-body" id="faqBody">
+
+      <section class="faq-sec" data-sec="start">
+        <h3>Erste Schritte</h3>
+        <div class="faq-block"><h4>Asset und Zeitrahmen</h4>
+          <p>Oben links wählst du Asset und Intervall. Beim Wechsel wird die Preisachse automatisch neu skaliert und alle Zeichnungen werden entfernt — ein Volumenprofil auf BTC-Preisen wäre auf ETH schlicht falsch.</p></div>
+        <div class="faq-block"><h4>Navigieren</h4>
+          <p>Mausrad zoomt, Ziehen verschiebt — auch vertikal, direkt ab Start. Der Auto-Zoom-Knopf oben rechts holt die ganze Datenbreite zurück und skaliert neu. Auf dem Handy: zwei Finger zum Zoomen.</p></div>
+        <div class="faq-block"><h4>Historie</h4>
+          <p>Beim Start werden 5'000 Kerzen geladen. Scrollst du weiter nach links, kommen automatisch ältere dazu, bis Binance keine mehr liefert.</p></div>
+      </section>
+
+      <section class="faq-sec hidden" data-sec="chart">
+        <h3>Chart</h3>
+        <div class="faq-block"><h4>Darstellung</h4>
+          <p>Kerzen oder Linie, umschaltbar oben. Das Zahnrad daneben öffnet Farben, Hohlkerzen, Linienstärke und Flächenfüllung.</p></div>
+        <div class="faq-block"><h4>Vergleich</h4>
+          <p>Bis zu 15 Assets gleichzeitig. Der Chart schaltet dann auf relative Darstellung: alle Linien starten bei 0 % am linken Rand des sichtbaren Bereichs. Scrollst du, verschiebt sich der Nullpunkt mit — das ist Absicht, sonst wäre der Vergleich an ein willkürliches Datum gebunden.</p>
+          <p>Am rechten Rand steht Kürzel und aktueller Prozentwert. Das Auge blendet ein Asset aus, ohne es zu entfernen.</p></div>
+        <div class="faq-block"><h4>Hell und Dunkel</h4>
+          <p>Der Mond schaltet um, der Chart zieht mit. Die Einstellung bleibt erhalten.</p></div>
+      </section>
+
+      <section class="faq-sec hidden" data-sec="draw">
+        <h3>Zeichnen</h3>
+        <div class="faq-block"><h4>Werkzeugleiste</h4>
+          <p>Links, nach Kategorien: Linien, Zonen &amp; Profile, Fibonacci, Messwerkzeuge, Annotationen.</p>
+          <p><b>Magnet</b> rastet an Kerzenpunkten ein. <b>Pin</b> hält ein Werkzeug aktiv, sonst schaltet es nach einer Zeichnung ab. <b>Papierkorb</b> löscht alles.</p></div>
+        <div class="faq-block"><h4>Zeichnung bearbeiten</h4>
+          <p>Fährt der Zeiger über eine Zeichnung, wird aus dem Fadenkreuz ein Finger — dann ist sie anklickbar. Rechtsklick öffnet das Menü, Entf löscht die ausgewählte, Esc bricht ab.</p></div>
+        <div class="faq-block"><h4>Fibonacci</h4>
+          <p>Retracement braucht zwei Punkte (Anfang und Ende der Bewegung), Extension drei (Impuls A→B, dann Korrekturende C).</p>
+          <p>Rechtsklick öffnet die Einstellungen: jedes Level einzeln an- und abwählbar, Flächenfüllung mit Deckkraft, Beschriftung mit Level und/oder Preis, Verlängerung nach rechts.</p></div>
+        <div class="faq-block"><h4>Fixed Range Volume Profile</h4>
+          <p>Zeigt, bei welchen Preisen im markierten Bereich tatsächlich gehandelt wurde. Orange durchgezogen sind Value Area High und Low (70 % des Volumens), weiss gestrichelt der Point of Control — der meistgehandelte Preis.</p></div>
+        <div class="faq-block"><h4>Freihand und Notizen</h4>
+          <p>Freihand zeichnet bei gedrückter Maus. Das Textfeld fragt nach dem Setzen nach dem Text — brichst du ab, verschwindet es wieder.</p></div>
+      </section>
+
+      <section class="faq-sec hidden" data-sec="ind">
+        <h3>Indikatoren</h3>
+        <div class="faq-block"><h4>Auswahl</h4>
+          <p>14 Stück, über das Menü oben zuschaltbar. Das Zahnrad je Zeile öffnet Parameter und Farben. Jede Einstellung bleibt gespeichert.</p></div>
+        <div class="faq-block"><h4>Was wo liegt</h4>
+          <p><b>Im Hauptchart:</b> SMA, EMA, Noodle, BMSB, Bollinger, Gaussian Channel, Hull, RVWAP.</p>
+          <p><b>Eigene Fläche darunter:</b> RSI, Stoch RSI, Volumen, MACD, ATR.</p></div>
+        <div class="faq-block"><h4>Einordnung</h4>
+          <p>Alle Indikatoren zusammen beantworten eine Frage: Wo stehen wir? Sie beantworten nicht, wie gross deine Position sein darf. Dafür ist das Long/Short-Werkzeug da — und das ist die wichtigere Zahl.</p></div>
+      </section>
+
+      <section class="faq-sec hidden" data-sec="pat">
+        <h3>Muster-Erkennung</h3>
+        <div class="faq-block"><h4>Was sie tut</h4>
+          <p>Der Zickzack-Knopf oben scannt den sichtbaren Bereich. Erkannt werden zwölf Muster in zwei Familien: Pivot-Muster (Double/Triple Top und Bottom, Head &amp; Shoulders) und Trendlinien-Muster (Dreiecke, Keile, Rechteck).</p></div>
+        <div class="faq-block faq-warn"><h4>„Sym 88 %" ist keine Trefferwahrscheinlichkeit</h4>
+          <p>Die Zahl misst, wie symmetrisch und ausgeprägt die Form ist. Sie sagt <b>nichts</b> darüber, ob das Muster funktioniert. Ein Double Top mit Sym 95 % ist ein sauber geformtes Double Top — mehr nicht.</p></div>
+        <div class="faq-block"><h4>Strenge</h4>
+          <p>Gegen Zufallsrauschen mit echter Volatilitätsstruktur getestet — dort dürfte per Konstruktion nichts gefunden werden:</p>
+          <p><code>streng → 1.0 Fehlalarme / 500 Bars<br>mittel → 2.4<br>locker → 6.1</code></p>
+          <p>Deshalb ist „streng" Standard. Die anderen zeigen eine Warnung.</p></div>
+        <div class="faq-block"><h4>Nicht alle Muster sind gleich viel wert</h4>
+          <p>Im Rauschen tauchen manche häufiger auf als andere. Je seltener, desto aussagekräftiger:</p>
+          <p><b>Nie im Rauschen:</b> Triple Top, Triple Bottom<br>
+          <b>Selten:</b> Head &amp; Shoulders, aufsteigendes Dreieck<br>
+          <b>Häufiger:</b> Keile, Double Top</p>
+          <p>Ein Triple Top ist damit ein stärkeres Signal als ein Keil — unabhängig vom Sym-Wert.</p></div>
+        <div class="faq-block"><h4>Selbst nachmessen</h4>
+          <p>In der Browser-Konsole (F12):</p>
+          <p><code>PatternEngine.backtest(chart.getDataList())</code> → Trefferquote und Expectancy in R.</p>
+          <p><code>PatternEngine.backtestVsNull(chart.getDataList(), {}, 20)</code> → Vergleich gegen Zufall. Der p-Wert sagt, wie oft blosser Zufall mindestens so gut war. Über 0.05 heisst: kein nachweisbarer Vorteil.</p></div>
+      </section>
+
+      <section class="faq-sec hidden" data-sec="pos">
+        <h3>Position und Grid Bot</h3>
+        <div class="faq-block"><h4>Long/Short-Werkzeug</h4>
+          <p>Der Knopf rechts vom Roboter. Drei Klicks: Einstieg, Stop, Ziel. Daraus fallen CRV und Positionsgrösse. Die Grösse kommt aus Kapital und Risiko% — dieselben Felder wie im Grid Bot, eine Quelle für beide.</p></div>
+        <div class="faq-block"><h4>Grid Bot</h4>
+          <p>Der Roboter öffnet die Leiste unten. Sie hat ein eigenes FAQ im vierten Tab — dort steht, wie Bias, Hebel und Grössen zustande kommen.</p></div>
+        <div class="faq-block"><h4>Warum Stop zuerst</h4>
+          <p>Der Stop ist die einzige Zahl, die du wirklich kontrollierst. Er steht am Anfang, die Positionsgrösse folgt daraus. Umgekehrt — erst Grösse, dann Stop — bestimmt der Markt dein Risiko.</p></div>
+      </section>
+
+      <section class="faq-sec hidden" data-sec="ws">
+        <h3>Watchlist und Layouts</h3>
+        <div class="faq-block"><h4>Watchlisten</h4>
+          <p>Das Auge blendet die Liste rechts ein. Über das Dropdown wechselst du zwischen Listen, das Drei-Punkte-Menü legt neue an oder löscht. Preise laufen live über eine gemeinsame Verbindung.</p></div>
+        <div class="faq-block"><h4>Layouts</h4>
+          <p>Ein Layout speichert die ganze Arbeitsfläche: Asset, Intervall, Indikatoren, Vergleiche, Theme, Grid-Bot-Einstellungen.</p>
+          <p>Der Kreispfeil neben einem Layout überschreibt es mit der aktuellen Ansicht — der Name bleibt. Das Feld darüber legt ein neues an.</p></div>
+      </section>
+
+      <section class="faq-sec hidden" data-sec="limits">
+        <h3>Grenzen</h3>
+        <div class="faq-block"><h4>Was das Werkzeug nicht kann</h4>
+          <p>Es trifft keine Entscheidungen. Es zeigt Struktur und rechnet Zahlen — beides beruht auf Annahmen, die du unter „Einstellungen" ändern kannst. Änderst du sie, ändert sich das Ergebnis. Das allein zeigt, wie viel auf Setzungen beruht.</p></div>
+        <div class="faq-block"><h4>Muster sind keine Prognosen</h4>
+          <p>Dass ein Muster statistisch von Rauschen unterscheidbar ist, heisst nicht, dass es handelbar ist. Ob es einen Vorteil bringt, beantwortet nur der Backtest auf echten Daten — nicht die Form auf dem Bildschirm.</p></div>
+        <div class="faq-block"><h4>Zeichnungen und Daten</h4>
+          <p>Zeichnungen werden nicht gespeichert und verschwinden beim Neuladen und Asset-Wechsel. Kursdaten kommen live von Binance, Gold über einen eigenen Dienst.</p></div>
+        <div class="faq-block"><h4>Zoom</h4>
+          <p>Rausgezoomt bis rund 0.2 Pixel pro Kerze — damit sind alle 5'000 sichtbar. Darunter überzeichnen sich Kerzen vollständig; für längere Zeiträume ist ein höheres Intervall die ehrlichere Darstellung.</p></div>
+      </section>
+
+    </div>
+  </div>
+</div>
 
 <!-- Fibonacci-Einstellungen (Rechtsklick auf ein Fib-Werkzeug) -->
 <div class="fib-menu hidden" id="fibMenu">

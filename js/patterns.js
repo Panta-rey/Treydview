@@ -350,6 +350,344 @@
     return found;
   }
 
+  // ============================================================
+  // TRENDLINIEN-MUSTER
+  //
+  // Double/Triple/H&S vergleichen einzelne Pivots miteinander. Dreiecke,
+  // Keile und Rechtecke funktionieren anders: sie brauchen eine Gerade
+  // durch MEHRERE Hochs und eine durch mehrere Tiefs. Erst deren
+  // Verhältnis (konvergent, parallel, divergent) definiert das Muster.
+  // ============================================================
+
+  // Lineare Regression über {index, price}. Liefert Steigung, Achsen-
+  // abschnitt und R² als Mass für die Güte der Anpassung.
+  function fitLine(pts) {
+    const n = pts.length;
+    if (n < 2) return null;
+    let sx = 0, sy = 0, sxy = 0, sxx = 0;
+    for (const p of pts) { sx += p.index; sy += p.price; sxy += p.index * p.price; sxx += p.index * p.index; }
+    const den = n * sxx - sx * sx;
+    if (Math.abs(den) < 1e-10) return null;
+    const slope = (n * sxy - sx * sy) / den;
+    const intercept = (sy - slope * sx) / n;
+
+    // R²: wie gut liegen die Punkte auf der Geraden?
+    const mean = sy / n;
+    let ssTot = 0, ssRes = 0;
+    for (const p of pts) {
+      const pred = slope * p.index + intercept;
+      ssTot += (p.price - mean) ** 2;
+      ssRes += (p.price - pred) ** 2;
+    }
+    const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 1;
+    return { slope, intercept, r2, at: (i) => slope * i + intercept };
+  }
+
+  // Steigung in % pro Bar, normiert auf das Preisniveau — sonst wäre
+  // dieselbe Steigung bei BTC 60'000 und bei 6'000 nicht vergleichbar.
+  function slopePct(line, refPrice, span) {
+    if (!line || !refPrice) return 0;
+    return (line.slope * span) / refPrice * 100;
+  }
+
+  // Sucht in einem Pivot-Fenster nach zwei Trendlinien und klassifiziert
+  // sie. Gemeinsame Basis für Dreieck, Keil und Rechteck.
+  function analyzeChannel(window, opts) {
+    const highs = window.filter(p => p.type === "high");
+    const lows  = window.filter(p => p.type === "low");
+    if (highs.length < 2 || lows.length < 2) return null;
+
+    const upper = fitLine(highs);
+    const lower = fitLine(lows);
+    if (!upper || !lower) return null;
+    if (upper.r2 < opts.minR2 || lower.r2 < opts.minR2) return null;
+
+    const from = window[0].index, to = window[window.length - 1].index;
+    const span = to - from;
+    if (span < 1) return null;
+
+    // Die Linien dürfen sich im Musterbereich nicht kreuzen
+    const wStart = upper.at(from) - lower.at(from);
+    const wEnd   = upper.at(to)   - lower.at(to);
+    if (wStart <= 0 || wEnd <= 0) return null;
+
+    const refPrice = (upper.at(to) + lower.at(to)) / 2;
+    const convergence = (wStart - wEnd) / wStart;   // >0 = läuft zusammen
+
+    return {
+      upper, lower, from, to, span, refPrice,
+      widthStart: wStart, widthEnd: wEnd, convergence,
+      upperSlope: slopePct(upper, refPrice, span),
+      lowerSlope: slopePct(lower, refPrice, span),
+      highs, lows,
+    };
+  }
+
+  // Gemeinsamer Bestätigungs-Check: Bruch durch die obere oder untere
+  // Linie, jeweils fortgeschrieben über das Musterende hinaus.
+  function findBreakout(data, ch, maxSpan) {
+    const end = Math.min(data.length - 1, ch.to + maxSpan);
+    for (let k = ch.to + 1; k <= end; k++) {
+      if (data[k].close > ch.upper.at(k)) return { at: k, dir: "up" };
+      if (data[k].close < ch.lower.at(k)) return { at: k, dir: "down" };
+    }
+    return null;
+  }
+
+  // ---------- Dreiecke ----------
+  //
+  // Aufsteigend: obere Linie flach, untere steigt   -> Ausbruch meist oben
+  // Absteigend:  untere Linie flach, obere fällt    -> Ausbruch meist unten
+  // Symmetrisch: beide laufen aufeinander zu
+  function detectTriangles(pivots, data, opts) {
+    const found = [];
+    const { minPivots = 6, maxSpan = 200, minSpan = 20, flatTol = 1.5,
+            minConvergence = 0.5, minR2 = 0.9 } = opts;
+
+    for (let i = 0; i + minPivots <= pivots.length; i++) {
+      for (let len = minPivots; len <= Math.min(9, pivots.length - i); len++) {
+        const win = pivots.slice(i, i + len);
+        const span = win[len - 1].index - win[0].index;
+        if (span < minSpan || span > maxSpan) continue;
+
+        const ch = analyzeChannel(win, { minR2 });
+        if (!ch || ch.convergence < minConvergence) continue;
+
+        const upFlat = Math.abs(ch.upperSlope) < flatTol;
+        const loFlat = Math.abs(ch.lowerSlope) < flatTol;
+
+        let type, label, direction;
+        if (upFlat && ch.lowerSlope > flatTol) {
+          type = "ascTriangle"; label = "Aufsteigendes Dreieck"; direction = "bullish";
+        } else if (loFlat && ch.upperSlope < -flatTol) {
+          type = "descTriangle"; label = "Absteigendes Dreieck"; direction = "bearish";
+        } else if (ch.upperSlope < -flatTol && ch.lowerSlope > flatTol) {
+          type = "symTriangle"; label = "Symmetrisches Dreieck"; direction = "neutral";
+        } else continue;
+
+        const bo = findBreakout(data, ch, maxSpan);
+        // Ziel: Musterhöhe am Anfang, ab Ausbruch projiziert
+        const target = bo
+          ? (bo.dir === "up" ? ch.upper.at(bo.at) + ch.widthStart : ch.lower.at(bo.at) - ch.widthStart)
+          : null;
+
+        found.push({
+          type, label, direction,
+          points: win, channel: ch,
+          confirmedAt: bo ? bo.at : null,
+          breakoutDir: bo ? bo.dir : null,
+          neckline: bo ? (bo.dir === "up" ? ch.upper.at(bo.at) : ch.lower.at(bo.at)) : null,
+          target,
+          quality: Math.round(((ch.upper.r2 + ch.lower.r2) / 2 * 0.6 + Math.min(1, ch.convergence) * 0.4) * 100) / 100,
+        });
+      }
+    }
+    return found;
+  }
+
+  // ---------- Keile ----------
+  //
+  // Beide Linien zeigen in dieselbe Richtung und konvergieren.
+  // Steigender Keil = bärisch, fallender Keil = bullisch. Das ist der
+  // wichtigste Unterschied zum Dreieck: die Richtung des Keils sagt
+  // das Gegenteil des Ausbruchs voraus.
+  function detectWedges(pivots, data, opts) {
+    const found = [];
+    const { minPivots = 6, maxSpan = 200, minSpan = 20, minSlope = 2.0,
+            minConvergence = 0.5, minR2 = 0.9 } = opts;
+
+    for (let i = 0; i + minPivots <= pivots.length; i++) {
+      for (let len = minPivots; len <= Math.min(9, pivots.length - i); len++) {
+        const win = pivots.slice(i, i + len);
+        const span = win[len - 1].index - win[0].index;
+        if (span < minSpan || span > maxSpan) continue;
+
+        const ch = analyzeChannel(win, { minR2 });
+        if (!ch || ch.convergence < minConvergence) continue;
+
+        const bothUp   = ch.upperSlope >  minSlope && ch.lowerSlope >  minSlope;
+        const bothDown = ch.upperSlope < -minSlope && ch.lowerSlope < -minSlope;
+        if (!bothUp && !bothDown) continue;
+
+        const type = bothUp ? "risingWedge" : "fallingWedge";
+        const label = bothUp ? "Steigender Keil" : "Fallender Keil";
+        const direction = bothUp ? "bearish" : "bullish";
+
+        const bo = findBreakout(data, ch, maxSpan);
+        const target = bo
+          ? (bo.dir === "up" ? ch.upper.at(bo.at) + ch.widthStart : ch.lower.at(bo.at) - ch.widthStart)
+          : null;
+
+        found.push({
+          type, label, direction,
+          points: win, channel: ch,
+          confirmedAt: bo ? bo.at : null,
+          breakoutDir: bo ? bo.dir : null,
+          neckline: bo ? (bo.dir === "up" ? ch.upper.at(bo.at) : ch.lower.at(bo.at)) : null,
+          target,
+          quality: Math.round(((ch.upper.r2 + ch.lower.r2) / 2 * 0.6 + Math.min(1, ch.convergence) * 0.4) * 100) / 100,
+        });
+      }
+    }
+    return found;
+  }
+
+  // ---------- Rechteck / Range ----------
+  // Beide Linien flach und parallel. Für einen Zyklus-Trader die
+  // relevanteste Formation: hier laufen Grid-Bots.
+  function detectRectangles(pivots, data, opts) {
+    const found = [];
+    const { minPivots = 5, maxSpan = 250, minSpan = 25, flatTol = 1.2,
+            maxConvergence = 0.2, minR2 = 0.85, minHeightPct = 3 } = opts;
+
+    for (let i = 0; i + minPivots <= pivots.length; i++) {
+      for (let len = minPivots; len <= Math.min(10, pivots.length - i); len++) {
+        const win = pivots.slice(i, i + len);
+        const span = win[len - 1].index - win[0].index;
+        if (span < minSpan || span > maxSpan) continue;
+
+        const ch = analyzeChannel(win, { minR2 });
+        if (!ch) continue;
+        if (Math.abs(ch.upperSlope) > flatTol || Math.abs(ch.lowerSlope) > flatTol) continue;
+        if (Math.abs(ch.convergence) > maxConvergence) continue;
+
+        // Range muss hoch genug sein, sonst ist es nur Rauschen
+        const heightPct = ch.widthEnd / ch.refPrice * 100;
+        if (heightPct < minHeightPct) continue;
+
+        const bo = findBreakout(data, ch, maxSpan);
+        const target = bo
+          ? (bo.dir === "up" ? ch.upper.at(bo.at) + ch.widthEnd : ch.lower.at(bo.at) - ch.widthEnd)
+          : null;
+
+        found.push({
+          type: "rectangle", label: "Rechteck / Range", direction: "neutral",
+          points: win, channel: ch,
+          confirmedAt: bo ? bo.at : null,
+          breakoutDir: bo ? bo.dir : null,
+          neckline: bo ? (bo.dir === "up" ? ch.upper.at(bo.at) : ch.lower.at(bo.at)) : null,
+          target,
+          quality: Math.round(((ch.upper.r2 + ch.lower.r2) / 2 * 0.7 + (1 - Math.abs(ch.convergence) / maxConvergence) * 0.3) * 100) / 100,
+        });
+      }
+    }
+    return found;
+  }
+
+  // ---------- Flaggen und Wimpel ----------
+  //
+  // Neue Zutat gegenüber allen bisherigen Mustern: Diese brauchen einen
+  // KONTEXT vor der Formation — einen scharfen Impuls ("Fahnenmast").
+  // Ohne den ist eine Flagge nur ein kleiner Kanal, und kleine Kanäle
+  // gibt es in jedem Chart zuhauf. Der Mast ist das, was das Muster
+  // selten macht.
+  //
+  // Flagge: Konsolidierung in einem Kanal GEGEN die Impulsrichtung.
+  // Wimpel: Konsolidierung in einem kleinen symmetrischen Dreieck.
+  //
+  // Beide sind Fortsetzungsmuster — der Ausbruch geht in Impulsrichtung.
+  function detectFlags(pivots, data, opts = {}) {
+    const {
+      minPoleMove = 12,      // Mindest-Impuls in % — der Kern des Musters
+      maxPoleBars = 30,      // ein Impuls ist schnell, sonst ist es ein Trend
+      minFlagBars = 8,
+      maxFlagBars = 60,
+      maxFlagRetrace = 0.5,  // Konsolidierung darf max. halben Mast abgeben
+      minR2 = 0.85,
+      maxSpan = 200,
+    } = opts;
+    const found = [];
+
+    for (let i = 0; i + 4 <= pivots.length; i++) {
+      for (let len = 4; len <= Math.min(7, pivots.length - i); len++) {
+        const win = pivots.slice(i, i + len);
+        const flagFrom = win[0].index, flagTo = win[len - 1].index;
+        const flagBars = flagTo - flagFrom;
+        if (flagBars < minFlagBars || flagBars > maxFlagBars) continue;
+
+        // Fahnenmast: scharfe Bewegung unmittelbar vor der Konsolidierung
+        const poleStart = Math.max(0, flagFrom - maxPoleBars);
+        if (flagFrom - poleStart < 5) continue;
+        let lo = Infinity, hi = -Infinity, loIdx = 0, hiIdx = 0;
+        for (let k = poleStart; k <= flagFrom; k++) {
+          if (data[k].low  < lo) { lo = data[k].low;  loIdx = k; }
+          if (data[k].high > hi) { hi = data[k].high; hiIdx = k; }
+        }
+        const poleMove = (hi - lo) / lo * 100;
+        if (poleMove < minPoleMove) continue;
+
+        // Richtung: lief der Impuls hoch oder runter?
+        const poleUp = hiIdx > loIdx;
+        const poleTop = poleUp ? hi : lo;
+
+        const ch = analyzeChannel(win, { minR2 });
+        if (!ch) continue;
+
+        // Konsolidierung darf den Mast nicht auffressen
+        const retrace = poleUp
+          ? (poleTop - ch.lower.at(flagTo)) / (hi - lo)
+          : (ch.upper.at(flagTo) - poleTop) / (hi - lo);
+        if (retrace > maxFlagRetrace || retrace < 0) continue;
+
+        // Flagge oder Wimpel?
+        const parallel = Math.abs(ch.convergence) < 0.25;
+        const converging = ch.convergence >= 0.25;
+        if (!parallel && !converging) continue;
+
+        // Bei der Flagge muss der Kanal GEGEN den Impuls laufen —
+        // läuft er mit, ist es keine Konsolidierung, sondern Fortsetzung.
+        if (parallel) {
+          const drifts = (ch.upperSlope + ch.lowerSlope) / 2;
+          if (poleUp && drifts > 0.5) continue;
+          if (!poleUp && drifts < -0.5) continue;
+        }
+
+        const type  = parallel ? (poleUp ? "bullFlag" : "bearFlag")
+                               : (poleUp ? "bullPennant" : "bearPennant");
+        const label = parallel ? (poleUp ? "Bull-Flagge" : "Bear-Flagge")
+                               : (poleUp ? "Bull-Wimpel" : "Bear-Wimpel");
+        const direction = poleUp ? "bullish" : "bearish";
+
+        // Ausbruch nur in Impulsrichtung zählt — ein Bruch in die
+        // Gegenrichtung widerlegt das Muster.
+        const end = Math.min(data.length - 1, flagTo + maxSpan);
+        let confirmedAt = null, failed = false;
+        for (let k = flagTo + 1; k <= end; k++) {
+          if (poleUp) {
+            if (data[k].close > ch.upper.at(k)) { confirmedAt = k; break; }
+            if (data[k].close < ch.lower.at(k)) { failed = true; break; }
+          } else {
+            if (data[k].close < ch.lower.at(k)) { confirmedAt = k; break; }
+            if (data[k].close > ch.upper.at(k)) { failed = true; break; }
+          }
+        }
+        if (failed) continue;
+
+        // Klassisches Ziel: Mastlänge ab Ausbruch projiziert
+        const poleLen = hi - lo;
+        const target = confirmedAt != null
+          ? (poleUp ? data[confirmedAt].close + poleLen : data[confirmedAt].close - poleLen)
+          : null;
+
+        found.push({
+          type, label, direction,
+          points: win, channel: ch,
+          pole: { from: poleStart, to: flagFrom, movePct: poleMove, up: poleUp },
+          confirmedAt,
+          breakoutDir: poleUp ? "up" : "down",
+          neckline: confirmedAt != null ? (poleUp ? ch.upper.at(confirmedAt) : ch.lower.at(confirmedAt)) : null,
+          target,
+          quality: Math.round((
+            Math.min(1, poleMove / (minPoleMove * 2)) * 0.4 +
+            (ch.upper.r2 + ch.lower.r2) / 2 * 0.4 +
+            (1 - retrace / maxFlagRetrace) * 0.2
+          ) * 100) / 100,
+        });
+      }
+    }
+    return found;
+  }
+
   // Qualität 0..1: je symmetrischer die Tops und je tiefer das Tal,
   // desto sauberer das Muster.
   function scoreQuality(diffPct, depthPct, tolerance, minDepth) {
@@ -364,10 +702,28 @@
   function dedupe(patterns) {
     // Komplexere Muster zuerst: ein Head & Shoulders enthält oft ein
     // Double Top. Bei Überlappung soll das aussagekräftigere gewinnen.
-    const rank = { headShoulders: 3, invHeadShoulders: 3, tripleTop: 2, tripleBottom: 2, doubleTop: 1, doubleBottom: 1 };
+    // Je mehr Struktur ein Muster verlangt, desto aussagekräftiger ist es
+    // — bei Überlappung gewinnt das anspruchsvollere.
+    const rank = {
+      headShoulders: 4, invHeadShoulders: 4,
+      bullFlag: 4, bearFlag: 4, bullPennant: 4, bearPennant: 4,  // Impuls-Kontext = selten
+      risingWedge: 3, fallingWedge: 3,
+      ascTriangle: 3, descTriangle: 3, symTriangle: 3,
+      rectangle: 3,   // fasst Triple Top UND Triple Bottom zusammen -> aussagekräftiger
+      tripleTop: 2, tripleBottom: 2,
+      doubleTop: 1, doubleBottom: 1,
+    };
     const sorted = [...patterns].sort((a, b) => {
       const r = (rank[b.type] || 0) - (rank[a.type] || 0);
-      return r !== 0 ? r : b.quality - a.quality;
+      if (r !== 0) return r;
+      const q = b.quality - a.quality;
+      if (Math.abs(q) > 0.01) return q;
+      // Bei gleicher Güte gewinnt die längere Formation. Wichtig für
+      // Trendlinien-Muster: dieselbe Range wird in vielen Teilfenstern
+      // gefunden, gemeint ist aber immer die grösste zusammenhängende.
+      const la = a.points[a.points.length - 1].index - a.points[0].index;
+      const lb = b.points[b.points.length - 1].index - b.points[0].index;
+      return lb - la;
     });
     const kept = [];
     const span = (p) => [p.points[0].index, p.points[p.points.length - 1].index];
@@ -403,6 +759,29 @@
     maxSpan:     200,
     minSpan:     10,
     minQuality:  0.7,
+
+    // Trendlinien-Muster (Dreieck / Keil / Rechteck).
+    //
+    // Diese Werte stammen aus einem Nullmodell-Lauf (40× 500 Bars GARCH):
+    //   R2 .75 conv .35 piv 5 -> 2.52 Fehlalarme/500 Bars
+    //   R2 .90 conv .50 piv 5 -> 1.90
+    //   R2 .90 conv .50 piv 6 -> 1.00   <- Default
+    //   R2 .93 conv .55 piv 6 -> 0.80
+    //
+    // Bewusst NICHT der schärfste Wert: die Testmuster waren perfekt
+    // konstruiert, echte sind unsauberer. Auf die letzte Zehntelstelle
+    // zu optimieren hiesse, auf synthetische Daten zu overfitten.
+    minR2:          0.90,   // Güte der Geraden durch die Pivots
+    minConvergence: 0.50,   // wie stark müssen die Linien zusammenlaufen
+    minPivots:      6,      // Stützpunkte je Linie — der wirksamste Hebel
+    flatTol:        1.5,    // ab wann gilt eine Linie als "flach" (% über die Spanne)
+    minSlope:       2.0,    // Mindest-Steigung für einen Keil
+    minHeightPct:   3,      // Mindesthöhe einer Range
+
+    // Flaggen und Wimpel
+    minPoleMove:    12,     // Mindest-Impuls in % vor der Formation
+    maxPoleBars:    30,     // Impuls muss schnell sein
+    maxFlagRetrace: 0.5,    // Konsolidierung darf max. halben Mast abgeben
   };
 
   const PatternEngine = {
@@ -414,6 +793,11 @@
     detectTripleBottom,
     detectHeadShoulders,
     detectInverseHeadShoulders,
+    detectTriangles,
+    detectWedges,
+    detectRectangles,
+    detectFlags,
+    fitLine,
     dedupe,
     DEFAULTS,
 
@@ -438,6 +822,19 @@
       if (on("tripleBottom"))    found = found.concat(detectTripleBottom(pivots, slice, opts));
       if (on("headShoulders"))   found = found.concat(detectHeadShoulders(pivots, slice, opts));
       if (on("invHeadShoulders"))found = found.concat(detectInverseHeadShoulders(pivots, slice, opts));
+
+      // Trendlinien-Muster brauchen die Pivots als Fenster, nicht als Tripel
+      const wantTri  = on("ascTriangle") || on("descTriangle") || on("symTriangle");
+      const wantWdg  = on("risingWedge") || on("fallingWedge");
+      if (wantTri)          found = found.concat(detectTriangles(pivots, slice, opts));
+      if (wantWdg)          found = found.concat(detectWedges(pivots, slice, opts));
+      if (on("rectangle"))  found = found.concat(detectRectangles(pivots, slice, opts));
+
+      const wantFlag = on("bullFlag") || on("bearFlag") || on("bullPennant") || on("bearPennant");
+      if (wantFlag)         found = found.concat(detectFlags(pivots, slice, opts));
+
+      // Einzelne Typen nachträglich filtern (die Detektoren liefern Gruppen)
+      found = found.filter(p => opts[p.type] !== false);
 
       found = dedupe(found);
       if (opts.minQuality) found = found.filter(p => p.quality >= opts.minQuality);

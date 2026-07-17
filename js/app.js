@@ -201,6 +201,21 @@ function buildCreate(ind) {
     case "atr":      create.calcParams = [inp.period||14, inp.smoothing||"RMA"]; break;
     default:         if (ind.calcParams) create.calcParams = ind.calcParams;
   }
+
+  // Preis-Beschriftung an der Achse: KLineCharts färbt den Balken in der
+  // Linienfarbe und lässt den Text weiss. Money Noodles Hauptlinie ist
+  // #ffffff — weiss auf weiss. Deshalb die Textfarbe aus den tatsächlich
+  // sichtbaren Linienfarben dieses Indikators ableiten.
+  // sv.plots ist ein Objekt {key: {hex, color(rgba), visible, ...}},
+  // die reine Farbe steht unter .hex.
+  const visible = Object.values(sv.plots || {})
+    .filter(p => p && p.visible !== false && p.hex)
+    .map(p => p.hex);
+  if (visible.length) {
+    create.styles = {
+      lastValueMark: { text: { color: textForLines(visible) } },
+    };
+  }
   return create;
 }
 
@@ -1009,6 +1024,10 @@ function startFreehand() {
   const el = document.getElementById("mainChart");
   el.classList.add("cursor-crosshair");
 
+  // KLineCharts fängt mousedown selbst ab und verschiebt den Ausschnitt.
+  // Ohne das Abschalten zeichnet man nicht, sondern scrollt nur.
+  try { chart.setScrollEnabled(false); chart.setZoomEnabled(false); } catch (e) {}
+
   const toPoint = (ev) => {
     const rect = el.getBoundingClientRect();
     const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
@@ -1025,6 +1044,7 @@ function startFreehand() {
     if (!p) return;
     _fhPoints = [p];
     ev.preventDefault();
+    ev.stopPropagation();
   };
   const onMove = (ev) => {
     if (!_fhPoints) return;
@@ -1055,8 +1075,9 @@ function startFreehand() {
   };
 
   _fhHandlers = { onDown, onMove, onUp, el };
-  el.addEventListener("mousedown", onDown);
-  el.addEventListener("touchstart", onDown, { passive: false });
+  // capture: true -> unser Handler läuft VOR dem von KLineCharts
+  el.addEventListener("mousedown", onDown, { capture: true });
+  el.addEventListener("touchstart", onDown, { capture: true, passive: false });
   document.addEventListener("mousemove", onMove);
   document.addEventListener("touchmove", onMove, { passive: false });
   document.addEventListener("mouseup", onUp);
@@ -1066,10 +1087,13 @@ function startFreehand() {
 let _fhHandlers = null;
 
 function stopFreehand() {
+  // Immer zurückschalten, auch wenn keine Handler hängen — sonst bleibt
+  // der Chart im schlimmsten Fall unbedienbar.
+  try { chart.setScrollEnabled(true); chart.setZoomEnabled(true); } catch (e) {}
   if (!_fhHandlers) return;
   const { onDown, onMove, onUp, el } = _fhHandlers;
-  el.removeEventListener("mousedown", onDown);
-  el.removeEventListener("touchstart", onDown);
+  el.removeEventListener("mousedown", onDown, { capture: true });
+  el.removeEventListener("touchstart", onDown, { capture: true });
   document.removeEventListener("mousemove", onMove);
   document.removeEventListener("touchmove", onMove);
   document.removeEventListener("mouseup", onUp);
@@ -2299,29 +2323,53 @@ function scanPatterns() {
 
   state.patternOverlayIds = [];
   found.forEach(p => {
-    const points = p.points.map(pt => ({ timestamp: data[pt.index].timestamp, value: pt.price }));
-    // Vierter Punkt = Bestätigung (Neckline-Bruch)
-    if (p.confirmedAt != null && data[p.confirmedAt]) {
-      points.push({ timestamp: data[p.confirmedAt].timestamp, value: p.neckline });
-    }
     try {
-      const id = chart.createOverlay({
-        name: "pattern",
-        points,
-        lock: true,   // nicht versehentlich verschiebbar
-        onMouseEnter: () => { setChartCursor("pointer"); return false; },
-        onMouseLeave: () => { setChartCursor(""); return false; },
-        extendData: {
-          label: p.label,
-          direction: p.direction,
-          quality: p.quality,
-          neckline: p.neckline,
-          target: p.target,
-          pivotCount: p.points.length,
-          hasHead: p.type === "headShoulders" || p.type === "invHeadShoulders",
-          slantedNeckline: p.necklineSlope != null,
-        },
-      });
+      let id;
+      if (p.channel) {
+        // Trendlinien-Muster: vier Eckpunkte der beiden Geraden
+        const ch = p.channel;
+        const pts = [
+          { timestamp: data[ch.from].timestamp, value: ch.upper.at(ch.from) },
+          { timestamp: data[ch.to].timestamp,   value: ch.upper.at(ch.to) },
+          { timestamp: data[ch.from].timestamp, value: ch.lower.at(ch.from) },
+          { timestamp: data[ch.to].timestamp,   value: ch.lower.at(ch.to) },
+        ];
+        const hasBreak = p.confirmedAt != null && !!data[p.confirmedAt];
+        if (hasBreak) pts.push({ timestamp: data[p.confirmedAt].timestamp, value: p.neckline });
+        // Fahnenmast (nur Flaggen/Wimpel)
+        if (p.pole && data[p.pole.from] && data[p.pole.to]) {
+          const lo = Math.min(data[p.pole.from].low, data[p.pole.to].low);
+          const hi = Math.max(data[p.pole.from].high, data[p.pole.to].high);
+          pts.push({ timestamp: data[p.pole.from].timestamp, value: p.pole.up ? lo : hi });
+          pts.push({ timestamp: data[p.pole.to].timestamp,   value: p.pole.up ? hi : lo });
+        }
+        id = chart.createOverlay({
+          name: "channelPattern", points: pts, lock: true,
+          extendData: { label: p.label, direction: p.direction, quality: p.quality,
+                        target: p.target, breakoutDir: p.breakoutDir,
+                        hasBreak, pole: !!p.pole },
+          onMouseEnter: () => { setChartCursor("pointer"); return false; },
+          onMouseLeave: () => { setChartCursor(""); return false; },
+        });
+      } else {
+        // Pivot-Muster: Double / Triple / H&S
+        const points = p.points.map(pt => ({ timestamp: data[pt.index].timestamp, value: pt.price }));
+        if (p.confirmedAt != null && data[p.confirmedAt]) {
+          points.push({ timestamp: data[p.confirmedAt].timestamp, value: p.neckline });
+        }
+        id = chart.createOverlay({
+          name: "pattern", points, lock: true,
+          extendData: {
+            label: p.label, direction: p.direction, quality: p.quality,
+            neckline: p.neckline, target: p.target,
+            pivotCount: p.points.length,
+            hasHead: p.type === "headShoulders" || p.type === "invHeadShoulders",
+            slantedNeckline: p.necklineSlope != null,
+          },
+          onMouseEnter: () => { setChartCursor("pointer"); return false; },
+          onMouseLeave: () => { setChartCursor(""); return false; },
+        });
+      }
       if (id) state.patternOverlayIds.push(id);
     } catch (e) {}
   });
@@ -2432,27 +2480,7 @@ function saveNamedLayout(name) {
   state.currentLayout = name.trim();
   saveWorkspace();
   renderLayoutList();
-  renderLayoutCurrent();
   setStatus(`Layout "${name.trim()}" gespeichert`);
-}
-
-// Punkt 5: Änderungen ins geöffnete Layout zurückschreiben, ohne
-// einen neuen Namen tippen zu müssen.
-function updateCurrentLayout() {
-  if (!state.currentLayout) return;
-  const layouts = loadLayouts();
-  if (!layouts[state.currentLayout]) { state.currentLayout = null; renderLayoutCurrent(); return; }
-  layouts[state.currentLayout] = currentLayoutSnapshot();
-  saveLayouts(layouts);
-  setStatus(`Layout "${state.currentLayout}" aktualisiert`);
-}
-
-function renderLayoutCurrent() {
-  const box = document.getElementById("layoutCurrent");
-  if (!box) return;
-  const has = !!state.currentLayout && !!loadLayouts()[state.currentLayout];
-  box.classList.toggle("hidden", !has);
-  if (has) document.getElementById("layoutCurrentName").textContent = state.currentLayout;
 }
 
 function applyNamedLayout(name) {
@@ -2520,10 +2548,24 @@ function renderLayoutList() {
   names.forEach(name => {
     const item = document.createElement("div");
     item.className = "layout-item";
-    item.innerHTML = `<span class="li-name">${name}</span><button class="li-del" title="Löschen">✕</button>`;
+    const isOpen = state.currentLayout === name;
+    item.innerHTML = `<span class="li-name${isOpen ? " li-open" : ""}">${name}</span>`
+      + `<button class="li-upd" title="Mit aktueller Ansicht überschreiben">`
+      + `<svg viewBox="0 0 24 24" width="12" height="12"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`
+      + `<button class="li-del" title="Löschen">✕</button>`;
     item.addEventListener("click", (e) => {
-      if (e.target.closest(".li-del")) return;
+      if (e.target.closest(".li-del") || e.target.closest(".li-upd")) return;
       applyNamedLayout(name);
+    });
+    item.querySelector(".li-upd").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const l = loadLayouts();
+      l[name] = currentLayoutSnapshot();
+      saveLayouts(l);
+      state.currentLayout = name;
+      saveWorkspace();
+      renderLayoutList();
+      setStatus(`Layout "${name}" überschrieben`);
     });
     item.querySelector(".li-del").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -2589,7 +2631,6 @@ function resetChartStyle() {
 initDropdowns();
 syncLabels();
 gbRenderSettings();
-renderLayoutCurrent();
 gbInitResize();
 gbSetCollapsed(state.gbCollapsed);
 if (state.gbOpen) gbToggleBar(true);
@@ -2627,11 +2668,6 @@ document.getElementById("wlSearch").addEventListener("input", (e) => renderWlSea
 
 // ---------- Theme-Handler ----------
 document.getElementById("themeBtn").addEventListener("click", toggleTheme);
-
-document.getElementById("layoutUpdateBtn").addEventListener("click", (e) => {
-  e.stopPropagation();
-  updateCurrentLayout();
-});
 
 // ---------- Watchlisten-Handler ----------
 document.getElementById("wlSelect").addEventListener("change", (e) => switchWatchlist(e.target.value));
@@ -2680,7 +2716,7 @@ document.querySelectorAll(".gb-tab").forEach(tab => {
     e.stopPropagation();
     document.querySelectorAll(".gb-tab").forEach(t => t.classList.remove("active"));
     tab.classList.add("active");
-    const map = { strategy: "gbPaneStrategy", data: "gbPaneData", settings: "gbPaneSettings" };
+    const map = { strategy: "gbPaneStrategy", data: "gbPaneData", settings: "gbPaneSettings", faq: "gbPaneFaq" };
     Object.values(map).forEach(id => document.getElementById(id).classList.add("hidden"));
     document.getElementById(map[tab.dataset.tab]).classList.remove("hidden");
     // Pane öffnen falls kollabiert
@@ -2693,7 +2729,23 @@ document.querySelectorAll(".gb-tab").forEach(tab => {
 
 // ---------- FAQ-Handler ----------
 document.getElementById("faqBtn").addEventListener("click", () => {
-  window.open("https://github.com/Panta-rey/Treydview/wiki", "_blank");
+  document.getElementById("faqModal").classList.remove("hidden");
+});
+document.getElementById("faqClose").addEventListener("click", () => {
+  document.getElementById("faqModal").classList.add("hidden");
+});
+document.getElementById("faqModal").addEventListener("click", (e) => {
+  // Klick auf den Hintergrund schliesst
+  if (e.target.id === "faqModal") e.target.classList.add("hidden");
+});
+document.querySelectorAll(".faq-navbtn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".faq-navbtn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.querySelectorAll(".faq-sec").forEach(s =>
+      s.classList.toggle("hidden", s.dataset.sec !== btn.dataset.sec));
+    document.getElementById("faqBody").scrollTop = 0;
+  });
 });
 
 // ---------- Fibonacci-Menü-Handler ----------

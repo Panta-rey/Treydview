@@ -4,7 +4,7 @@
 const CONFIG = {
 
   // >>> HIER deine Cloudflare-Worker-Basis-URL eintragen <<<
-  WORKER_BASE_URL: "https://pantarey.rey-gafner.workers.dev",
+  WORKER_BASE_URL: "https://DEIN-WORKER.workers.dev",
   GOLD_ENDPOINT:   "/goldhistory",
   BINANCE_REST:    "https://api.binance.com/api/v3",
   BINANCE_WS:      "wss://stream.binance.com:9443/ws",
@@ -311,4 +311,33 @@ function hexToRgba(hex, opacityPct) {
   const b = parseInt(h.substring(4, 6), 16);
   const a = Math.max(0, Math.min(100, opacityPct)) / 100;
   return `rgba(${r},${g},${b},${a})`;
+}
+
+// Relative Luminanz nach WCAG. Grundlage für die Frage: dunkler oder
+// heller Text auf diesem Hintergrund?
+function luminance(hex) {
+  const h = String(hex).replace("#", "");
+  if (h.length !== 6) return 0.5;
+  const ch = (i) => {
+    const c = parseInt(h.substr(i, 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * ch(0) + 0.7152 * ch(2) + 0.0722 * ch(4);
+}
+
+// Lesbare Textfarbe für einen farbigen Hintergrund. KLineCharts färbt den
+// Balken der Preis-Beschriftung automatisch in der Linienfarbe und lässt
+// den Text per Default weiss — bei hellen Linien (Money Noodles Hauptlinie
+// ist #ffffff) ist das unlesbar.
+function textOn(bgHex) {
+  return luminance(bgHex) > 0.42 ? "#0d1117" : "#ffffff";
+}
+
+// Für einen Indikator mit mehreren Linien: KLineCharts erlaubt nur EINE
+// Textfarbe je Indikator, also die wählen, die für die Mehrheit der
+// sichtbaren Linien funktioniert.
+function textForLines(colors) {
+  if (!colors || !colors.length) return "#ffffff";
+  const light = colors.filter(c => luminance(c) > 0.42).length;
+  return light >= colors.length / 2 ? "#0d1117" : "#ffffff";
 }

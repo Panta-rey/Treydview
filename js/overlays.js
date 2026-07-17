@@ -796,4 +796,78 @@
     },
   });
 
+  // ---------- Trendlinien-Muster (Dreieck / Keil / Rechteck) ----------
+  // Anders als Double/Triple/H&S besteht dieses Muster nicht aus Pivots,
+  // sondern aus zwei Geraden. Die Punkte sind: [links-oben, rechts-oben,
+  // links-unten, rechts-unten] + optional Ausbruchspunkt.
+  klinecharts.registerOverlay({
+    name: "channelPattern",
+    totalStep: 1,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, overlay }) => {
+      if (coordinates.length < 4) return [];
+      const ed = overlay.extendData || {};
+      const bearish = ed.direction === "bearish";
+      const bullish = ed.direction === "bullish";
+      const col  = bearish ? "#d05e5e" : bullish ? "#3fb68b" : "#e8b64c";
+      const colA = (a) => hexA(col, a);
+
+      const [ul, ur, ll, lr] = coordinates;
+      const brk  = ed.hasBreak ? coordinates[4] : null;
+      const poleA = ed.pole ? coordinates[ed.hasBreak ? 5 : 4] : null;
+      const poleB = ed.pole ? coordinates[ed.hasBreak ? 6 : 5] : null;
+      const figs = [];
+
+      // Fahnenmast: der Impuls, der die Flagge überhaupt zur Flagge macht
+      if (poleA && poleB) {
+        figs.push({
+          type: "line",
+          attrs: { coordinates: [poleA, poleB] },
+          styles: { style: "solid", color: colA(0.55), size: 3 },
+        });
+      }
+
+      // Fläche zwischen den beiden Linien
+      figs.push({
+        type: "polygon",
+        attrs: { coordinates: [ul, ur, lr, ll] },
+        styles: { style: "fill", color: colA(0.07) },
+      });
+
+      // Die beiden Trendlinien
+      figs.push({ type: "line", attrs: { coordinates: [ul, ur] },
+                  styles: { style: "solid", color: colA(0.9), size: 2 } });
+      figs.push({ type: "line", attrs: { coordinates: [ll, lr] },
+                  styles: { style: "solid", color: colA(0.9), size: 2 } });
+
+      // Ausbruchspunkt
+      if (brk) {
+        figs.push({
+          type: "circle",
+          attrs: { x: brk.x, y: brk.y, r: 4 },
+          styles: { style: "stroke_fill", color: colA(1), borderColor: "#ffffff", borderSize: 1 },
+        });
+      }
+
+      // Label
+      const lc = labelColors();
+      const q = ed.quality != null ? `  Sym ${Math.round(ed.quality * 100)}%` : "";
+      figs.push({
+        type: "text",
+        attrs: { x: (ul.x + ur.x) / 2, y: Math.min(ul.y, ur.y) - 8, text: (ed.label || "Muster") + q,
+                 align: "center", baseline: "bottom" },
+        styles: {
+          style: "stroke_fill", color: colA(1), backgroundColor: lc.bg,
+          borderColor: colA(1), borderSize: 1, borderRadius: 3, size: 11,
+          family: "IBM Plex Mono, monospace",
+          paddingLeft: 6, paddingRight: 6, paddingTop: 3, paddingBottom: 3,
+        },
+      });
+
+      return figs;
+    },
+  });
+
 })();
