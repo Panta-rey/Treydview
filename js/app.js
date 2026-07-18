@@ -76,6 +76,12 @@ const state = {
 
   // Chart-Darstellung (Kerzen-/Linienfarben)
   chartStyle: _ws?.chartStyle || {
+    // Preis-Markierungen: aktueller Preis + lokale Hochs/Tiefs
+    lastLine:    true,
+    lastText:    true,
+    lastSize:    12,
+    hiLoShow:    true,
+    hiLoSize:    12,
     upColor:     "#3fb68b",
     downColor:   "#d05e5e",
     hollow:      false,
@@ -94,6 +100,12 @@ const state = {
 // state.watchlist zeigt immer auf die gerade aktive Liste. So funktioniert
 // der gesamte bestehende Code weiter, ohne dass jeder Zugriff angefasst
 // werden muss.
+// Bestehende Workspaces kennen die Preis-Markierungs-Felder nicht
+state.chartStyle = {
+  lastLine: true, lastText: true, lastSize: 12, hiLoShow: true, hiLoSize: 12,
+  ...state.chartStyle,
+};
+
 Object.defineProperty(state, "watchlist", {
   get() { return this.watchlists[this.activeWatchlist] || []; },
   set(v) { this.watchlists[this.activeWatchlist] = v; },
@@ -149,11 +161,31 @@ function baseStyles() {
               { offset: 1, color: "rgba(0,0,0,0)" },
             ],
       },
-      priceMark: { last: { upColor: cs.upColor, downColor: cs.downColor } },
+      priceMark: {
+        // Aktueller Preis. Die Linienfarbe folgt bei KLineCharts zwingend
+        // up/downColor — separat setzbar ist sie nicht.
+        last: {
+          show: cs.lastLine !== false || cs.lastText !== false,
+          upColor: cs.upColor, downColor: cs.downColor,
+          line: { show: cs.lastLine !== false, style: "dashed", dashedValue: [4, 4], size: 1 },
+          text: { show: cs.lastText !== false, size: cs.lastSize || 12,
+                  family: "'IBM Plex Mono',monospace", color: "#ffffff" },
+        },
+        // Lokale Hochs/Tiefs im sichtbaren Bereich
+        high: { show: cs.hiLoShow !== false, textSize: cs.hiLoSize || 12,
+                color: T.text, textFamily: "'IBM Plex Mono',monospace" },
+        low:  { show: cs.hiLoShow !== false, textSize: cs.hiLoSize || 12,
+                color: T.text, textFamily: "'IBM Plex Mono',monospace" },
+      },
       tooltip: { showRule: "none" },
     },
     indicator: {
-      lastValueMark: { show: true, text: { show: true, family: "'IBM Plex Mono',monospace" } },
+      // Der Balken übernimmt je Linie deren Farbe, der Text ist global.
+      // Dunkel gewinnt klar: gemessen an allen 54 Linienfarben scheitern
+      // mit weissem Text 49, mit dunklem nur 8 — und die 8 wurden in
+      // config.js aufgehellt. Money Noodles weisse Linie war der Auslöser.
+      lastValueMark: { show: true, text: { show: true, color: "#0d1117", size: 12,
+                                           family: "'IBM Plex Mono',monospace" } },
       tooltip: { showRule: "none" },
     },
     xAxis: {
@@ -205,20 +237,12 @@ function buildCreate(ind) {
     default:         if (ind.calcParams) create.calcParams = ind.calcParams;
   }
 
-  // Preis-Beschriftung an der Achse: KLineCharts färbt den Balken in der
-  // Linienfarbe und lässt den Text weiss. Money Noodles Hauptlinie ist
-  // #ffffff — weiss auf weiss. Deshalb die Textfarbe aus den tatsächlich
-  // sichtbaren Linienfarben dieses Indikators ableiten.
-  // sv.plots ist ein Objekt {key: {hex, color(rgba), visible, ...}},
-  // die reine Farbe steht unter .hex.
-  const visible = Object.values(sv.plots || {})
-    .filter(p => p && p.visible !== false && p.hex)
-    .map(p => p.hex);
-  if (visible.length) {
-    create.styles = {
-      lastValueMark: { text: { color: textForLines(visible) } },
-    };
-  }
+  // KEIN lastValueMark hier: KLineCharts liest die Textfarbe der Preis-
+  // Beschriftung ausschliesslich aus den GLOBALEN Styles und überschreibt
+  // nur backgroundColor mit der Linienfarbe. Ein styles.lastValueMark am
+  // Indikator wird stillschweigend ignoriert. Die Farbe steht in
+  // applyTheme(); die Linienfarben in config.js müssen dagegen genug
+  // Kontrast haben.
   return create;
 }
 
@@ -388,7 +412,14 @@ async function loadData() {
       ? await DataLayer.fetchBinanceKlines(state.symbol.id, state.timeframe.binanceInterval, CONFIG.CANDLE_LIMIT)
       : await DataLayer.fetchGoldHistory();
   } catch (err) {
-    setStatus(`Fehler: ${err.message}` + (state.symbol.type === "worker" ? " — WORKER_BASE_URL prüfen." : ""));
+    // HTTP 500 heisst: der Worker ist erreichbar und wirft einen Fehler.
+    // Die URL zu prüfen führt dann in die Irre — sie stimmt ja.
+    const isWorker = state.symbol.type === "worker";
+    const hint = !isWorker ? ""
+      : /HTTP 5\d\d/.test(err.message) ? " — der Worker antwortet, wirft aber einen Fehler. Cloudflare-Logs prüfen (nicht die URL)."
+      : /HTTP 4\d\d/.test(err.message) ? " — Worker-Route nicht gefunden. Pfad in WORKER_BASE_URL prüfen."
+      : " — Worker nicht erreichbar. WORKER_BASE_URL und CORS prüfen.";
+    setStatus(`Fehler: ${err.message}${hint}`);
     setLive("offline", "Fehler");
     return;
   }
@@ -2565,6 +2596,21 @@ window.__tvSizing = () => ({
 // Scannt den aktuell sichtbaren Bereich und zeichnet gefundene Muster
 // als Overlays. Die sind per Rechtsklick einzeln löschbar wie jede
 // andere Zeichnung.
+// Zeigt beim Überfahren, um welches Muster es geht. Nötig, weil das Label
+// bei kurzen oder überlappenden Mustern nicht lesbar ist — dann sieht man
+// nur Punkte und weiss nicht, wofür sie stehen.
+let _patHintPrev = null;
+function showPatternHint(p) {
+  if (_patHintPrev == null) _patHintPrev = document.getElementById("statusline").textContent;
+  const dir = p.direction === "bearish" ? "fallend" : p.direction === "bullish" ? "steigend" : "neutral";
+  const conf = p.confirmedAt != null ? "bestätigt" : "unbestätigt";
+  const tgt = p.target != null ? `  ·  Ziel ${p.target.toLocaleString("de-CH", { maximumFractionDigits: 0 })}` : "";
+  setStatus(`${p.label}  ·  ${dir}  ·  ${conf}  ·  Sym ${Math.round(p.quality * 100)}%${tgt}`);
+}
+function clearPatternHint() {
+  if (_patHintPrev != null) { setStatus(_patHintPrev); _patHintPrev = null; }
+}
+
 function clearPatterns() {
   (state.patternOverlayIds || []).forEach(id => {
     try { chart.removeOverlay(id); } catch (e) {}
@@ -2623,8 +2669,8 @@ function scanPatterns() {
           extendData: { label: p.label, direction: p.direction, quality: p.quality,
                         target: p.target, breakoutDir: p.breakoutDir,
                         hasBreak, pole: !!p.pole },
-          onMouseEnter: () => { setChartCursor("pointer"); return false; },
-          onMouseLeave: () => { setChartCursor(""); return false; },
+          onMouseEnter: () => { setChartCursor("pointer"); showPatternHint(p); return false; },
+          onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
         });
       } else {
         // Pivot-Muster: Double / Triple / H&S
@@ -2641,8 +2687,8 @@ function scanPatterns() {
             hasHead: p.type === "headShoulders" || p.type === "invHeadShoulders",
             slantedNeckline: p.necklineSlope != null,
           },
-          onMouseEnter: () => { setChartCursor("pointer"); return false; },
-          onMouseLeave: () => { setChartCursor(""); return false; },
+          onMouseEnter: () => { setChartCursor("pointer"); showPatternHint(p); return false; },
+          onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
         });
       }
       if (id) state.patternOverlayIds.push(id);
@@ -2764,7 +2810,7 @@ function saveNamedLayout(name) {
   setStatus(`Layout "${name.trim()}" gespeichert`);
 }
 
-function applyNamedLayout(name) {
+async function applyNamedLayout(name) {
   const layouts = loadLayouts();
   const l = layouts[name];
   if (!l) return;
@@ -2805,12 +2851,14 @@ function applyNamedLayout(name) {
   renderWatchlist();
   renderCompareActive();
   applyAllActive();
-  loadData();
   restartWatchlistStream();
 
-  // Zeichnungen wiederherstellen. Muss nach loadData laufen, sonst kennt
-  // der Chart die Zeitachse noch nicht und die Punkte landen daneben.
-  setTimeout(() => restoreDrawings(l.drawings), 220);
+  // WARTEN, bis die Kerzen wirklich da sind. Ein Timeout wäre geraten:
+  // dauert der Netzwerk-Request länger, werden die Zeichnungen auf der
+  // Zeitachse des vorherigen Assets platziert und springen anschliessend.
+  await loadData();
+
+  restoreDrawings(l.drawings);
 
   // Kerzen aus- bzw. wieder einblenden — je nachdem ob das Layout
   // Vergleiche enthält. Muss NACH loadData laufen.
@@ -2863,6 +2911,27 @@ function renderLayoutList() {
   });
 }
 
+// Rechtsklick nahe der aktuellen Preislinie öffnet die Stil-Einstellungen.
+// KLineCharts kennt kein Event für die Preis-Markierung — deshalb prüfen wir
+// selbst, ob der Klick in ihrer Höhe lag.
+document.getElementById("mainChart").addEventListener("contextmenu", (e) => {
+  if (state.activeTool) return;                 // beim Zeichnen nicht stören
+  const d = chart.getDataList();
+  if (!d || !d.length) return;
+  try {
+    const pt = chart.convertToPixel({ value: d[d.length - 1].close }, { paneId: "candle_pane" });
+    const rect = document.getElementById("mainChart").getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    if (pt && Math.abs(y - pt.y) <= 10) {
+      e.preventDefault();
+      e.stopPropagation();
+      openChartStyleMenu({ getBoundingClientRect: () => ({
+        left: Math.min(e.clientX, window.innerWidth - 250), bottom: e.clientY,
+      })});
+    }
+  } catch (err) {}
+});
+
 // ---------- Chart-Stil-Menü ----------
 function openChartStyleMenu(anchorEl) {
   const menu = document.getElementById("chartStyleMenu");
@@ -2881,6 +2950,11 @@ function openChartStyleMenu(anchorEl) {
   document.getElementById("csAreaFill").checked = cs.areaFill !== false;
   document.getElementById("csFillOpacity").value = cs.fillOpacity;
   document.getElementById("csFillOpacityVal").textContent = cs.fillOpacity + "%";
+  document.getElementById("csLastLine").checked = cs.lastLine !== false;
+  document.getElementById("csLastText").checked = cs.lastText !== false;
+  document.getElementById("csLastSize").value   = cs.lastSize || 12;
+  document.getElementById("csHiLo").checked     = cs.hiLoShow !== false;
+  document.getElementById("csHiLoSize").value   = cs.hiLoSize || 12;
 
   const r = anchorEl.getBoundingClientRect();
   menu.classList.remove("hidden");
@@ -2897,6 +2971,11 @@ function applyChartStyle() {
   cs.lineWidth   = parseInt(document.getElementById("csLineWidth").value, 10) || 2;
   cs.areaFill    = document.getElementById("csAreaFill").checked;
   cs.fillOpacity = parseInt(document.getElementById("csFillOpacity").value, 10);
+  cs.lastLine    = document.getElementById("csLastLine").checked;
+  cs.lastText    = document.getElementById("csLastText").checked;
+  cs.lastSize    = parseInt(document.getElementById("csLastSize").value, 10) || 12;
+  cs.hiLoShow    = document.getElementById("csHiLo").checked;
+  cs.hiLoSize    = parseInt(document.getElementById("csHiLoSize").value, 10) || 12;
   saveWorkspace();
   chart.setStyles(baseStyles());
   document.getElementById("chartStyleMenu").classList.add("hidden");
@@ -2906,6 +2985,7 @@ function resetChartStyle() {
   state.chartStyle = {
     upColor: "#3fb68b", downColor: "#d05e5e", hollow: false,
     lineColor: "#e8b64c", lineWidth: 2, areaFill: true, fillOpacity: 15,
+    lastLine: true, lastText: true, lastSize: 12, hiLoShow: true, hiLoSize: 12,
   };
   saveWorkspace();
   chart.setStyles(baseStyles());

@@ -95,17 +95,22 @@ const DataLayer = {
           })));
         } catch (_) {}
       };
-      ws.onclose = () => { if (!closed) setTimeout(connect, 5000); };
+      ws.onclose = () => { if (!closed) retryTimer = setTimeout(() => { if (!closed) connect(); }, 5000); };
       ws.onerror = () => ws.close();
     };
     connect();
-    return () => { closed = true; if (ws) ws.close(); };
+    return () => {
+      closed = true;
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+      if (ws) ws.close();
+    };
   },
 
   openBinanceStream(symbol, interval, onCandle, onStatus) {
     const stream = `${symbol.toLowerCase()}@kline_${interval}`;
     let ws = null;
     let closed = false;
+    let retryTimer = null;   // muss beim Schliessen abgebrochen werden
 
     const connect = () => {
       ws = new WebSocket(`${CONFIG.BINANCE_WS}/${stream}`);
@@ -127,13 +132,22 @@ const DataLayer = {
       };
       ws.onclose = () => {
         onStatus && onStatus("offline");
-        if (!closed) setTimeout(connect, 3000);
+        // closed hier UND im Callback prüfen: zwischen dem Setzen des Timers
+        // und seinem Feuern kann der Stream geschlossen worden sein (z.B.
+        // Asset-Wechsel). Sonst verbindet sich das alte Symbol 3 s später
+        // klammheimlich neu — beim Wechsel auf Gold tauchte so ein
+        // ethusdt-Stream wieder auf.
+        if (!closed) retryTimer = setTimeout(() => { if (!closed) connect(); }, 3000);
       };
       ws.onerror = () => ws.close();
     };
     connect();
 
-    return () => { closed = true; if (ws) ws.close(); };
+    return () => {
+      closed = true;
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+      if (ws) ws.close();
+    };
   },
 
   // ---------- Gold via Worker ----------

@@ -839,10 +839,30 @@
       found = dedupe(found);
       if (opts.minQuality) found = found.filter(p => p.quality >= opts.minQuality);
 
-      // Indizes auf den vollen Datensatz zurückrechnen
+      // Indizes auf den vollen Datensatz zurückrechnen.
+      //
+      // ACHTUNG: Nicht nur points/confirmedAt. Trendlinien-Muster tragen
+      // channel.from/to, Flaggen zusätzlich pole.from/to — und die
+      // Geraden-Funktionen at() rechnen mit SLICE-Indizes. Wird das
+      // vergessen, greift das Rendering mit einem Slice-Index in den
+      // vollen Datensatz und zeichnet das Muster ganz woanders hin.
       found.forEach(p => {
         p.points = p.points.map(pt => ({ ...pt, index: pt.index + from }));
         if (p.confirmedAt != null) p.confirmedAt += from;
+
+        if (p.channel) {
+          const ch = p.channel;
+          // at() auf globale Indizes umhängen, bevor from/to verschoben werden
+          const upAt = ch.upper.at, loAt = ch.lower.at;
+          ch.upper = { ...ch.upper, at: (i) => upAt(i - from) };
+          ch.lower = { ...ch.lower, at: (i) => loAt(i - from) };
+          ch.from += from;
+          ch.to   += from;
+        }
+        if (p.pole) {
+          p.pole.from += from;
+          p.pole.to   += from;
+        }
       });
       return found;
     },

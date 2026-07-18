@@ -86,6 +86,26 @@ Vier Bugs entstanden, weil Replaces nicht griffen und **nicht verifiziert wurden
 
 ---
 
+- **`chart.getOverlayStore()` EXISTIERT NICHT** in 9.8.12 — Versuche laufen still in den catch-Block. `chart.removeOverlay()` OHNE Argument löscht ALLE Overlays (so macht es `clearAllDrawings`).
+- **Cursor:** KLineCharts setzt `cursor:crosshair` als Inline-Style auf einen inneren Container. Style auf `#mainChart` verliert immer → CSS-Klasse mit `!important` (`#mainChart.cursor-pointer *{cursor:pointer!important}`).
+- **`setScrollEnabled(false)` / `setZoomEnabled(false)`** existieren — nötig für Freihand, sonst pannt der Chart statt zu zeichnen. Zusätzlich `capture:true` beim eigenen mousedown-Handler.
+- **`lastValueMark.text.color` (Preis-Beschriftung an der Y-Achse) ist NUR GLOBAL setzbar, NICHT pro Indikator.** Das war zwei Runden lang falsch verstanden. Der Renderer im Bundle:
+  ```
+  var defaultStyles = chartStore.getStyles().indicator;   // GLOBAL
+  var lastValueMarkTextStyles = defaultStyles.lastValueMark.text;
+  ...
+  styles: __assign({}, lastValueMarkTextStyles, { backgroundColor: figureStyles.color })
+  ```
+  Der Hintergrund kommt pro Linie aus der Linienfarbe, der Text aus EINER globalen Einstellung. `create.styles.lastValueMark` am Indikator wird **stillschweigend ignoriert**. Konsequenz:
+  - Textfarbe GLOBAL in `applyTheme()` gesetzt: `lastValueMark.text.color = "#0d1117"` (dunkel), `size: 12`.
+  - Damit umgekehrt: JEDE Linienfarbe in config.js muss gegen den dunklen Text Kontrast ≥ 4.5 haben. Gemessen über alle 54 Linienfarben: mit weissem Text scheitern 49, mit dunklem nur 8. Die 8 zu dunklen wurden aufgehellt (#7e57c2→#a98fdb, #787b86→#9aa3b0, #2962ff→#5a8dff, #b71c1c→#e05555).
+  - `textForLines()` / `textOn()` / `contrastRatio()` bleiben in config.js als Helfer (WCAG-Luminanz, Schwelle 0.42), werden aber für lastValueMark NICHT mehr gebraucht. Kommentar in config.js dokumentiert die Kontrast-Pflicht neu.
+  - **Vor dem Hinzufügen einer neuen Linienfarbe:** Kontrast gegen #0d1117 prüfen, sonst wird das Preis-Label unlesbar.
+- **Zoom-Grenze:** `BarSpaceLimitConstants = {MIN:1, MAX:50}`. Im minified Bundle als `var St=1,Ct=50` — **der Minifier benennt um**. Auf `St=0.2` gepatcht → 4697/5000 Kerzen sichtbar statt 1200. `setBarSpace(<MIN)` wird sonst kommentarlos ignoriert.
+- **Overlay-Daten auslesbar:** `chart.getOverlayById(id)` liefert `{name, points:[{timestamp,value}], extendData, styles}`. Punkte via `createOverlay` mit denselben `{timestamp,value}` exakt wiederherstellbar (gegen echte API verifiziert). Basis für Zeichnungs-Persistenz.
+- **`onRemoved`-Callback im Overlay feuert** bei `removeOverlay(id)` — nötig, um das eigene Zeichnungs-Register sauber zu halten (sonst verwaisen Einträge).
+- **Rechtsklick-Menüs:** KLineCharts-Klickkoordinaten (`event.pointerCoordinate` / `event.x`) sind **chart-relativ**. Menüs mit `position:fixed` brauchen den Container-Offset (`getBoundingClientRect().left/top`), sonst systematischer Versatz. Zentral in `menuPosition(event, menuW, menuH)` in app.js — von Overlay-Menü UND FRVP-Menü genutzt. Häufige Fehlerquelle war zusätzlich der Aufruf mit falscher Argumentzahl (`openOverlayMenu(e)` statt `openOverlayMenu(e.overlay, e)`).
+
 ## Custom-Canvas-Systeme (app.js, über #mainChart)
 
 Transparente Canvas-Overlays, redraw bei onVisibleRangeChange + Live + Resize.
@@ -134,7 +154,17 @@ Labels sind **Chips mit Hintergrund** — `drawText` in KLC unterstützt `styles
 
 **Achtung bei Light-Mode:** Hartcodierte Hintergründe wie `rgba(20,26,35,.85)` brechen im Hell-Modus (dunkler Text auf dunklem Grund). Betraf `.legend-toggle` und `.legend-body` — beide haben jetzt gar keinen Hintergrund mehr. Bei neuen Elementen immer CSS-Variablen nutzen, nie feste Farben.
 
-**Layouts:** Button oben rechts (4 Quadrate), localStorage `"tv_layouts"`. Name → speichern, Klick → laden, einzeln löschbar. Snapshot: symbol/tf/active/chartType/legend/watchlist/theme/chartStyle.
+**Layouts:** Button oben rechts (4 Quadrate), localStorage `"tv_layouts"`. Name → speichern, Klick → laden, einzeln löschbar. Snapshot: symbol/tf/active/chartType/legend/watchlist/theme/chartStyle/**drawings**.
+
+**Zeichnungs-Persistenz (eigenes Register, weil getOverlayStore fehlt):**
+- `SAVED_OVERLAYS`-Set listet die Overlay-Typen, die gespeichert werden (Zeichenwerkzeuge, Fib, FRVP, Freihand, positionTool). NICHT dabei: gridBands, pattern, channelPattern — die erzeugen ihre Module selbst neu.
+- `registerDrawing()` bei jedem fertigen Overlay (via `captureDrawing()` nach `onDrawEnd`, das die echten Punkte aus `getOverlayById` holt — 30 ms Delay, sonst sind die Punkte noch leer).
+- `unregisterDrawing()` im `onRemoved`-Handler jedes Overlays.
+- `state.drawings` wandert in Workspace UND Layout-Snapshot (ohne `id`, die vergibt KLineCharts neu).
+- `restoreDrawings()` baut sie neu auf.
+- **KRITISCHER TIMING-FIX:** `applyNamedLayout` ist jetzt `async` und macht `await loadData()` VOR `restoreDrawings()`. Vorher lief `loadData()` (async) ohne await, gefolgt von `setTimeout(220)`. Dauerte der Netzwerk-Fetch länger als 220 ms, wurden Zeichnungen auf der Zeitachse des VORHERIGEN Assets platziert und sprangen dann. Ursache für „Linien verlaufen beim Laden woanders".
+
+**Preis-Markierungen (chartStyle-Menü):** Sektion `csmPriceSection` gilt für Kerzen UND Linie. Steuert `priceMark.last` (Preislinie an/aus, Preis-Label an/aus + Grösse) und `priceMark.high/low` (lokale Hochs/Tiefs im Sichtbereich, an/aus + Grösse). State-Felder in chartStyle: `lastLine/lastText/lastSize/hiLoShow/hiLoSize`, mit Migrations-Fallback für bestehende Workspaces. **Rechtsklick nahe der aktuellen Preislinie** (±10px in Y, via `convertToPixel`) öffnet das chartStyle-Menü direkt. priceMark-Linienfarbe folgt zwingend `up/downColor` — nicht separat setzbar.
 
 **Chart-Stil-Menü:** Zahnrad pro Chart-Typ im typeDropdown. Kerzen: Up/Down-Farbe + Hohl-Option. Linie: Farbe/Stärke/Fläche/Deckkraft. `baseStyles()` nutzt `state.chartStyle`.
 
@@ -146,155 +176,188 @@ Labels sind **Chips mit Hintergrund** — `drawText` in KLC unterstützt `styles
 
 ---
 
-## Pattern-Erkennung (js/patterns.js) — Etappe 1
+## Pattern-Erkennung (js/patterns.js) — 16 Muster, drei Familien
 
-Eigenständiges Modul, exportiert `window.PatternEngine`. Auch in Node testbar (`module.exports`).
+### Familie 1: Pivot-Muster
+`findPivots()` (ZigZag) → `alternate()` (H-L-H-L) → Detektoren. Vergleichen einzelne Pivots.
+Double Top/Bottom (3 Pivots), Triple Top/Bottom (5), Head & Shoulders + Inverse (5, schräge Neckline durch P2/P4).
 
-**Schichten:**
-1. `findPivots(data, lookback)` — ZigZag-Pivots: Kerze, deren High/Low höher/tiefer als alle im Fenster beidseits ist
-2. `alternate(pivots)` — erzwingt H-L-H-L-Kette; bei zwei gleichartigen gewinnt der extremere (ohne das entsteht aus Rauschen Unsinn)
-3. `detectDoubleTop()` / `detectDoubleBottom()` — Muster auf der Pivot-Sequenz
-4. `PatternEngine.scan(data, range, opts)` — Einstiegspunkt, rechnet Indizes auf den vollen Datensatz zurück
+### Familie 2: Trendlinien-Muster
+Brauchen eine **Gerade durch mehrere Hochs** und eine durch mehrere Tiefs — erst deren Verhältnis definiert das Muster.
+- `fitLine()` — lineare Regression → Steigung/Achsenabschnitt/R²
+- `analyzeChannel()` — zwei Geraden + Konvergenz, prüft dass sie sich nicht kreuzen
+- `findBreakout()` — Bruch durch eine der fortgeschriebenen Linien
+- `detectTriangles` (asc/desc/sym), `detectWedges` (rising/falling), `detectRectangles`
 
-**Erkannte Muster (6):**
+### Familie 3: Fortsetzung mit Impuls-Kontext
+`detectFlags()` → bullFlag/bearFlag/bullPennant/bearPennant.
+**Neue Zutat:** brauchen einen **Fahnenmast** VOR der Formation (`minPoleMove` 12 %, `maxPoleBars` 30). Ohne Mast ist eine Flagge nur ein kleiner Kanal — davon gibt es überall welche. Der Mast macht das Muster selten.
+Flagge = paralleler Kanal GEGEN die Impulsrichtung. Wimpel = konvergierendes Dreieck. Nur Ausbruch in Impulsrichtung zählt; Bruch dagegen widerlegt (`failed` → verworfen).
 
-| Muster | Pivots | Logik |
-|---|---|---|
-| Double Top/Bottom | 3 | P1≈P3 (`tolerance`%), P2 tiefer/höher (`minDepth`%) |
-| Triple Top/Bottom | 5 | drei Extrema ≈ gleich hoch, zwei ähnliche Täler (Diff < `tolerance`×2.5) |
-| Head & Shoulders | 5 | Kopf überragt beide Schultern (`minHeadPct`%), Schultern ≈ gleich (`shoulderTol`%), **schräge Neckline** durch P2/P4 |
-| Inverse H&S | 5 | analog gespiegelt |
+### NULLMODELL-BEFUNDE (methodisch zentral)
+GARCH(1,1) mit echten Vola-Clustern, 40 Läufe à 500 Bars, DEFAULTS:
 
-Bestätigung = Close jenseits der Neckline nach dem letzten Pivot. Kursziel = Neckline ∓ Musterhöhe. Bei H&S wird die Neckline als Gerade interpoliert (`necklineSlope`), Steigung auf `shoulderTol`×2 begrenzt.
+| Stand | Fehlalarme/500 Bars |
+|---|---|
+| 6 Pivot-Muster | 0.60 |
+| + 6 Trendlinien (R2 .75, conv .35, piv 5) | **2.52** ← Vervierfachung |
+| + verschärft (R2 .90, conv .50, **piv 6**) | 1.00 |
+| + 4 Flaggen/Wimpel | 1.20 |
 
-`dedupe()` gewichtet nach Komplexität (H&S 3 > Triple 2 > Double 1), damit bei Überlappung das aussagekräftigere Muster gewinnt — ein H&S enthält strukturell oft ein Double Top.
+**Kernbefund:** Trendlinien-Muster sind strukturell weniger selektiv — durch fast jede Punktwolke lassen sich zwei konvergierende Geraden legen. **`minPivots: 6` war der wirksamste Hebel** (1.90 → 1.00), nicht R² oder Konvergenz.
 
-**NULLMODELL-BEFUND (wichtig!):** 30× 500 Bars Zufallsrauschen mit BTC-artiger Volatilität, alle 6 Muster:
+Defaults bewusst NICHT die schärfste Variante (R2 .93/conv .55 → 0.80): Testmuster sind perfekt konstruiert, echte unsauberer. Overfitting-Falle auf synthetische Daten.
 
-| Preset | Fehlalarme / 500 Bars | max. Qualität im Rauschen |
-|---|---|---|
-| locker (lookback 5, tol 2.0, depth 3.0) | 6.1 | 0.98 |
-| mittel (lookback 7, tol 1.5, depth 5.0) | 2.4 | 0.99 |
-| **streng = DEFAULTS (lookback 9, tol 1.0, depth 7.0, minQ 0.7)** | **0.6** | 0.88 |
+Rangfolge nach Seltenheit im Rauschen (= Aussagekraft):
+- **Nie:** Triple Top, Triple Bottom
+- **Selten:** H&S (0.07), asc. Dreieck (0.03), Flaggen (0.07)
+- **Häufiger:** Bull-Wimpel (0.25), Keile (0.13–0.20), Double Top (0.15)
 
-Aufschlüsselung bei "streng": Double Top 0.33/Lauf, Inverse H&S 0.17, Double Bottom 0.07 — **Triple Top/Bottom und H&S kommen gar nicht vor.** Die Triple-Muster sind also deutlich selektiver als Double-Muster; ein Triple Top ist ein stärkeres Signal als ein Double Top.
+### dedupe()
+`rank`: H&S/Flaggen 4 > Wedge/Triangle 3, rectangle 3 > Triple 2 > Double 1.
+Rectangle auf 3, weil es Triple Top UND Triple Bottom zusammenfasst.
+**Bei Gleichstand gewinnt das LÄNGERE Muster.** Kritisch für Trendlinien: dieselbe Range wird in vielen Teilfenstern gefunden, gemeint ist die grösste zusammenhängende. Fiel bei Pivot-Mustern nie auf (deren Länge ist fix).
 
-Bei lockeren Einstellungen findet die Engine im reinen Rauschen Muster mit Qualität ~1.00. Deshalb sind die strengen Werte Default; die Presets "mittel"/"locker" zeigen eine Warnung in der UI.
+### KRITISCHER FIX: Slice→Vollindex-Rückmapping in scan()
+`scan()` arbeitet auf einem `data.slice(from, to)` (nur Sichtbereich). Am Ende müssen ALLE Indizes auf den vollen Datensatz zurückgerechnet werden — nicht nur `points`/`confirmedAt`:
+- `p.channel.from/to` und `p.pole.from/to` MÜSSEN `+= from`.
+- Die Geraden-Funktionen `channel.upper.at()` / `channel.lower.at()` rechnen mit SLICE-Indizes → umhängen auf `(i) => origAt(i - from)` BEVOR from/to verschoben werden.
+- Wird das vergessen, greift das Rendering mit einem Slice-Index in den vollen Datensatz → Dreiecke/Keile/Flaggen werden ganz links ausserhalb des Sichtfelds gezeichnet. War die Ursache für „Muster erscheinen im nicht sichtbaren Bereich". Verifiziert: bei Scan über [300,440] ist channel.from=347 statt 47.
 
-**Rendering:** `scanPatterns()` in app.js scannt den sichtbaren Bereich, erzeugt pro Muster ein `pattern`-Overlay (overlays.js) mit `lock:true`. IDs in `state.patternOverlayIds`. Per Rechtsklick einzeln löschbar. Das Overlay verarbeitet 3- und 5-Punkt-Muster; der letzte Punkt ist der Bestätigungspunkt, `extendData.pivotCount` unterscheidet. `slantedNeckline:true` → Neckline wird durch P2/P4 interpoliert (H&S), sonst waagrecht. `hasHead:true` → Kopf grösser markiert.
+### Rendering
+`scanPatterns()` (app.js) schneidet auf `getVisibleRange()` und unterscheidet:
+- `p.channel` → `channelPattern`-Overlay
+- sonst → `pattern`-Overlay (Pivot-Kette)
 
-**UI:** Dropdown in der Topbar (Zickzack-Icon): Strenge-Preset, sechs Muster einzeln an/abwählbar, Scannen- und Löschen-Button.
+Punkt-Reihenfolge channelPattern: `[ul, ur, ll, lr, (brk wenn hasBreak), (poleA, poleB wenn pole)]` — `extendData.hasBreak`/`.pole` steuern die Indizes.
 
-**Messfunktionen (Council-Ergebnis, für Ausführung mit echten Daten):**
-- `PatternEngine.backtest(data, opts)` → `{n, hitRate, avgR, totalR, byType, rows}`. Einstieg am Bestätigungs-Bar, Stop hinter dem letzten Extrempunkt, Ziel = Neckline ∓ Höhe, Ergebnis in R. Konservativ: trifft eine Kerze Stop und Ziel, zählt der Stop. `avgR` ist die Expectancy.
-- `PatternEngine.backtestVsNull(data, opts, runs, blockLen)` → block-permutierte Vergleichsläufe (behalten Vola-Clustering, zerstören Musterstruktur). `pValue` = Anteil der Zufallsläufe, die mindestens so gut waren. < 0.05 heisst: echte Daten deutlich besser als Zufall.
-- `PatternEngine.thresholdFrequency(series, threshold, dir)` → `{pct, hits, quantiles}`. Misst, wie oft eine Schwelle feuert, ohne zu optimieren.
+**Labels ins Sichtfeld geklemmt:** beide Overlays bekommen `bounding.width` und klemmen die Label-X-Position auf `[60, W-60]`. Sonst liegt der Label-Anker (Mitte zwischen erstem/letztem Pivot) beim Rausscrollen ausserhalb → nur Punkte ohne Bezeichnung sichtbar.
 
-**In der Browser-Konsole:**
-```js
-PatternEngine.backtest(chart.getDataList())
-PatternEngine.backtestVsNull(chart.getDataList(), {}, 20)
-```
+**Muster-Name beim Hover:** `showPatternHint(p)` / `clearPatternHint()` in den `onMouseEnter/Leave`-Handlern beider Overlays schreiben Label + Richtung + bestätigt/unbestätigt + Sym% in die Statuszeile (merkt sich vorherigen Text). Nötig, weil bei kurzen/überlappenden Mustern das gezeichnete Label nicht lesbar ist.
 
-**GARCH-Nullmodell-Nachtrag:** Der Einwand, konstante Volatilität sei zu freundlich, wurde geprüft. GARCH(1,1) mit Vola-Clustering (ACF|r| = 0.198) und Fat Tails (Kurtosis 3.81) produziert **nicht mehr** Fehlalarme (0.38 statt 0.48 bei "streng"). Grund: Die Erkennung arbeitet mit relativen Preisdifferenzen; Vola-Cluster ändern die Häufigkeit von "zwei Tops auf ähnlicher Höhe" nicht systematisch. Die Defaults sind robuster als vermutet.
+**Qualität heisst "Sym X%"** — misst Symmetrie, NICHT Trefferwahrscheinlichkeit.
 
-**Nächste Etappen (nicht gebaut):**
-- Wedges, Triangle, Rectangle, Flags, Pennants — brauchen lineare Regression auf Pivot-Hochs/-Tiefs + Konvergenz-/Divergenz-Prüfung
-- Cup & Handle — Rundungserkennung, keine saubere mathematische Definition, nur Heuristik
-- **Vor jeder Erweiterung: Nullmodell-Test wiederholen.** Ein Muster, das im Rauschen genauso häufig auftritt wie auf echten Daten, ist wertlos.
+### Backtest (User führt in der Konsole aus)
+- `PatternEngine.backtest(data, opts)` → `{n, hitRate, avgR, totalR, byType, rows}`
+- `PatternEngine.backtestVsNull(data, opts, runs, blockLen)` → block-permutiert, p<0.05 = echt besser
+- `PatternEngine.thresholdFrequency(series, threshold, dir)` → `{pct, hits, quantiles}`
 
-
----
 
 ## Grid Bot (js/derivatives.js + js/gridbot.js)
 
-Portierung von `Cockpit.xlsx`. Das Excel bleibt die lesbare Referenz; jede Funktion in gridbot.js nennt ihre Zellbezüge im Kommentar.
+**Zwei Excel-Quellen, zwei Modelle — WICHTIG:**
+- `Cockpit.xlsx` = einfacher Bias (Trend + Derivate), war die erste Portierung.
+- `BTCUSDT_Dashboard_Claude.xlsx` = komplexes **Marks-Zyklus-Dashboard**, das die FAQ/Parameter/Q&A-Dokumente beschreiben. Dieses Modell ist jetzt massgeblich.
+
+Der Grid Bot beantwortet NICHT „Long oder Short", sondern **„Wo im Zyklus, und ist ein Grid überhaupt das richtige Werkzeug?"** — Zyklus-Kalibrierung nach Howard Marks. Die alte Bias-Logik läuft im Hintergrund weiter (Konfluenz, Extremfilter, Squeeze), aber die eigentliche Empfehlung steht darüber.
+
+### Zwei zentrale Metriken (in app.js gbMarketData berechnet, gegen Dashboard-Excel verifiziert)
+- **Mayer Multiple = Preis / SMA200** (exakt auf 15 Stellen). Die Zyklus-Position: <0.9 = Akkumulation (traf jeden Boden seit 2015), >2.0 = teuer.
+- **ER = Kaufman Efficiency Ratio, Periode 20** = |Netto-Bewegung| / Summe der Einzelschritte (exakt 0.457176 gegen Excel). Sagt, ob ein Grid etwas zu ernten hat: ≥0.5 = Trend (Grid riskant), <0.3 = Range (ideal).
+
+### CYCLE-Schwellen (FEST, Object.freeze) — NICHT editierbar
+Aus der Parameter-Referenz: *„Schwellen nie direkt ändern (fest in Formel). Aggressivität über Profil steuern."* Werte: mayerCheap 0.9, mayerExpensive 2.0, mayerBullish 1.0, fngFear 35, fngGreed 80, erTrend 0.5, erRange 0.3, minNetPerGrid 0.15.
+
+**Warum fest:** eine Schwelle, die zehn Jahre gehalten hat, ist kein Regler. Wer sie hochdreht, weil „Defensiv" erscheint, senkt nicht das Risiko, nur die Warnung.
+
+### PROFILES — ein Schalter statt drei Zahlen (Excel I16)
+Konservativ {lev 1, risk 1%, gap 8%}, Moderat {2, 2%, 5%}, Risikofreudig {3, 3%, 3%}. Setzt Hebel-Cap, Risiko-Budget und Gap-Puffer gemeinsam. Konservativ = kleinste Positionen.
+
+### recommendation(mayer, fng, er, suit) — 5 Stufen (Excel B39, alle wortgleich verifiziert)
+1. ⛔ **Defensiv** (Mayer>2 | FNG>80): kein neuer Bot, Leitplanke zwingt 1×.
+2. 🟢 **Akkumulation** (Mayer<0.9 & FNG<35): bei ER≥0.5 → Spot/DCA (Grid wartet auf Range), sonst → Makro-Grid.
+3. ⚡ **Kurzfrist** (saubere Range): neutral pendeln.
+4. 🔵 **Long-Bias** (Mayer<1): gerichtetes Grid.
+5. 🟡 **Beobachten**: kein Extrem, keine Range → warten.
+
+### Hebel-Leitplanke (Excel B27, äusserer MIN-Wrapper) — GESPERRT
+Bei Mayer>2 ODER FNG>80 wird der Hebel ZWINGEND auf 1× gedeckelt, unabhängig von Profil/Bot-Cap. `guardActive` im computeTier. In Euphorien darf kein Profil vollen Hebel rechtfertigen. Verifiziert: alle Tiers → 1×.
+
+### computeTier — die Reihenfolge IST die Logik
+`Range aus ATR → Hebel = MIN(bot-cap, profil-cap, floor(1/(atrFrac×f + maintMargin/100 + slippage/100))) → Leitplanke → Stop → Size = MIN(stakeCap, (capital×risk)/(lev×(stopDist + gap/100)))`. Hebel folgt aus der Grid-Breite, Grösse folgt aus dem Risiko. Beides keine freie Wahl.
+
+Tiers: short (atr14, 1.5, 0.8%, cap3, 7d), swing (atr90, 3.5, 1.4%, cap3, 30d), macro (atr200, 5.5, 2.0%, cap10, 180d) — `holdDays` für die Funding-Rechnung.
+
+### viability(tier, lev, dir, holdDays, funding) — Excel B45–B48
+Grid-Ertrag − Funding-Kosten. Ertrag = Füllungen/Monat × Tage/30 × (Ziel-Profit − Gebühr) × Hebel × Kalibrierung. Funding = sign × Hebel × Ø-Rate × Tage × 3. Neutral zahlt netto 0. Wird die Netto-Erwartung rot, frisst Funding den Ertrag.
+
+### KRITISCHER BUG-FIX: riskPct-Default
+`const riskPct = opts.riskPct ?? 1` überschrieb das Profil-Risikobudget mit 1 — alle drei Profile rechneten dieselbe Grösse, Konservativ hatte PARADOX grössere Positionen als Risikofreudig. Fix: `?? null`, dann greift im computeTier `riskPct != null ? riskPct : prof.riskBudget`. Verifiziert: 263 → 283 → 330 USDT (Konservativ→Moderat→Risikofreudig).
 
 ### Datenschicht (derivatives.js)
-
-Vier öffentliche Endpoints, alle mit `Access-Control-Allow-Origin: *` — kein Worker nötig:
-
-| Feld | Endpoint |
-|---|---|
-| Funding 8h/täglich/monatlich/Ø30/Ø90 | `fapi.binance.com/fapi/v1/fundingRate?limit=270` |
-| OI + Δ30T/Δ90T | `fapi.binance.com/futures/data/openInterestHist?period=1d&limit=90` |
-| L/S Account Ratio | `fapi.binance.com/futures/data/globalLongShortAccountRatio` |
-| Fear & Greed + Ø30/Ø90 | `api.alternative.me/fng/?limit=90` |
-
-`fetchAll()` nutzt `Promise.allSettled` — einzelne Ausfälle reissen den Rest nicht mit, fehlende Blöcke kommen als `null` zurück und das Panel zeigt "–". Cache 5 Minuten (diese Werte ändern sich stündlich bis täglich; ohne Cache vier Requests pro Redraw).
-
-**Binance zahlt Funding alle 8h** → täglich = 8h-Rate × 3, monatlich × 90. Genau wie im Cockpit.
-
-### Logik (gridbot.js)
-
-```
-trendScore     = (Preis>SMA50 ? +1 : -1) + (Preis>SMA200 ? +1 : -1)      [E4]
-oiInterpretation(oiΔ30, L/S)                                             [E22]
-derivativeScore = Funding-Term + OI/LS-Term                              [E5]
-extremeFilter(RSI, F&G) -> "Überverkauft" | "Überkauft" | "—"            [E6]
-computeBias -> raw (E7) und final (B5, Filter sticht den Bias)
-computeTier -> LP/UP/Hebel/Grids/SL/TP/Size/Liq-Check                    [B37-B46]
-```
-
-**Der Extremfilter ist der Kern:** Er überschreibt den Bias auf Neutral, egal was die Konfluenz sagt. Kein Short in die Kapitulation, kein Long in die Euphorie.
-
-**Reihenfolge in computeTier ist die eigentliche Logik:** Range aus ATR → Hebel aus Range (`1/Breite`, gedeckelt) → Stop aus ATR → Size aus Risiko und Stop-Distanz. Der Hebel ist eine Folge der Grid-Breite, nicht eine freie Wahl. Die Grösse folgt aus dem Risiko, nicht umgekehrt.
-
-**VERIFIZIERT:** Gegen die Werte aus Cockpit.xlsx getestet — Headline, Bias, Trend-Score (−2), Derivat-Score (+1), Extremfilter (Überverkauft) und alle drei Tiers stimmen exakt (Makro: LP 45'213, UP 76'557, 2×, 25 Grids, SL 44'155, Size 291).
-
-### Schwellwerte
-
-`DEFAULT_THRESHOLDS` in gridbot.js, im Panel unter "Einstellungen" editierbar, persistent in `state.gbThresholds`.
-
-| Schwelle | Wert | Einschätzung |
-|---|---|---|
-| RSI 25/75 | enger als Standard 30/70 | bewusst gesetzt |
-| F&G 15/85 | enger als üblich 20/80 | bewusst gesetzt |
-| Funding −0.01/+0.05 | asymmetrisch, Faktor 5 | verteidigbar: BTC-Funding ist historisch überwiegend positiv, negatives Funding ist das seltenere und aussagekräftigere Signal |
-| OI ±10 | runde Zahl | Kandidat für Häufigkeitsprüfung |
-| L/S 0.45/0.55 | symmetrisch um 0.5 | Kandidat für Häufigkeitsprüfung |
-
-**Nicht optimieren, messen.** `PatternEngine.thresholdFrequency(series, threshold, dir)` gibt Häufigkeit + Quantile. Wenn RSI≤25 an 3% der Bars gilt, ist es ein echtes Extrem; bei 18% ist es Normalbetrieb und der Filter blockiert grundlos. Optimieren auf Rendite wäre die Metronom-Falle (`compression=0.70`).
+Vier CORS-freie Endpoints: Funding (`fapi/v1/fundingRate`), OI (`openInterestHist?period=1d`), L/S (`globalLongShortAccountRatio`), F&G (`api.alternative.me/fng`). `Promise.allSettled`, Cache 5 min. Binance zahlt Funding alle 8h → täglich ×3. **NICHT im Browser verifiziert** (Sandbox kommt nicht an Binance).
 
 ### Marktdaten
+`gbMarketData()` rechnet Preis, SMA50/200, RSI14, ATR14/90/200, **Mayer, ER** selbst aus `chart.getDataList()` — nicht aus Indikator-Instanzen (die existieren nur wenn aktiviert). Braucht 200+ Kerzen.
 
-`gbMarketData()` in app.js rechnet Preis, SMA50/200, RSI14 (Wilder) und ATR14/90/200 selbst aus `chart.getDataList()` — **nicht** aus den Indikator-Instanzen. Grund: die existieren nur, wenn der User sie aktiviert hat. Der Grid Bot muss auch ohne aktiven ATR200 funktionieren. Braucht 200+ Kerzen.
-
-### UI
-
-Roboter-Icon in der Topbar. Zweistufig: kollabierte Statuszeile (Bias-Pill, Regime, RSI, Funding, F&G) ↔ aufgeklappt mit drei Tabs (Strategie / Daten / Einstellungen). Zustand persistent.
-
-**Layout:** Die Leiste ist ein **Flex-Kind in `.chart-col`**, kein `position:absolute`. Dadurch grenzt sie links an die Drawbar und rechts an die Watchlist an, statt darüberzuliegen; der Chart schrumpft entsprechend. Höhe per Handle (`#gbResize`, ns-resize) verstellbar, persistent in `state.gbHeight`. Der Handle ist nur sichtbar, wenn die Leiste offen und nicht kollabiert ist.
-
-**Tabellen-Layout:** `.gb-table` hat `width:auto`, **nicht** `100%`. Bei voller Breite zieht der Browser die Spalten auseinander und Bezeichnung und Wert verlieren den Zusammenhang. Zusätzlich: Zeilentrenner (`rgba(128,140,155,.09)`), Hover-Highlight, und Gruppenzeilen (Konfiguration / Grid / Ausstieg / Kapital) statt einer langen Liste. Alle drei Tabs nutzen 12px — vorher waren Daten und Einstellungen auf 11px.
-
-**Die Grid-Bänder im Chart überleben das Schliessen der Leiste** — bewusst: sonst müsste man sie offen halten, nur um die Visualisierung zu sehen, und das hebelt den Zweck des Wegklappens aus.
-
-Overlay `gridBands` (overlays.js): Range-Fläche, Grid-Linien (max. 60 gezeichnet, darüber nur noch Grau), LP/UP-Chips, gestrichelte SL-Linie, Tier-Label.
+### UI (radikal vereinfacht — User-Vorgabe: kompakt, Zahlen im Hintergrund)
+Roboter-Icon, zweistufig. Statuszeile: Empfehlungs-Pill + Mayer + ER + F&G + RSI (grün/rot).
+- **Strategie-Tab:** Empfehlungs-Box (`gbRecoBox`) RECHTS neben der Tabelle (`.gb-strat-row`, weil die Leiste breit statt hoch ist). Tabelle nur 8 Zeilen (Range oben/unten, Grids, Hebel, Investment, Stop, Sicherheit, Netto-Erwartung). Empfohlener Tier mit ★.
+- **Einstellungen: nur 4 Felder** (Kapital, Gebühr, Füllungen + Profil-Dropdown). Alle Schwellen fest, mit Erklär-Notiz. `gbRenderSettings()` erzeugt das HTML dynamisch — **statisches HTML im Pane wurde entfernt** (Doppel-Definition der Funktion hatte vorher die neue überschrieben; alte gelöscht).
+- **Layout:** Flex-Kind in `.chart-col`, grenzt an Drawbar/Watchlist. Höhe per `#gbResize`.
+- **Daten/Einstellungen:** Flex + `max-content` statt `auto-fit`+`1fr` (sonst Spalten über volle Breite gestreckt → Bezeichnung und Wert auseinandergerissen).
+- **Grid-Bänder überleben das Schliessen der Leiste.** Overlay `gridBands`.
+- **Grid-Bot-FAQ ist ins Haupt-FAQ verschoben** (Sektion `data-sec="gridbot"`, 15 Blöcke). Der eigene FAQ-Tab in der Grid-Bot-Leiste wurde entfernt.
 
 ### Long / Short Position
+Overlay `positionTool`, eigener Button in der Drawbar. Drei Klicks: Einstieg, Stop, Ziel → CRV + Positionsgrösse. **Gemeinsame Sizing-Quelle:** `window.__tvSizing()` liest jetzt Kapital aus `state.gbCapital` und Risiko aus dem PROFIL (`GridBot.profileValues().riskBudget`), nicht mehr aus entfernten Feldern.
 
-Overlay `positionTool`, **Zeichenwerkzeug mit eigenem Button in der Drawbar** (`#posToolBtn`, direkt unter dem Stil-Wähler) — bewusst kein Untermenü. Es liefert Stop und Positionsgrösse, also die Zahlen, um die es beim Handeln geht; ein Dropdown davor wäre eine Hürde an der falschen Stelle. Zweiter Klick auf den Button bricht ab (gleiche Logik wie der ESC-Handler). Drei Klicks: Einstieg, Stop, Ziel → Risiko-/Gewinnzone, CRV, Positionsgrösse.
-
-**Gemeinsame Sizing-Quelle:** `window.__tvSizing()` liest die Felder Kapital/Risiko% aus dem Grid-Bot-Panel. Eine Quelle, zwei Konsumenten — sonst hat man das Kapital an zwei Orten und irgendwann divergieren sie.
-
-### Bewusst NICHT übernommen
-
-- **Journal** — Excel ist dafür besser (Sortieren, Filtern, Pivot, Export). Eine localStorage-Kopie wäre schlechter.
-- **Formeltransparenz** — im Excel nachschaubar. Deshalb sind aber alle Parameter (Faktor, Ziel-Profit, Hebel-Cap, alle 11 Schwellwerte) im Panel editierbar statt im Code vergraben.
-
----
+### Suite-Overlap (bewusste Entscheidung, dokumentiert)
+TreydViews Grid Bot dupliziert Mayer/ER/Funding/RSI aus Panta Rey + Stromschnelle mit anderen Methoden. User-Entscheidung: **(c) TreydView = Chart + Grid-Rechner.** Die Marks-Empfehlung BLEIBT drin, der Widerspruch zu Panta Rey (das Mayer mit Gewicht 0.30 gegen 5 Achsen rechnet statt harter Schwelle) wird hingenommen. Stromschnelle-Philosophie („keine Pionex-Parameter, kein LONG/SHORT-Signal") steht bewusst im Gegensatz — TreydView gibt genau das. Suite-Link zu Panta Rey nur wenn stabile URL (Stromschnelle = Netlify Drop, instabil) — noch NICHT umgesetzt.
 
 ## Bekannte Grenzen / offene Roadmap
-- **Zeichnungen nicht persistiert** — `chart.getOverlays()` → localStorage wäre möglich
+- **Zeichnungs-Persistenz: ERLEDIGT** (eigenes Register, siehe „Weitere Systeme"). Zeichnungen sind jetzt in Workspace + Layouts.
+- **Indikator-FAQ: ERLEDIGT** — alle 14 Indikatoren einzeln beschrieben (Aussage + Berechnung) in FAQ-Sektion `data-sec="ind"`.
 - **FRVP "Extend Right"** fehlt
 - **Anchored VWAP** — in Drawbar als Icon, nicht implementiert
 - **Imbalance/FVG, Orderblocks** — nicht gebaut
 - **Realised Price** — braucht Worker-Endpoint `/realizedprice` (CoinMetrics)
 - **%-Suffix auf Compare-Y-Achse** — KLC hat keinen Value-Formatter; eigene Canvas-Beschriftung als Workaround
-- **Order-Book Wall-Detector** — bewusst ABGELEHNT (Juli 2026). Cross-Exchange-Aggregation braucht Backend; Single-Exchange-Walls sind per Definition unzuverlässig; Zeitebene (Sekunden) passt nicht zu Reys Zyklus-Prozess. VRVP ist für seine Ebene das robustere Werkzeug (realisiertes vs. behauptetes Volumen).
+- **Polylinie/Path-Werkzeug** — mehrfach als offen notiert, noch nicht gebaut
+- **Rohwert-neben-Perzentil** (aus Stromschnelle-Council übernommen als Idee) — nicht relevant für TreydView, nur falls Score-Anzeige käme
+- **Order-Book Wall-Detector / Heatmap** — DREIMAL ABGELEHNT. Cross-Exchange braucht Backend; Single-Exchange-Walls unzuverlässig (Spoofing); keine historische Tiefe (1.3 GB/Tag, localStorage reicht 5 min); Zeitebene Sekunden vs. Zyklus. VRVP = realisiertes statt behauptetes Volumen, robuster.
 
 ## Config-Notizen
 
-- `WORKER_BASE_URL` in config.js ist Platzhalter — echte Cloudflare-Worker-URL wird bei Datei-Ersetzung überschrieben, muss neu gesetzt werden
+- **`WORKER_BASE_URL` in config.js ist PLATZHALTER** (`https://DEIN-WORKER.workers.dev`). Reys echte URL (`pantarey.rey-gafner.workers.dev`) steht NUR lokal bei ihm — beim Kopieren der ausgelieferten config.js darf sie NICHT überschrieben werden. Immer explizit erwähnen.
 - Gold (XAU/USD): Worker `/goldhistory`, nur Daily. `normalizeGoldRow()` tolerant (JSON-Arrays, Wrapper, Stooq-CSV). Braucht CORS.
+- **Gold-Fehlerdiagnose (präzisiert):** Die Fehlermeldung unterscheidet jetzt nach HTTP-Status. HTTP 5xx = „Worker antwortet, wirft aber Fehler → Cloudflare-Logs prüfen, NICHT die URL". HTTP 4xx = „Route nicht gefunden → Pfad prüfen". Sonst = „nicht erreichbar/CORS". Claude sieht den Worker nicht — bei HTTP 500 muss der User die Cloudflare-Logs prüfen; die URL ist dann korrekt.
+
+## WebSocket Zombie-Reconnect (gelöst Juli 2026)
+
+**Symptom:** Beim Wechsel auf Gold (oder anderes Symbol) tauchte in der Konsole ein WS-Fehler zum ALTEN Symbol auf (`ethusdt@kline_1d ... Ping received after close`).
+
+**Ursache:** In `openBinanceStream` UND `openMiniTickerStream` (data.js) setzte `ws.onclose` einen `setTimeout(connect, 3000)`, ohne ihn bei `close()` abzubrechen. Zwischen Timer-Setzen und Feuern wurde der Stream geschlossen (Asset-Wechsel), aber 3 s später verband sich das alte Symbol klammheimlich neu.
+
+**Fix:** `retryTimer` in beiden Streams, `clearTimeout` im Close-Callback, plus doppelter `closed`-Check (`if (!closed) retryTimer = setTimeout(() => { if (!closed) connect(); }, ...)`). Der Gold-WS-Fehler kam NICHT vom Worker, sondern von diesem Zombie.
+
+
+## GitHub Pages Deployment (gelöst Juli 2026)
+
+**Symptom:** Push erfolgreich, `git status` clean — Server liefert trotzdem alte Version.
+
+**Ursache:** Pages lief mit **Jekyll**. Jekyll rendert das Repo als Blog, lädt ein Theme, rendert `HANDOFF.md` zu HTML und ruft die GitHub-API für Metadaten. Der API-Aufruf bekam 503 → Build scheitert → kein Deploy. Vorher trat dasselbe als 403 bei `FinalizeArtifact` auf.
+
+**Lösung:** Leere Datei **`.nojekyll`** im Repo-Root.
+```powershell
+echo $null > .nojekyll
+git add -f .nojekyll
+```
+
+**Diagnose bei "Änderungen nicht sichtbar":**
+1. `document.getElementById('faqBtn')` in der Console → `null` = alte HTML im Browser
+2. `view-source:` auf die Live-URL, Ctrl+F nach neuem Marker → steht es dort: Browser-Cache
+3. Actions-Tab: läuft der Build durch?
+4. `git ls-files js/lib/` → kennt Git die Datei?
+
+**Wiederkehrend:** User kopiert falsche Dateien (alle Builds heissen gleich: `app.js`, `app(1).js`, …). **MD5 mitliefern**, Prüfung via `certutil -hashfile <datei> MD5`.
+
+## Order Book Heatmap — abgelehnt (Juli 2026, zweite Anfrage)
+
+Bereits als Wall-Detector abgelehnt, erneut als Heatmap angefragt. Gemessene Gründe:
+- **Binance liefert keine historische Orderbuch-Tiefe.** Nur Snapshot (REST) oder Live ab Verbindung (WS).
+- Selbst sammeln: 15.6 KB/Snapshot → **1.3 GB/Tag**. localStorage (5–10 MB) reicht **5 Minuten**.
+- **Inhaltlich:** Orderbuch = *behauptetes* Volumen (stornierbar, Spoofing). VRVP = *realisiertes*. Für "wo liegt echter Widerstand" ist VRVP härtere Evidenz.
+- Zeitebene Sekunden vs. Reys Zyklus-Prozess.
+
+Falls doch gewünscht: Live-Depth-Profil als vertikales Overlay rechts, `@depth20@100ms`, kein Verlauf.

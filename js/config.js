@@ -168,11 +168,11 @@ const CONFIG = {
         { key: "bbMult",   label: "BB StdDev",  default: 2.0, step: 0.5 },
       ],
       plots: [
-        { key: "line",    label: "RSI-Linie",   color: "#7e57c2", opacity: 100, width: 2, visible: true },
-        { key: "band70",  label: "Linie 70",    color: "#787b86", opacity: 70,  width: 1, visible: true },
-        { key: "band50",  label: "Linie 50",    color: "#787b86", opacity: 40,  width: 1, visible: true },
-        { key: "band30",  label: "Linie 30",    color: "#787b86", opacity: 70,  width: 1, visible: true },
-        { key: "bgFill",  label: "Fill 30–70",  color: "#7e57c2", opacity: 8,   width: 1, visible: true, noWidth: true },
+        { key: "line",    label: "RSI-Linie",   color: "#a98fdb", opacity: 100, width: 2, visible: true },
+        { key: "band70",  label: "Linie 70",    color: "#9aa3b0", opacity: 70,  width: 1, visible: true },
+        { key: "band50",  label: "Linie 50",    color: "#9aa3b0", opacity: 40,  width: 1, visible: true },
+        { key: "band30",  label: "Linie 30",    color: "#9aa3b0", opacity: 70,  width: 1, visible: true },
+        { key: "bgFill",  label: "Fill 30–70",  color: "#a98fdb", opacity: 8,   width: 1, visible: true, noWidth: true },
         { key: "obFill",  label: "Overbought",  color: "#3fb68b", opacity: 25,  width: 1, visible: true, noWidth: true },
         { key: "osFill",  label: "Oversold",    color: "#d05e5e", opacity: 25,  width: 1, visible: true, noWidth: true },
         { key: "maLine",  label: "RSI-MA",      color: "#e8b64c", opacity: 100, width: 1, visible: true },
@@ -189,7 +189,7 @@ const CONFIG = {
         { key: "lengthStoch", label: "Stoch Länge", default: 14 },
       ],
       plots: [
-        { key: "k", label: "K", color: "#2962ff", opacity: 100, width: 2, visible: true },
+        { key: "k", label: "K", color: "#5a8dff", opacity: 100, width: 2, visible: true },
         { key: "d", label: "D", color: "#ff6d00", opacity: 100, width: 2, visible: true },
       ],
     },
@@ -218,7 +218,7 @@ const CONFIG = {
         { key: "sigType", label: "Signal MA",     default: "EMA", type: "select", options: ["EMA","SMA"] },
       ],
       plots: [
-        { key: "macd",   label: "MACD-Linie",   color: "#2962ff", opacity: 100, width: 2, visible: true },
+        { key: "macd",   label: "MACD-Linie",   color: "#5a8dff", opacity: 100, width: 2, visible: true },
         { key: "signal", label: "Signal-Linie",  color: "#ff6d00", opacity: 100, width: 2, visible: true },
         { key: "histUp", label: "Hist. steigend (pos)", color: "#26a69a", opacity: 100, width: 1, visible: true, noWidth: true },
         { key: "histDn", label: "Hist. fallend (neg)",  color: "#ff5252", opacity: 100, width: 1, visible: true, noWidth: true },
@@ -231,7 +231,7 @@ const CONFIG = {
         { key: "smoothing", label: "Smoothing", default: "RMA", type: "select", options: ["RMA","SMA","EMA","WMA"] },
       ],
       plots: [
-        { key: "atr", label: "ATR-Linie", color: "#b71c1c", opacity: 100, width: 2, visible: true },
+        { key: "atr", label: "ATR-Linie", color: "#e05555", opacity: 100, width: 2, visible: true },
       ],
     },
   ],
@@ -313,6 +313,15 @@ function hexToRgba(hex, opacityPct) {
   return `rgba(${r},${g},${b},${a})`;
 }
 
+// HINWEIS zur Preis-Beschriftung an der Achse:
+// KLineCharts rendert sie mit dem Linien-Hintergrund, aber EINER globalen
+// Textfarbe — siehe app.js applyTheme(). Die Textfarbe pro Indikator zu
+// setzen ist konstruktionsbedingt unmöglich (der Renderer liest nur
+// chartStore.getStyles().indicator.lastValueMark.text und überschreibt
+// gezielt nur backgroundColor).
+// Deshalb gilt umgekehrt: JEDE Linienfarbe hier muss gegen den dunklen
+// Text #0d1117 mindestens Kontrast 4.5 haben. Vor dem Hinzufügen prüfen.
+//
 // Relative Luminanz nach WCAG. Grundlage für die Frage: dunkler oder
 // heller Text auf diesem Hintergrund?
 function luminance(hex) {
