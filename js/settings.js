@@ -195,6 +195,9 @@ const Settings = {
         tag.checked = cur.showLast !== false;
         tagLbl.appendChild(tag);
         tagLbl.appendChild(document.createTextNode(" Preis-Tag"));
+        tagLbl.title = "Blendet die Preis-Tags an der Achse aus, sobald sie bei " +
+          "allen aktiven Indikatoren abgewählt sind. KLineCharts kennt nur " +
+          "einen globalen Schalter, keine Steuerung je Linie.";
         opts.appendChild(tagLbl);
 
         block.appendChild(opts);

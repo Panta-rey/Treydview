@@ -449,3 +449,16 @@ Neuer State `frvpDefaults` (persistiert). Beim FRVP-Apply werden die Einstellung
 
 ### Lehre
 Zweimal in Folge an derselben KLineCharts-Grenze (lastValueMark ist global) vorbeigebaut. Bei Chart-Engine-Eigenheiten IMMER erst den Renderer im Bundle lesen, BEVOR eine Lösung gebaut wird — nicht die API-Signatur (die akzeptiert styles.lastValueMark klaglos, ignoriert sie aber).
+
+
+## E2E-Debugging Juli 2026 — die wahre Ursache des Layout-Bugs
+
+**Symptome (2 Runden lang falsch behandelt):** Layout laden → Graph wechselt, aber Preis bleibt beim alten Asset, Zeichnungen (Linien + FRVP) erscheinen nicht.
+
+**Wahre Ursache (per E2E-Test gefunden, e2e-layout.js im Harness):** `ReferenceError: retryTimer is not defined` in data.js `openMiniTickerStream`. Beim Zombie-Reconnect-Fix wurde die Zuweisung per Regex eingefügt, aber die DEKLARATION nicht — der Funktionskopf lautete `let ws = null, closed = false;` (eine Zeile), der Regex suchte `let closed = false;` als eigene Zeile. Der Cleanup `if (retryTimer)` warf beim ersten close() → `restartWatchlistStream` → `applyNamedLayout` starb VOR `await loadData()` → alte Daten blieben (Preis hängt), restoreDrawings lief nie (Zeichnungen weg). Fix: `let ws = null, closed = false, retryTimer = null;`.
+
+**Lehre (dritter Regex-Vorfall):** Nach jedem Regex-Edit nicht nur Syntax prüfen, sondern den BETROFFENEN PFAD ausführen. Der neue E2E-Test (zeichnen → speichern → Symbol wechseln → Layout laden, mit gemocktem Binance: BTC 60000 / ETH 2500) deckt genau das ab und gehört vor jede Auslieferung. `unhandledRejection`-Handler im Harness machte den stillen async-Tod sichtbar.
+
+## Preis-Tags: applyTheme-Konflikt behoben
+
+`applyTheme()` hardcodete `lastValueMark.show:true` und überschrieb jede Abwahl beim nächsten Theme-Durchlauf. Jetzt EINE Quelle: `indicatorTagsWanted()` (Tag an, solange irgendein sichtbarer Plot eines aktiven Indikators ihn will) — genutzt von applyTheme UND applyIndicatorTags. E2E Schritt 6 verifiziert: alle abgewählt → show:false, applyTheme() → bleibt false, einer wieder an → true. Tooltip an der Checkbox erklärt die globale Wirkung (KLC-Grenze). applyIndicatorTags setzt nur noch `show` (nicht text.show) — schont color/size beim Merge.

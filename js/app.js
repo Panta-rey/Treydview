@@ -186,7 +186,7 @@ function baseStyles() {
       // Dunkel gewinnt klar: gemessen an allen 54 Linienfarben scheitern
       // mit weissem Text 49, mit dunklem nur 8 — und die 8 wurden in
       // config.js aufgehellt. Money Noodles weisse Linie war der Auslöser.
-      lastValueMark: { show: true, text: { show: true, color: "#0d1117", size: 12,
+      lastValueMark: { show: indicatorTagsWanted(), text: { show: true, color: "#0d1117", size: 12,
                                            family: "'IBM Plex Mono',monospace" } },
       tooltip: { showRule: "none" },
     },
@@ -247,22 +247,29 @@ function buildCreate(ind) {
   return create;
 }
 
-// Globaler Preis-Tag-Schalter für Indikatoren. Da KLineCharts lastValueMark
-// nur global kennt, ist die Regel: Tag AN, sobald mindestens ein sichtbarer
-// Plot eines aktiven Indikators ihn will; AUS, wenn alle ihn abgewählt haben.
-// So wirkt die Checkbox „Preis-Tag" im Style-Dialog tatsächlich.
-function applyIndicatorTags() {
-  let anyWant = false;
-  CONFIG.INDICATORS.forEach(ind => {
-    if (!state.active.has(ind.key)) return;
-    const sv = Settings.get(ind.key);
-    (ind.plots || []).forEach(p => {
-      const pl = sv.plots[p.key];
-      if (pl && pl.visible !== false && pl.showLast !== false) anyWant = true;
-    });
-  });
+// Globaler Preis-Tag-Zustand für Indikatoren. KLineCharts kennt NUR einen
+// globalen lastValueMark-Schalter (im Bundle verifiziert). Regel: Tag AN,
+// solange irgendein sichtbarer Plot eines aktiven Indikators ihn will.
+// WICHTIG: applyTheme() muss DIESELBE Quelle nutzen — vorher hardcodete es
+// show:true und überschrieb jede Abwahl beim nächsten Theme-Durchlauf.
+function indicatorTagsWanted() {
   try {
-    chart.setStyles({ indicator: { lastValueMark: { show: anyWant, text: { show: anyWant } } } });
+    let any = false;
+    CONFIG.INDICATORS.forEach(ind => {
+      if (!state.active.has(ind.key)) return;
+      const sv = Settings.get(ind.key);
+      (ind.plots || []).forEach(p => {
+        const pl = sv.plots[p.key];
+        if (pl && pl.visible !== false && pl.showLast !== false) any = true;
+      });
+    });
+    return any;
+  } catch (e) { return true; }
+}
+
+function applyIndicatorTags() {
+  try {
+    chart.setStyles({ indicator: { lastValueMark: { show: indicatorTagsWanted() } } });
   } catch (e) {}
 }
 

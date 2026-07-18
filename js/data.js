@@ -80,7 +80,11 @@ const DataLayer = {
 
   // Live-Stream für ALLE Symbole (Watchlist) — ein Socket für alles
   openMiniTickerStream(onTick, onStatus) {
-    let ws = null, closed = false;
+    // retryTimer MUSS hier deklariert sein: der Cleanup unten liest ihn.
+    // Fehlte die Deklaration, warf `if (retryTimer)` beim ersten close()
+    // einen ReferenceError — der applyNamedLayout mitten im Ablauf
+    // abbrechen liess (Preis blieb beim alten Asset, Zeichnungen fehlten).
+    let ws = null, closed = false, retryTimer = null;
     const connect = () => {
       ws = new WebSocket(`${CONFIG.BINANCE_WS}/!miniTicker@arr`);
       ws.onopen = () => onStatus && onStatus("live");
