@@ -106,7 +106,6 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 .main-chart{flex:1 1 auto;min-height:300px;}
 
 /* Tooltip-Toggle-Row im Indikator-Dropdown */
-.dd-toggle-row{border-bottom:1px solid var(--border);background:rgba(232,182,76,.04);}
 
 /* ---- Statusline ---- */
 .statusline{padding:5px 12px;font-size:11px;color:var(--text-dim);border-top:1px solid var(--border);flex-shrink:0;}
@@ -153,7 +152,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .plot-width{width:48px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:4px 6px;outline:none;}
 
 /* ---- v0.4.1: Grössere Draw-Buttons ---- */
-.draw-btn{width:38px;height:38px;font-size:17px;}
+
 @media(max-width:720px){.draw-btn{width:34px;height:34px;font-size:15px;}}
 
 /* ---- Topbar-Aktionen ---- */
@@ -226,7 +225,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .watchlist{width:210px;flex-shrink:0;border-left:1px solid var(--border);background:var(--bg-raised);display:flex;flex-direction:column;overflow:hidden;}
 .watchlist.hidden{display:none;}
 .wl-header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--border);}
-.wl-title{font-size:12px;font-weight:600;color:var(--text);letter-spacing:.04em;text-transform:uppercase;}
+
 .wl-add{width:22px;height:22px;background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;}
 .wl-add:hover{color:var(--accent);border-color:var(--accent);}
 .wl-search{padding:8px;border-bottom:1px solid var(--border);}
@@ -250,7 +249,6 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .wl-item:hover .wl-remove{display:flex;}
 .wl-remove:hover{color:var(--down);}
 .wl-empty{padding:12px;font-size:11px;color:var(--text-dim);text-align:center;}
-
 
 /* ---- Topbar: Icon-Buttons rechtsbündig ---- */
 .topbar-actions{display:flex;align-items:center;gap:6px;margin-left:auto;}
@@ -400,11 +398,6 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .gb-set-block > label:hover{background:var(--bg-hover);}
 .gb-set-block input{width:78px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;outline:none;text-align:right;}
 .gb-set-block input:focus{border-color:var(--accent);}
-.gb-tier-grid,.gb-th-grid{display:grid;grid-template-columns:auto 80px;gap:0 14px;align-items:center;}
-.gb-tier-grid > span,.gb-th-grid > span{font-size:12px;color:var(--text-dim);padding:3px 0;border-bottom:1px solid rgba(128,140,155,.07);}
-.gb-tier-grid > input,.gb-th-grid > input{background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;outline:none;text-align:right;margin:2px 0;}
-.gb-tier-grid > input:focus,.gb-th-grid > input:focus{border-color:var(--accent);}
-.gb-err{color:var(--down);font-size:11px;margin-top:6px;}
 
 /* Long/Short: eigener Platz in der Drawbar, kein Untermenü */
 .draw-pos.active{background:rgba(232,182,76,.14);border-color:var(--accent);}
@@ -428,7 +421,6 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 #mainChart.cursor-pointer *{cursor:pointer !important;}
 #mainChart.cursor-crosshair,
 #mainChart.cursor-crosshair *{cursor:crosshair !important;}
-
 
 /* Mehrere Watchlisten */
 .wl-select{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--font-mono);font-size:11px;padding:3px 5px;outline:none;cursor:pointer;min-width:0;}
@@ -504,7 +496,6 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .pi-row{display:grid;grid-template-columns:max-content max-content;gap:0 16px;justify-content:start;font-size:11px;color:var(--text-dim);padding:2px 0;}
 .pi-row b{color:var(--accent);font-weight:600;}
 .gb-set-note{margin-top:14px;max-width:760px;padding:9px 11px;background:var(--bg);border:1px solid var(--border);border-left:2px solid var(--accent);border-radius:0 3px 3px 0;font-size:11px;line-height:1.5;color:var(--text-dim);}
-
 
 /* Strategie-Tab: Leiste ist breit, nicht hoch -> nebeneinander statt untereinander */
 .gb-strat-row{display:flex;gap:20px;align-items:flex-start;}

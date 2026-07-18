@@ -127,10 +127,6 @@ const chart = klinecharts.init("mainChart");
 // Bridge: FRVP-Overlay (overlays.js) braucht Zugriff auf die Candle-Daten
 window.__tvGetDataList = () => chart.getDataList();
 
-function tooltipStyle(show) {
-  return show ? "standard" : "none";
-}
-
 function baseStyles() {
   const cs = state.chartStyle;
   return {
@@ -391,18 +387,29 @@ function drawVrvp() {
   ctx.restore();
 }
 
-// VRVP bei Zoom/Scroll neu zeichnen
-chart.subscribeAction("onVisibleRangeChange", (range) => {
-  if (state.active.has("vrvp")) requestAnimationFrame(() => {
-    try { drawVrvp(); } catch (e) {}
+// VRVP/Compare bei Zoom/Scroll neu zeichnen.
+// Koalesziert: onVisibleRangeChange feuert beim Scrollen viele Male pro
+// Frame. Ohne das Flag stapeln sich mehrere identische rAF-Callbacks und
+// zeichnen dasselbe Bild mehrfach.
+let _redrawQueued = false;
+chart.subscribeAction("onVisibleRangeChange", () => {
+  if (_redrawQueued) return;
+  _redrawQueued = true;
+  requestAnimationFrame(() => {
+    _redrawQueued = false;
+    if (state.active.has("vrvp")) { try { drawVrvp(); } catch (e) {} }
+    if (state.compareAssets.length > 0) { try { drawCompare(); } catch (e) {} }
   });
-  if (state.compareAssets.length > 0) {
-    requestAnimationFrame(() => { try { drawCompare(); } catch (e) {} });
-  }
 });
 
 // ---------- Daten laden ----------
+// Sequenznummer gegen veraltete Antworten: Wechselt der User schnell
+// BTC → ETH → SOL, laufen drei fetches parallel. Ohne die Prüfung gewinnt
+// die LANGSAMSTE Antwort und der Chart zeigt ein anderes Asset als das Label.
+let _loadSeq = 0;
+
 async function loadData() {
+  const seq = ++_loadSeq;
   if (state.closeStream) { state.closeStream(); state.closeStream = null; }
   setLive("offline", "lädt …");
   setStatus(`Lade ${state.symbol.label} (${state.timeframe.label}) …`);
@@ -412,6 +419,7 @@ async function loadData() {
       ? await DataLayer.fetchBinanceKlines(state.symbol.id, state.timeframe.binanceInterval, CONFIG.CANDLE_LIMIT)
       : await DataLayer.fetchGoldHistory();
   } catch (err) {
+    if (seq !== _loadSeq) return;   // inzwischen wurde neu geladen
     // HTTP 500 heisst: der Worker ist erreichbar und wirft einen Fehler.
     // Die URL zu prüfen führt dann in die Irre — sie stimmt ja.
     const isWorker = state.symbol.type === "worker";
@@ -423,6 +431,8 @@ async function loadData() {
     setLive("offline", "Fehler");
     return;
   }
+  // Antwort gehört zu einem inzwischen überholten Wechsel → verwerfen.
+  if (seq !== _loadSeq) return;
   chart.applyNewData(candles);
   // 2.9: Nach einem Asset-Wechsel liegen die Preisniveaus ganz woanders
   // (BTC ~60'000, ETH ~2'500). Ohne Auto-Skalierung müsste man die
@@ -1690,8 +1700,14 @@ function saveWorkspace() {
       active: [...state.active],
       chartType: state.chartType,
       legendCollapsed: state.legendCollapsed,
-      watchlist: state.watchlist,
+      // ALLE Watchlisten + welche aktiv ist. Vorher wurde nur state.watchlist
+      // (Getter auf die aktive) gespeichert — beim Neuladen waren alle
+      // anderen Listen weg.
+      watchlists: state.watchlists,
+      activeWatchlist: state.activeWatchlist,
       watchlistOpen: state.watchlistOpen,
+      // Muster-Strenge (streng/mittel/locker) — wurde geladen, nie gespeichert
+      patternOpts: state.patternOpts,
       theme: state.theme,
     currentLayout: state.currentLayout,
     gbOpen: state.gbOpen,
@@ -2236,102 +2252,6 @@ function gbRenderData() {
 function gbClearBands() {
   (state.gbBandIds || []).forEach(id => { try { chart.removeOverlay(id); } catch (e) {} });
   state.gbBandIds = [];
-}
-
-function gbDrawBands(tierId) {
-  gbClearBands();
-  if (!tierId || !state.gbResult) return;
-  const t = state.gbResult.tiers.find(x => x.id === tierId);
-  if (!t) return;
-
-  const d = chart.getDataList();
-  if (!d || !d.length) return;
-  const ts = d[Math.max(0, d.length - 200)].timestamp;
-
-  try {
-    const id = chart.createOverlay({
-      name: "gridBands",
-      points: [{ timestamp: ts, value: t.upper }, { timestamp: d.at(-1).timestamp, value: t.lower }],
-      lock: true,
-      onMouseEnter: () => { setChartCursor("pointer"); return false; },
-      onMouseLeave: () => { setChartCursor(""); return false; },
-      extendData: {
-        lower: t.lower, upper: t.upper, grids: t.grids, stopLoss: t.stopLoss,
-        takeProfit: t.takeProfit, label: t.label, direction: t.direction, leverage: t.leverage,
-      },
-    });
-    if (id) state.gbBandIds.push(id);
-  } catch (e) {}
-}
-
-// Höhe der Leiste per Handle verstellbar — damit man alle Zahlen
-// ohne Scrollen sehen kann, wenn man will.
-function gbInitResize() {
-  const handle = document.getElementById("gbResize");
-  const bar = document.getElementById("gridBotBar");
-  let dragging = false, startY = 0, startH = 0;
-
-  const onMove = (e) => {
-    if (!dragging) return;
-    const y = e.touches ? e.touches[0].clientY : e.clientY;
-    const max = document.querySelector(".chart-col").clientHeight - 160;
-    const h = Math.max(34, Math.min(max, startH + (startY - y)));
-    bar.style.height = h + "px";
-    state.gbHeight = h;
-    resize();
-  };
-  const onUp = () => {
-    if (!dragging) return;
-    dragging = false;
-    document.body.style.cursor = "";
-    saveWorkspace();
-  };
-
-  const onDown = (e) => {
-    dragging = true;
-    startY = e.touches ? e.touches[0].clientY : e.clientY;
-    startH = bar.getBoundingClientRect().height;
-    document.body.style.cursor = "ns-resize";
-    e.preventDefault();
-  };
-
-  handle.addEventListener("mousedown", onDown);
-  handle.addEventListener("touchstart", onDown, { passive: false });
-  document.addEventListener("mousemove", onMove);
-  document.addEventListener("touchmove", onMove, { passive: false });
-  document.addEventListener("mouseup", onUp);
-  document.addEventListener("touchend", onUp);
-}
-
-function gbApplyHeight() {
-  const bar = document.getElementById("gridBotBar");
-  if (state.gbCollapsed) { bar.style.height = ""; return; }
-  bar.style.height = (state.gbHeight || 250) + "px";
-}
-
-function gbToggleBar(show) {
-  const bar = document.getElementById("gridBotBar");
-  const on = show != null ? show : bar.classList.contains("hidden");
-  bar.classList.toggle("hidden", !on);
-  document.getElementById("gbResize").classList.toggle("hidden", !on || state.gbCollapsed);
-  document.getElementById("gridBotBtn").classList.toggle("active", on);
-  if (on) gbApplyHeight();
-  state.gbOpen = on;
-  saveWorkspace();
-  resize();
-  if (on && !state.gbResult) gbRefresh(false);
-}
-
-function gbSetCollapsed(c) {
-  document.getElementById("gbBody").classList.toggle("collapsed", c);
-  document.getElementById("gbResize").classList.toggle("hidden", c || !state.gbOpen);
-  document.getElementById("gbChev").innerHTML = c
-    ? '<path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
-    : '<path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
-  state.gbCollapsed = c;
-  gbApplyHeight();
-  saveWorkspace();
-  resize();
 }
 
 // ---------- Einstellungs-Felder ----------
@@ -3012,7 +2932,14 @@ renderWatchlist();
 applyAllActive();
 updateLegend();
 loadBinanceSymbols();
-loadData();
+// Zeichnungen aus dem Workspace erst wiederherstellen, wenn die Kerzen da
+// sind — vorher kennt der Chart die Zeitachse nicht und die Punkte landen
+// daneben. Ohne diesen Schritt waren gespeicherte Zeichnungen nach einem
+// Reload zwar im localStorage, aber unsichtbar.
+loadData().then(() => {
+  const saved = state.drawings;
+  if (saved && saved.length) restoreDrawings(saved);
+});
 restartWatchlistStream();
 
 // ---------- Watchlist-Handler ----------

@@ -401,8 +401,14 @@ const GridBot = (function () {
       const row = computeTier(t, { ...ctx, atr: market[t.atrKey] });
       if (!row) return null;
       // B45–B48: lohnt sich das Grid nach Funding und Gebühren überhaupt?
-      row.viability = viability(t, row.leverage, bias.final, t.holdDays || 30,
-                                deriv?.funding?.fundingAvg30 ?? funding8h);
+      // WICHTIG: viability erwartet die 8h-RATE (rechnet selbst × Tage × 3).
+      // fundingAvg30 aus derivatives.js ist bereits auf den MONAT hochgerechnet
+      // (× 90) — direkte Übergabe wäre Faktor 90 zu hoch und liesse jede
+      // gerichtete Position massiv unrentabel aussehen.
+      const avg8h = deriv?.funding?.fundingAvg30 != null
+        ? deriv.funding.fundingAvg30 / 90
+        : funding8h;
+      row.viability = viability(t, row.leverage, bias.final, t.holdDays || 30, avg8h);
       return row;
     }).filter(Boolean);
 
