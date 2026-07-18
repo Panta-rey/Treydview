@@ -10,12 +10,26 @@
 // WICHTIG: immer VOLLSTÄNDIGES Style-Objekt zurückgeben (style, color,
 // size, smooth, dashedValue). Unvollständige Objekte bringen KLineCharts'
 // internen Linien-Merge zum Absturz (coordinates[1] undefined) → Chart friert ein.
+//
+// Punkt 1.4 — Preis-Tag entkoppeln: KLineCharts spiegelt die Linienfarbe
+// (figureStyles.color) 1:1 in den Preis-Tag an der Y-Achse, inklusive
+// Alpha. Würde die Deckkraft in die an KLC gegebene Farbe kodiert, würde der
+// Tag mit ausbleichen. Deshalb bekommt die LINIE hier die volle Farbe
+// (p.hex statt p.color), der Tag bleibt damit immer zu 100 % lesbar.
+// Die Deckkraft-Einstellung wirkt weiter auf Flächen (BMSB/Gaussian-Bänder),
+// wo sie sinnvoll ist — diese lesen p.color direkt, nicht plotStyle.
 function plotStyle(indicator, key, fallbackColor, fallbackWidth) {
   const base = { style: "solid", smooth: false, dashedValue: [2, 2] };
   const p = indicator?.extendData?.plots?.[key];
   if (!p) return { ...base, color: fallbackColor, size: fallbackWidth || 1 };
   if (p.visible === false) return { ...base, color: "rgba(0,0,0,0)", size: fallbackWidth || 1 };
-  return { ...base, color: p.color, size: p.width || fallbackWidth || 1 };
+  return {
+    ...base,
+    style: p.dashed ? "dashed" : "solid",   // 1.2
+    dashedValue: p.dashed ? [5, 4] : [2, 2],
+    color: p.hex || p.color,                 // 1.4: volle Deckkraft für Linie+Tag
+    size: p.width || fallbackWidth || 1,
+  };
 }
 
 // ---------- Mathe-Helfer ----------
@@ -255,7 +269,10 @@ klinecharts.registerIndicator({
         const p = ind?.extendData?.plots?.[up ? "up" : "down"];
         if (!p) return { ...base, color: up ? "#00ff00" : "#ff0000", size: 2 };
         if (p.visible === false) return { ...base, color: "rgba(0,0,0,0)", size: 1 };
-        return { ...base, color: p.color, size: p.width || 2 };
+        // 1.4: volle Deckkraft für Linie+Tag; 1.2: gestrichelt
+        return { style: p.dashed ? "dashed" : "solid", smooth: false,
+                 dashedValue: p.dashed ? [5, 4] : [2, 2],
+                 color: p.hex || p.color, size: p.width || 2 };
       },
     },
     { key: "shull", title: "SHULL: ", type: "line",
@@ -268,7 +285,9 @@ klinecharts.registerIndicator({
         const p = ind?.extendData?.plots?.[up ? "up" : "down"];
         if (!p) return { ...base, color: up ? "#00ff00" : "#ff0000", size: 2 };
         if (p.visible === false) return { ...base, color: "rgba(0,0,0,0)", size: 1 };
-        return { ...base, color: p.color, size: p.width || 2 };
+        return { style: p.dashed ? "dashed" : "solid", smooth: false,
+                 dashedValue: p.dashed ? [5, 4] : [2, 2],
+                 color: p.hex || p.color, size: p.width || 2 };
       },
     },
   ],

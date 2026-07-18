@@ -735,6 +735,25 @@
 
 <!-- Generisches Overlay-Kontextmenü (Einzellöschen) -->
 <div class="overlay-menu hidden" id="overlayMenu">
+  <div class="om-row">
+    <label>Farbe</label>
+    <input type="color" id="omColor" value="#e8b64c">
+  </div>
+  <div class="om-row">
+    <label>Deckkraft</label>
+    <div class="om-opacity">
+      <input type="range" id="omOpacity" min="10" max="100" step="5" value="100">
+      <span id="omOpacityVal">100%</span>
+    </div>
+  </div>
+  <div class="om-row">
+    <label>Dicke</label>
+    <input type="number" id="omWidth" min="1" max="8" value="1">
+  </div>
+  <div class="om-row">
+    <label class="om-check"><input type="checkbox" id="omDashed"> gestrichelt</label>
+  </div>
+  <div class="om-divider"></div>
   <button id="overlayDelete" class="overlay-menu-del">✕ Löschen</button>
 </div>
 
@@ -752,6 +771,13 @@
   <div class="frvp-row">
     <label>Breite %</label>
     <input type="number" id="frvpWidth" value="30" min="5" max="80">
+  </div>
+  <div class="frvp-row">
+    <label>Deckkraft</label>
+    <div class="frvp-opacity">
+      <input type="range" id="frvpOpacity" min="10" max="100" step="5" value="55">
+      <span id="frvpOpacityVal">55%</span>
+    </div>
   </div>
   <div class="frvp-divider"></div>
   <div class="frvp-row">

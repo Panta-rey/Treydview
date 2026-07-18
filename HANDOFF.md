@@ -396,3 +396,34 @@ Tote Funktionen: definierte vs. referenzierte Namen. Duplikate: Counter über `^
 1. `ctx.fng` „fehlt" — mehrzeiliges Objekt-Literal brach den Regex; fng war da.
 2. `res.ok` „ungeprüft" — der Check sass in `_fetchKlineChunk`, eine Ebene tiefer als gesucht.
 3. FAQ-Button „start" „fehlt" — `faq-navbtn" data-sec=` übersah `class="faq-navbtn active"`. Folge: ein Button wurde doppelt eingefügt und musste wieder entfernt werden. Bei Klassen-Matching IMMER `[^"]*` vor dem schliessenden Anführungszeichen.
+
+
+## Feinschliff-Runde Juli 2026 (Indikator-Style, FRVP, Overlays, Magnet, Sortierung, Layouts)
+
+### Indikator-Style-System (settings.js + indicators.js + app.js)
+- **Deckkraft-Regler: 5%-Schritte** (`op.step = 5`) statt 1%.
+- **Gestrichelte Linien (1.2):** neues `dashed`-Flag pro Plot. `plotStyle()` in indicators.js setzt `style: dashed ? "dashed" : "solid"` mit `dashedValue [5,4]`. Die beiden Hull-Sonderfälle (mhull/shull, dynamische Auf/Ab-Farbe) und GC wurden mitgezogen.
+- **Preis-Tag pro Indikator ein/aus (1.3):** neues `showLast`-Flag pro Plot. `buildCreate()` setzt `create.styles.lastValueMark.show` = true, sobald mindestens ein Plot seinen Tag will (KLineCharts kann lastValueMark nur je Indikator schalten, nicht je Linie).
+- **Preis-Tag von Deckkraft entkoppelt (1.4):** KLineCharts spiegelt die Linienfarbe (`figureStyles.color`) 1:1 in den Y-Achsen-Tag, inklusive Alpha. `plotStyle()` gibt der Linie deshalb jetzt `p.hex` (volle Deckkraft) statt `p.color` (mit Alpha) — der Tag bleibt immer zu 100 % lesbar. Die Deckkraft-Einstellung wirkt weiter auf **Flächen** (BMSB/Gaussian-Bänder), die `p.color` direkt lesen (nicht über plotStyle).
+
+### FRVP (2.1)
+Deckkraft-Regler (10–100 %, 5er-Schritte) im FRVP-Menü. `ext.opacity` steuert `hexToRgba(colorUp/Down, opacity)`. Default 55 (wie bisher hartcodiert).
+
+### Overlay-Kontextmenü erweitert (Punkt 3)
+Rechtsklick auf Zeichnungen bietet jetzt Farbe, Deckkraft (5er-Schritte), Dicke und gestrichelt — nicht nur Löschen. **Live-Vorschau:** jede Änderung sofort via `overrideOverlay({ id, styles: { line } })` (gegen echte API verifiziert). Der Stil wird ins Zeichnungs-Register gespiegelt (`rec.styles`), damit Layouts ihn behalten. Neuer Helfer `parseColor(c)` zerlegt hex/rgba in `{hex, alpha%}`. Betrifft alle Linien-Overlays (segment/ray/priceLine/horizontal/priceChannel/parallel/fib); Rechteck hat keine line-Komponente.
+
+### Magnet an OHLC (Punkt 4)
+KLineCharts' Magnet snappt bereits an alle vier OHLC-Werte — aber nur innerhalb `modeSensitivity` Pixeln (Default 8, kaum spürbar). Deshalb wirkte nur das Einrasten nahe der Mitte. Fix: `modeSensitivity: strong_magnet ? 40 : 18` in der Overlay-Config. Kein eigener Snap-Code nötig.
+
+### Sortierbare Indikator-Liste (Punkt 6)
+Drag & Drop via HTML5 draggable. Neuer State `indOrder` (Array von Keys, leer = Config-Reihenfolge). `orderedIndicators()` sortiert; neue/unbekannte Keys landen hinten. Griff-Icon `⠿`, `.dragging`/`.drag-over`-Klassen. `indOrder` in Workspace UND Layout-Snapshot.
+
+### Layout-Wechsel repariert (Punkt 5) — DREI Bugs
+1. **`drawings` stand DOPPELT im Snapshot:** einmal korrekt via `.map(({id, ...rest}) => rest)` (ohne id), einmal roh `drawings: state.drawings` (mit id). Das zweite überschrieb das erste → beim Wiederherstellen kollidierten alte IDs. Doppeltes Feld entfernt.
+2. **Race Condition beim schnellen Doppelwechsel A→B:** `await loadData()` in applyNamedLayout konnte fertig werden, nachdem der User schon Layout B geöffnet hatte → A's `restoreDrawings` malte auf B. Fix: `if (state.currentLayout !== name) return;` nach dem await.
+3. Zusammen mit dem `_loadSeq`-Guard aus dem Audit (veraltete fetch-Antworten) ist der Wechsel jetzt deterministisch. Voller Zyklus (speichern → löschen → wiederherstellen) gegen echte API verifiziert: Anzahl, Punkte, Styles, Position identisch.
+
+### KLineCharts-API-Ergänzungen (für HANDOFF-Wissensteil)
+- `overrideOverlay({ id, styles: { line: {...} } })` funktioniert pro Overlay (Farbe/Größe/style/dashedValue).
+- Magnet: `modeSensitivity` (Pixel-Fangbereich) ist der entscheidende Parameter; ohne ihn ist weak_magnet praktisch unsichtbar.
+- `lastValueMark.show` ist pro Indikator via `create.styles` schaltbar (im Gegensatz zur Textfarbe, die global bleibt).

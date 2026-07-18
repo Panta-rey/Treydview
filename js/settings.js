@@ -34,6 +34,8 @@ const Settings = {
         color:   hexToRgba(hex, opacity),
         width:   s.width   ?? p.width,
         visible: s.visible ?? p.visible,
+        dashed:  s.dashed  ?? p.dashed  ?? false,   // 1.2 gestrichelt
+        showLast: s.showLast ?? p.showLast ?? true, // 1.3 Preistag an/aus
       };
     });
     return out;
@@ -147,7 +149,7 @@ const Settings = {
       opWrap.className = "plot-opacity";
       const op = document.createElement("input");
       op.type = "range";
-      op.min = 0; op.max = 100;
+      op.min = 0; op.max = 100; op.step = 5;   // 1.1: 5%-Schritte statt 1%
       op.id = "spo_" + p.key;
       op.value = cur.opacity;
       const opVal = document.createElement("span");
@@ -169,6 +171,35 @@ const Settings = {
       }
 
       block.appendChild(controls);
+
+      // Zeile 3: Linienart + Preis-Tag (nur für Linien-Plots, nicht Balken)
+      if (!p.noWidth) {
+        const opts = document.createElement("div");
+        opts.className = "plot-opts";
+
+        const dashLbl = document.createElement("label");
+        dashLbl.className = "plot-opt";
+        const dash = document.createElement("input");
+        dash.type = "checkbox";
+        dash.id = "spd_" + p.key;
+        dash.checked = !!cur.dashed;
+        dashLbl.appendChild(dash);
+        dashLbl.appendChild(document.createTextNode(" gestrichelt"));
+        opts.appendChild(dashLbl);
+
+        const tagLbl = document.createElement("label");
+        tagLbl.className = "plot-opt";
+        const tag = document.createElement("input");
+        tag.type = "checkbox";
+        tag.id = "spt_" + p.key;
+        tag.checked = cur.showLast !== false;
+        tagLbl.appendChild(tag);
+        tagLbl.appendChild(document.createTextNode(" Preis-Tag"));
+        opts.appendChild(tagLbl);
+
+        block.appendChild(opts);
+      }
+
       pageStyle.appendChild(block);
     });
     if (!hasPlots) {
@@ -191,11 +222,15 @@ const Settings = {
         const colEl = document.getElementById("spc_" + p.key);
         const opEl  = document.getElementById("spo_" + p.key);
         const wEl   = document.getElementById("spw_" + p.key);
+        const dashEl = document.getElementById("spd_" + p.key);
+        const tagEl  = document.getElementById("spt_" + p.key);
         saved.plots[p.key] = {
           hex:     colEl ? colEl.value : p.color,
           opacity: opEl ? parseInt(opEl.value, 10) : p.opacity,
           width:   wEl ? parseInt(wEl.value, 10) : p.width,
           visible: visEl ? visEl.checked : true,
+          dashed:  dashEl ? dashEl.checked : false,
+          showLast: tagEl ? tagEl.checked : true,
         };
       });
       this._saveRaw(indKey, saved);

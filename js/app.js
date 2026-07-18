@@ -66,6 +66,10 @@ const state = {
   gbBandIds: [],
   gbResult: null,
   drawings: _ws?.drawings || [],   // gezeichnete Overlays, für Layouts
+  // Eigene Reihenfolge der Indikator-Liste (Punkt 6, Drag & Drop).
+  // Leer = Config-Reihenfolge. Neue Indikatoren, die noch nicht in der
+  // gespeicherten Reihenfolge stehen, werden hinten angehängt.
+  indOrder: _ws?.indOrder || [],
   gbCapital: _ws?.gbCapital ?? 8000,
   gbTiers: _ws?.gbTiers || JSON.parse(JSON.stringify(GridBot.DEFAULT_TIERS)),
   gbThresholds: _ws?.gbThresholds || { ...GridBot.DEFAULT_THRESHOLDS },
@@ -233,12 +237,12 @@ function buildCreate(ind) {
     default:         if (ind.calcParams) create.calcParams = ind.calcParams;
   }
 
-  // KEIN lastValueMark hier: KLineCharts liest die Textfarbe der Preis-
-  // Beschriftung ausschliesslich aus den GLOBALEN Styles und überschreibt
-  // nur backgroundColor mit der Linienfarbe. Ein styles.lastValueMark am
-  // Indikator wird stillschweigend ignoriert. Die Farbe steht in
-  // applyTheme(); die Linienfarben in config.js müssen dagegen genug
-  // Kontrast haben.
+  // 1.3: Preis-Tag an der Achse pro Indikator ein/aus. KLineCharts kann
+  // lastValueMark nur je Indikator schalten, nicht je Linie — also zeigen,
+  // sobald mindestens ein Plot seinen Tag will.
+  const anyTag = Object.values(sv.plots || {}).some(p => p.showLast !== false);
+  create.styles = { lastValueMark: { show: anyTag } };
+
   return create;
 }
 
@@ -908,13 +912,64 @@ function renderTfList() {
   });
 }
 
+// Indikatoren in der vom Nutzer gewählten Reihenfolge (Punkt 6).
+// Unbekannte/neue Keys landen hinten in Config-Reihenfolge.
+function orderedIndicators() {
+  const order = state.indOrder || [];
+  const known = new Set(order);
+  const inOrder = order
+    .map(k => CONFIG.INDICATORS.find(i => i.key === k))
+    .filter(Boolean);
+  const rest = CONFIG.INDICATORS.filter(i => !known.has(i.key));
+  return [...inOrder, ...rest];
+}
+
 function renderIndPanel() {
   const list = document.getElementById("indList");
   list.innerHTML = "";
 
-  CONFIG.INDICATORS.forEach(ind => {
+  orderedIndicators().forEach(ind => {
     const row = document.createElement("div");
     row.className = "dd-ind-row";
+    row.draggable = true;
+    row.dataset.key = ind.key;
+
+    // Drag & Drop zum Umsortieren (Punkt 6)
+    row.addEventListener("dragstart", (e) => {
+      row.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", ind.key);
+    });
+    row.addEventListener("dragend", () => {
+      row.classList.remove("dragging");
+      list.querySelectorAll(".drag-over").forEach(r => r.classList.remove("drag-over"));
+    });
+    row.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      const dragging = list.querySelector(".dragging");
+      if (dragging && dragging !== row) row.classList.add("drag-over");
+    });
+    row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+    row.addEventListener("drop", (e) => {
+      e.preventDefault();
+      row.classList.remove("drag-over");
+      const fromKey = e.dataTransfer.getData("text/plain");
+      if (!fromKey || fromKey === ind.key) return;
+      const cur = orderedIndicators().map(i => i.key);
+      const from = cur.indexOf(fromKey);
+      const to   = cur.indexOf(ind.key);
+      cur.splice(to, 0, cur.splice(from, 1)[0]);
+      state.indOrder = cur;
+      saveWorkspace();
+      renderIndPanel();
+    });
+
+    const grip = document.createElement("span");
+    grip.className = "dd-grip";
+    grip.textContent = "⠿";
+    grip.title = "Ziehen zum Umsortieren";
+    row.appendChild(grip);
+
     const check = document.createElement("input");
     check.type = "checkbox"; check.id = "ind_" + ind.key; check.checked = state.active.has(ind.key);
     check.addEventListener("change", () => {
@@ -1261,6 +1316,12 @@ function startTool(overlayName) {
   const overlayConfig = {
     name: overlayName,
     mode: state.magnetMode,
+    // KLineCharts snappt im Magnet-Modus an alle vier OHLC-Werte (High, Low,
+    // Open, Close) — aber nur innerhalb von modeSensitivity Pixeln. Der
+    // Default 8 ist so eng, dass sich nur das Einrasten nahe der Kerzenmitte
+    // bemerkbar macht. Grösserer Fangbereich = spürbares Einrasten an allen
+    // vier Punkten.
+    modeSensitivity: state.magnetMode === "strong_magnet" ? 40 : 18,
     styles: currentOverlayStyles(),
     onDrawEnd: (e) => {
       // simpleAnnotation liest seinen Text aus extendData. Ohne den bleibt
@@ -1335,14 +1396,63 @@ function menuPosition(event, menuW = 130, menuH = 70) {
 function openOverlayMenu(overlay, event) {
   const menu = document.getElementById("overlayMenu");
   if (!menu) return;
-  const { x, y } = menuPosition(event);
+  const { x, y } = menuPosition(event, 190, 230);
   menu.style.left = x + "px";
   menu.style.top  = y + "px";
+
+  // Aktuellen Linien-Stil aus dem Overlay lesen (Fallback auf Akzentfarbe)
+  const ls = (overlay.styles && overlay.styles.line) || {};
+  const cur = parseColor(ls.color || "#e8b64c");
+  const colEl  = document.getElementById("omColor");
+  const opEl   = document.getElementById("omOpacity");
+  const opVal  = document.getElementById("omOpacityVal");
+  const wEl    = document.getElementById("omWidth");
+  const dashEl = document.getElementById("omDashed");
+  colEl.value  = cur.hex;
+  opEl.value   = cur.alpha;
+  opVal.textContent = cur.alpha + "%";
+  wEl.value    = ls.size || 1;
+  dashEl.checked = ls.style === "dashed";
+
+  // Live anwenden — jede Änderung sofort sichtbar, kein separater Apply-Klick.
+  const apply = () => {
+    const hex = colEl.value;
+    const alpha = parseInt(opEl.value, 10);
+    opVal.textContent = alpha + "%";
+    const line = {
+      color: hexToRgba(hex, alpha),
+      size:  parseInt(wEl.value, 10) || 1,
+      style: dashEl.checked ? "dashed" : "solid",
+      dashedValue: dashEl.checked ? [6, 4] : [2, 2],
+    };
+    try {
+      chart.overrideOverlay({ id: overlay.id, styles: { line } });
+      // Ins Zeichnungs-Register spiegeln, damit Layouts den Stil behalten
+      const rec = state.drawings.find(d => d.id === overlay.id);
+      if (rec) { rec.styles = { line }; saveWorkspace(); }
+    } catch (e) {}
+  };
+  colEl.oninput  = apply;
+  opEl.oninput   = apply;
+  wEl.oninput    = apply;
+  dashEl.onchange = apply;
+
   menu.classList.remove("hidden");
   document.getElementById("overlayDelete").onclick = () => {
     chart.removeOverlay(overlay.id);
     menu.classList.add("hidden");
   };
+}
+
+// Farbe (hex oder rgba) in {hex, alpha%} zerlegen — für die Menü-Regler.
+function parseColor(c) {
+  if (!c) return { hex: "#e8b64c", alpha: 100 };
+  if (c.startsWith("#")) return { hex: c.slice(0, 7), alpha: 100 };
+  const m = c.match(/[\d.]+/g);
+  if (!m || m.length < 3) return { hex: "#e8b64c", alpha: 100 };
+  const hex = "#" + [0, 1, 2].map(i => Math.round(parseFloat(m[i])).toString(16).padStart(2, "0")).join("");
+  const alpha = m.length >= 4 ? Math.round(parseFloat(m[3]) * 100) : 100;
+  return { hex, alpha };
 }
 document.addEventListener("click", (e) => {
   const om = document.getElementById("overlayMenu");
@@ -1364,6 +1474,13 @@ function openFrvpMenu(overlay, event) {
   document.getElementById("frvpColorVAH").value  = ext.colorVAH  ? rgbToHex(ext.colorVAH)  : "#e8b64c";
   document.getElementById("frvpColorVAL").value  = ext.colorVAL  ? rgbToHex(ext.colorVAL)  : "#e8b64c";
   document.getElementById("frvpColorPOC").value  = ext.colorPOC  ? rgbToHex(ext.colorPOC)  : "#ffffff";
+  // 2.1: Deckkraft der Balken (10–100 %, 5er-Schritte)
+  const opac = ext.opacity != null ? ext.opacity : 55;
+  document.getElementById("frvpOpacity").value = opac;
+  document.getElementById("frvpOpacityVal").textContent = opac + "%";
+  document.getElementById("frvpOpacity").oninput = (e) => {
+    document.getElementById("frvpOpacityVal").textContent = e.target.value + "%";
+  };
 
   const p = menuPosition(event, 260, 380);
   menu.style.left = p.x + "px";
@@ -1371,15 +1488,17 @@ function openFrvpMenu(overlay, event) {
   menu.classList.remove("hidden");
 
   document.getElementById("frvpApply").onclick = () => {
+    const op = parseInt(document.getElementById("frvpOpacity").value, 10) || 55;
     const newExt = {
       rows:      parseInt(document.getElementById("frvpRows").value, 10)  || 150,
       valueArea: parseInt(document.getElementById("frvpVA").value, 10)    || 70,
       width:     parseInt(document.getElementById("frvpWidth").value, 10) || 30,
+      opacity:   op,
       showVAH:   document.getElementById("frvpShowVAH").checked,
       showVAL:   document.getElementById("frvpShowVAL").checked,
       showPOC:   document.getElementById("frvpShowPOC").checked,
-      colorUp:   hexToRgba(document.getElementById("frvpColorUp").value,   55),
-      colorDown: hexToRgba(document.getElementById("frvpColorDown").value, 55),
+      colorUp:   hexToRgba(document.getElementById("frvpColorUp").value,   op),
+      colorDown: hexToRgba(document.getElementById("frvpColorDown").value, op),
       colorVAH:  document.getElementById("frvpColorVAH").value,
       colorVAL:  document.getElementById("frvpColorVAL").value,
       colorPOC:  document.getElementById("frvpColorPOC").value,
@@ -1716,6 +1835,7 @@ function saveWorkspace() {
     gbHeight: state.gbHeight,
     gbActiveTier: state.gbActiveTier,
     drawings: state.drawings,
+    indOrder: state.indOrder,
     gbCapital: state.gbCapital,
     gbTiers: state.gbTiers,
     gbThresholds: state.gbThresholds,
@@ -2711,7 +2831,7 @@ function currentLayoutSnapshot() {
     gbProfile: state.gbProfile,
     gbHeight: state.gbHeight,
     gbActiveTier: state.gbActiveTier,
-    drawings: state.drawings,
+    indOrder: state.indOrder,
     gbCapital: state.gbCapital,
     gbTiers: state.gbTiers,
     gbThresholds: state.gbThresholds,
@@ -2778,6 +2898,9 @@ async function applyNamedLayout(name) {
   // Zeitachse des vorherigen Assets platziert und springen anschliessend.
   await loadData();
 
+  // Schneller Doppelwechsel A→B: wenn inzwischen ein anderes Layout offen
+  // ist, gehören diese Zeichnungen nicht mehr hierher.
+  if (state.currentLayout !== name) return;
   restoreDrawings(l.drawings);
 
   // Kerzen aus- bzw. wieder einblenden — je nachdem ob das Layout

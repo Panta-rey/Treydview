@@ -502,3 +502,33 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .gb-strat-table{flex:0 0 auto;}
 .gb-strat-row .gb-reco{flex:1 1 auto;margin-bottom:0;min-width:260px;max-width:520px;}
 @media (max-width:900px){.gb-strat-row{flex-direction:column;}.gb-strat-row .gb-reco{max-width:none;}}
+
+/* Indikator-Style: Linienart + Preis-Tag (Punkt 1.2/1.3) */
+.plot-opts{display:flex;gap:16px;margin-top:6px;padding-left:2px;}
+.plot-opt{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-dim);cursor:pointer;}
+.plot-opt input{cursor:pointer;}
+
+/* FRVP-Deckkraftregler (Punkt 2.1) */
+.frvp-opacity{display:flex;align-items:center;gap:8px;flex:1;}
+.frvp-opacity input[type=range]{flex:1;}
+.frvp-opacity span{font-size:11px;color:var(--text-dim);min-width:34px;text-align:right;}
+
+/* Erweitertes Overlay-Kontextmenü (Punkt 3): Farbe/Deckkraft/Dicke/gestrichelt */
+.overlay-menu{min-width:180px;padding:8px;}
+.om-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:3px 4px;font-size:12px;color:var(--text-dim);}
+.om-row label{white-space:nowrap;}
+.om-row input[type=color]{width:36px;height:22px;padding:0;border:1px solid var(--border);border-radius:3px;background:none;cursor:pointer;}
+.om-row input[type=number]{width:52px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:2px 5px;}
+.om-opacity{display:flex;align-items:center;gap:7px;flex:1;justify-content:flex-end;}
+.om-opacity input[type=range]{width:80px;}
+.om-opacity span{font-size:11px;min-width:34px;text-align:right;}
+.om-check{display:flex;align-items:center;gap:6px;cursor:pointer;}
+.om-divider{height:1px;background:var(--border);margin:7px 0;}
+.overlay-menu-del{width:100%;}
+
+/* Sortierbare Indikator-Liste (Punkt 6) */
+.dd-ind-row{cursor:default;}
+.dd-ind-row .dd-grip{cursor:grab;color:var(--text-dim);opacity:.4;font-size:13px;line-height:1;margin-right:2px;user-select:none;}
+.dd-ind-row:hover .dd-grip{opacity:.8;}
+.dd-ind-row.dragging{opacity:.4;}
+.dd-ind-row.drag-over{border-top:2px solid var(--accent);}
