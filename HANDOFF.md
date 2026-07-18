@@ -427,3 +427,25 @@ Drag & Drop via HTML5 draggable. Neuer State `indOrder` (Array von Keys, leer = 
 - `overrideOverlay({ id, styles: { line: {...} } })` funktioniert pro Overlay (Farbe/Größe/style/dashedValue).
 - Magnet: `modeSensitivity` (Pixel-Fangbereich) ist der entscheidende Parameter; ohne ihn ist weak_magnet praktisch unsichtbar.
 - `lastValueMark.show` ist pro Indikator via `create.styles` schaltbar (im Gegensatz zur Textfarbe, die global bleibt).
+
+
+## Feinschliff-Korrektur Juli 2026 (Regressionen aus voriger Runde + Layout-Preis + FRVP-Defaults)
+
+### KORREKTUR zur „1.4 Preis-Tag-Entkopplung" (voriger Eintrag war FALSCH)
+Der Versuch, die Linie mit `p.hex` (voller Deckkraft) zu zeichnen, damit der Tag lesbar bleibt, hatte zwei ungewollte Folgen:
+- **Punkt 2 kaputt:** Der Deckkraft-Regler hatte keine Wirkung mehr, weil die Deckkraft in `p.color` (rgba mit Alpha) steckt, `plotStyle` aber `p.hex` (ohne Alpha) zurückgab.
+- **Punkt 1 nie gelöst:** Der per-Indikator `create.styles.lastValueMark.show` ist WIRKUNGSLOS. Im Bundle verifiziert: `IndicatorLastValueView.drawImp` liest `chartStore.getStyles().indicator.lastValueMark` — rein GLOBAL. Es gibt KEINE per-Indikator- oder per-Plot-Steuerung des Preis-Tags. Linie und Tag teilen zwingend `figureStyles.color`.
+
+**Endgültige, verlässliche Lösung:**
+- `plotStyle` gibt wieder `p.color` (mit Deckkraft) zurück → Regler wirkt (Punkt 2). Tag erbt dieselbe Deckkraft — akzeptiert, da untrennbar.
+- Preis-Tag (Punkt 1) läuft über `applyIndicatorTags()`: setzt GLOBAL `lastValueMark.show` = true, sobald ein sichtbarer Plot eines aktiven Indikators `showLast !== false` hat; sonst false. Aufgerufen nach Settings-Apply, Indikator-Toggle und in applyAllActive. `setStyles` merged, die globale Textfarbe `#0d1117` aus applyTheme bleibt erhalten.
+- **Bekannte Grenze (klar an User kommuniziert):** Der Tag ist damit effektiv global, nicht echt pro Indikator. KLineCharts lässt nichts Feineres zu. Die beiden Hull-Sonderfälle und GC wurden ebenfalls auf `p.color` zurückgesetzt.
+
+### Layout-Wechsel: Preis blieb hängen (Punkt 3)
+Nach `await loadData()` fehlte `updateLegend()` — die Legende/der Preis zeigte weiter den letzten Wert des vorherigen Assets, obwohl der Graph schon gewechselt hatte. Jetzt nach dem await: `autoScaleY()` + `updateLegend()` + `restoreDrawings()` + `applyIndicatorTags()`. Der Datenfluss (Snapshot liest state.drawings, restoreDrawings(l.drawings)) war korrekt; nur die Anzeige lief nicht nach.
+
+### FRVP-Defaults (Punkt 4)
+Neuer State `frvpDefaults` (persistiert). Beim FRVP-Apply werden die Einstellungen als Vorlage gemerkt (`state.frvpDefaults = {...newExt}`); ein neu gezeichnetes FRVP nutzt sie statt der eingebauten Defaults. Apply spiegelt auch ins Zeichnungs-Register (rec.extendData), damit Layouts es behalten.
+
+### Lehre
+Zweimal in Folge an derselben KLineCharts-Grenze (lastValueMark ist global) vorbeigebaut. Bei Chart-Engine-Eigenheiten IMMER erst den Renderer im Bundle lesen, BEVOR eine Lösung gebaut wird — nicht die API-Signatur (die akzeptiert styles.lastValueMark klaglos, ignoriert sie aber).

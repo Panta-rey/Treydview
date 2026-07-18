@@ -70,6 +70,8 @@ const state = {
   // Leer = Config-Reihenfolge. Neue Indikatoren, die noch nicht in der
   // gespeicherten Reihenfolge stehen, werden hinten angehängt.
   indOrder: _ws?.indOrder || [],
+  // Zuletzt verwendete FRVP-Einstellungen — Vorlage für neue Profile (Punkt 4)
+  frvpDefaults: _ws?.frvpDefaults || null,
   gbCapital: _ws?.gbCapital ?? 8000,
   gbTiers: _ws?.gbTiers || JSON.parse(JSON.stringify(GridBot.DEFAULT_TIERS)),
   gbThresholds: _ws?.gbThresholds || { ...GridBot.DEFAULT_THRESHOLDS },
@@ -237,13 +239,31 @@ function buildCreate(ind) {
     default:         if (ind.calcParams) create.calcParams = ind.calcParams;
   }
 
-  // 1.3: Preis-Tag an der Achse pro Indikator ein/aus. KLineCharts kann
-  // lastValueMark nur je Indikator schalten, nicht je Linie — also zeigen,
-  // sobald mindestens ein Plot seinen Tag will.
-  const anyTag = Object.values(sv.plots || {}).some(p => p.showLast !== false);
-  create.styles = { lastValueMark: { show: anyTag } };
-
+  // Preis-Tag an der Y-Achse (Punkt 1): KLineCharts liest lastValueMark
+  // ausschliesslich aus den GLOBALEN Styles (im Bundle verifiziert:
+  // chartStore.getStyles().indicator.lastValueMark). Ein styles.lastValueMark
+  // am einzelnen Indikator ist wirkungslos. Steuerung deshalb global über
+  // applyIndicatorTags(), das nach jedem Settings-Apply aufgerufen wird.
   return create;
+}
+
+// Globaler Preis-Tag-Schalter für Indikatoren. Da KLineCharts lastValueMark
+// nur global kennt, ist die Regel: Tag AN, sobald mindestens ein sichtbarer
+// Plot eines aktiven Indikators ihn will; AUS, wenn alle ihn abgewählt haben.
+// So wirkt die Checkbox „Preis-Tag" im Style-Dialog tatsächlich.
+function applyIndicatorTags() {
+  let anyWant = false;
+  CONFIG.INDICATORS.forEach(ind => {
+    if (!state.active.has(ind.key)) return;
+    const sv = Settings.get(ind.key);
+    (ind.plots || []).forEach(p => {
+      const pl = sv.plots[p.key];
+      if (pl && pl.visible !== false && pl.showLast !== false) anyWant = true;
+    });
+  });
+  try {
+    chart.setStyles({ indicator: { lastValueMark: { show: anyWant, text: { show: anyWant } } } });
+  } catch (e) {}
 }
 
 // ---------- Indikatoren anwenden ----------
@@ -273,6 +293,7 @@ function applyAllActive() {
   // Erst Overlays, dann Sub-Panes (Reihenfolge = stabilere Pane-Höhen)
   CONFIG.INDICATORS.filter(i => i.pane === "main").forEach(i => { if (state.active.has(i.key)) applyIndicator(i); });
   CONFIG.INDICATORS.filter(i => i.pane === "sub").forEach(i => { if (state.active.has(i.key)) applyIndicator(i); });
+  applyIndicatorTags();
 }
 
 // ---------- VRVP-Canvas ----------
@@ -975,6 +996,7 @@ function renderIndPanel() {
     check.addEventListener("change", () => {
       if (check.checked) { state.active.add(ind.key); applyIndicator(ind); }
       else { state.active.delete(ind.key); removeIndicator(ind); }
+      applyIndicatorTags();
       saveWorkspace();
       updateLegend();
       resize();
@@ -991,6 +1013,7 @@ function renderIndPanel() {
         Settings.open(ind.key, (key) => {
           const i = CONFIG.INDICATORS.find(x => x.key === key);
           if (state.active.has(key)) { removeIndicator(i); applyIndicator(i); }
+          applyIndicatorTags();
           updateLegend();
         });
       });
@@ -1364,9 +1387,11 @@ function startTool(overlayName) {
       return true;
     },
   };
-  // FRVP: Default-Parameter
+  // FRVP: zuletzt gespeicherte Einstellungen als Vorlage (Punkt 4),
+  // sonst die eingebauten Defaults.
   if (overlayName === "frvp") {
-    overlayConfig.extendData = { rows: 150, valueArea: 70, width: 30,
+    overlayConfig.extendData = state.frvpDefaults || {
+      rows: 150, valueArea: 70, width: 30, opacity: 55,
       showVAH: true, showVAL: true, showPOC: true,
       colorUp: "rgba(63,182,139,0.55)", colorDown: "rgba(208,94,94,0.55)",
       colorVAH: "#e8b64c", colorVAL: "#e8b64c", colorPOC: "#ffffff" };
@@ -1504,6 +1529,12 @@ function openFrvpMenu(overlay, event) {
       colorPOC:  document.getElementById("frvpColorPOC").value,
     };
     chart.overrideOverlay({ id: overlay.id, extendData: newExt });
+    // Als Vorlage für künftige FRVPs merken (Punkt 4)
+    state.frvpDefaults = { ...newExt };
+    // Auch im Zeichnungs-Register aktualisieren, damit Layouts es behalten
+    const rec = state.drawings.find(d => d.id === overlay.id);
+    if (rec) rec.extendData = newExt;
+    saveWorkspace();
     menu.classList.add("hidden");
   };
   document.getElementById("frvpDelete").onclick = () => {
@@ -1836,6 +1867,7 @@ function saveWorkspace() {
     gbActiveTier: state.gbActiveTier,
     drawings: state.drawings,
     indOrder: state.indOrder,
+    frvpDefaults: state.frvpDefaults,
     gbCapital: state.gbCapital,
     gbTiers: state.gbTiers,
     gbThresholds: state.gbThresholds,
@@ -2832,6 +2864,7 @@ function currentLayoutSnapshot() {
     gbHeight: state.gbHeight,
     gbActiveTier: state.gbActiveTier,
     indOrder: state.indOrder,
+    frvpDefaults: state.frvpDefaults,
     gbCapital: state.gbCapital,
     gbTiers: state.gbTiers,
     gbThresholds: state.gbThresholds,
@@ -2901,7 +2934,16 @@ async function applyNamedLayout(name) {
   // Schneller Doppelwechsel A→B: wenn inzwischen ein anderes Layout offen
   // ist, gehören diese Zeichnungen nicht mehr hierher.
   if (state.currentLayout !== name) return;
+
+  // Preis/Legende auf die NEUEN Daten setzen. Ohne das zeigt die Legende
+  // weiter den letzten Wert des vorherigen Assets (Preis „bleibt hängen"),
+  // obwohl der Graph schon gewechselt hat.
+  try { chart.setStyles({}); } catch (e) {}
+  autoScaleY();
+  updateLegend();
+
   restoreDrawings(l.drawings);
+  applyIndicatorTags();
 
   // Kerzen aus- bzw. wieder einblenden — je nachdem ob das Layout
   // Vergleiche enthält. Muss NACH loadData laufen.

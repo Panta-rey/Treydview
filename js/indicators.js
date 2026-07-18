@@ -11,13 +11,15 @@
 // size, smooth, dashedValue). Unvollständige Objekte bringen KLineCharts'
 // internen Linien-Merge zum Absturz (coordinates[1] undefined) → Chart friert ein.
 //
-// Punkt 1.4 — Preis-Tag entkoppeln: KLineCharts spiegelt die Linienfarbe
-// (figureStyles.color) 1:1 in den Preis-Tag an der Y-Achse, inklusive
-// Alpha. Würde die Deckkraft in die an KLC gegebene Farbe kodiert, würde der
-// Tag mit ausbleichen. Deshalb bekommt die LINIE hier die volle Farbe
-// (p.hex statt p.color), der Tag bleibt damit immer zu 100 % lesbar.
-// Die Deckkraft-Einstellung wirkt weiter auf Flächen (BMSB/Gaussian-Bänder),
-// wo sie sinnvoll ist — diese lesen p.color direkt, nicht plotStyle.
+// KLineCharts-Grenze (mehrfach im Bundle verifiziert): Der Preis-Tag an der
+// Y-Achse übernimmt zwingend figureStyles.color — also GENAU die hier
+// zurückgegebene Linienfarbe, inklusive Alpha. Linie und Tag sind
+// untrennbar. Folgen:
+//  - Deckkraft (p.color mit Alpha) wirkt auf Linie UND Tag. Das ist der
+//    einzige Weg, den Deckkraft-Regler überhaupt wirken zu lassen.
+//  - Ein Plot mit showLast:false bekommt eine tag-freie Behandlung nicht
+//    über plotStyle (das würde die Linie mit-ausblenden), sondern über den
+//    globalen lastValueMark-Schalter in app.js.
 function plotStyle(indicator, key, fallbackColor, fallbackWidth) {
   const base = { style: "solid", smooth: false, dashedValue: [2, 2] };
   const p = indicator?.extendData?.plots?.[key];
@@ -25,9 +27,9 @@ function plotStyle(indicator, key, fallbackColor, fallbackWidth) {
   if (p.visible === false) return { ...base, color: "rgba(0,0,0,0)", size: fallbackWidth || 1 };
   return {
     ...base,
-    style: p.dashed ? "dashed" : "solid",   // 1.2
+    style: p.dashed ? "dashed" : "solid",   // 1.2 gestrichelt
     dashedValue: p.dashed ? [5, 4] : [2, 2],
-    color: p.hex || p.color,                 // 1.4: volle Deckkraft für Linie+Tag
+    color: p.color,                          // Deckkraft-Regler wirkt (Punkt 2)
     size: p.width || fallbackWidth || 1,
   };
 }
@@ -269,10 +271,10 @@ klinecharts.registerIndicator({
         const p = ind?.extendData?.plots?.[up ? "up" : "down"];
         if (!p) return { ...base, color: up ? "#00ff00" : "#ff0000", size: 2 };
         if (p.visible === false) return { ...base, color: "rgba(0,0,0,0)", size: 1 };
-        // 1.4: volle Deckkraft für Linie+Tag; 1.2: gestrichelt
+        // 1.2 gestrichelt; Deckkraft via p.color (Punkt 2)
         return { style: p.dashed ? "dashed" : "solid", smooth: false,
                  dashedValue: p.dashed ? [5, 4] : [2, 2],
-                 color: p.hex || p.color, size: p.width || 2 };
+                 color: p.color, size: p.width || 2 };
       },
     },
     { key: "shull", title: "SHULL: ", type: "line",
@@ -287,7 +289,7 @@ klinecharts.registerIndicator({
         if (p.visible === false) return { ...base, color: "rgba(0,0,0,0)", size: 1 };
         return { style: p.dashed ? "dashed" : "solid", smooth: false,
                  dashedValue: p.dashed ? [5, 4] : [2, 2],
-                 color: p.hex || p.color, size: p.width || 2 };
+                 color: p.color, size: p.width || 2 };
       },
     },
   ],
