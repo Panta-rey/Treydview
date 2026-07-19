@@ -187,6 +187,8 @@ const Settings = {
         dashLbl.appendChild(document.createTextNode(" gestrichelt"));
         opts.appendChild(dashLbl);
 
+        const indDef = CONFIG.INDICATORS.find(i => i.key === indKey);
+        if (!indDef || !indDef.noTags) {
         const tagLbl = document.createElement("label");
         tagLbl.className = "plot-opt";
         const tag = document.createElement("input");
@@ -199,6 +201,7 @@ const Settings = {
           "allen aktiven Indikatoren abgewählt sind. KLineCharts kennt nur " +
           "einen globalen Schalter, keine Steuerung je Linie.";
         opts.appendChild(tagLbl);
+        }
 
         block.appendChild(opts);
       }

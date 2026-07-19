@@ -532,3 +532,8 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .dd-ind-row:hover .dd-grip{opacity:.8;}
 .dd-ind-row.dragging{opacity:.4;}
 .dd-ind-row.drag-over{border-top:2px solid var(--accent);}
+
+/* Muster-FAQ: Mini-Grafiken (Muster + Erwartungspfeil) */
+.pat-b { overflow: hidden; }
+.pat-fig { float: right; width: 140px; height: 76px; margin: 0 0 4px 12px;
+  background: rgba(143,163,184,0.05); border: 1px solid var(--border); border-radius: 4px; }

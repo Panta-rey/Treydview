@@ -462,3 +462,34 @@ Zweimal in Folge an derselben KLineCharts-Grenze (lastValueMark ist global) vorb
 ## Preis-Tags: applyTheme-Konflikt behoben
 
 `applyTheme()` hardcodete `lastValueMark.show:true` und überschrieb jede Abwahl beim nächsten Theme-Durchlauf. Jetzt EINE Quelle: `indicatorTagsWanted()` (Tag an, solange irgendein sichtbarer Plot eines aktiven Indikators ihn will) — genutzt von applyTheme UND applyIndicatorTags. E2E Schritt 6 verifiziert: alle abgewählt → show:false, applyTheme() → bleibt false, einer wieder an → true. Tooltip an der Checkbox erklärt die globale Wirkung (KLC-Grenze). applyIndicatorTags setzt nur noch `show` (nicht text.show) — schont color/size beim Merge.
+
+
+## Umbau-Runde Juli 2026: Eigener Tag-Renderer + 7 Feinschliff-Punkte + Engine-Ausbau
+
+### Eigener Preis-Tag-Renderer (ERSETZT den globalen KLC-Ansatz komplett)
+Der User forderte echte Pro-Linie-Kontrolle — der globale lastValueMark-Ansatz wurde GELÖSCHT (indicatorTagsWanted/applyIndicatorTags existieren nicht mehr). Stattdessen:
+- **ensureTagCanvas** (z-index 11, über VRVP), **scheduleTagDraw** (rAF-koalesziert via _tagQueued), **drawIndicatorTags** in app.js.
+- Werte: `chart.getIndicatorByPaneId(paneId, ind.name).result` — Array, letzter Eintrag, keyed nach figure-keys (= unsere plot-keys). API-verifiziert.
+- Position: `convertToPixel({timestamp, value}, {paneId, absolute:true})` — absolute:true liefert chart-weite Y auch für Sub-Panes (verifiziert: RSI-Pane y=505 bei 600px Chart).
+- Pro Plot: skip wenn `!state.active`, `ind.noTags`, key vrvp, `pl.visible===false` oder `pl.showLast===false`. Farbe `pl.hex` (voll deckend) → Deckkraft-Entkopplung nebenbei gelöst.
+- **Aktueller Preis wird ZULETZT gezeichnet = immer zuoberst** (Punkt 3). Farbe up/down aus chartStyle, Grösse cs.lastSize. KLC: `indicator.lastValueMark.show:false` fix, `candle.priceMark.last.text.show:false` (Linie bleibt KLC).
+- Trigger: applyAllActive, loadData (nach applyNewData), Live-Tick, onVisibleRangeChange (koaleszierter Block), applyTheme (+30ms), Indikator-Toggle, Settings-Apply, applyNamedLayout.
+- **MNOODLE: `noTags:true` in config** — komplett tagfrei, settings.js versteckt die Checkbox (`indDef.noTags`).
+
+### Feinschliff-Punkte 4–7
+- **Menü-Klemmung:** `clampMenuToViewport(menu)` misst nach dem Einblenden die ECHTE Grösse und klemmt an den Viewport — menuPosition schätzt nur (FRVP-Menü war höher als die Schätzung → "Übernehmen" unerreichbar). In openFrvpMenu + openOverlayMenu.
+- **Compare-Beschriftungen:** 11→13px (Achse) und 10→12px (Chips).
+- **Layout-Altlasten (Punkt 6, E2E-verifiziert):** In applyNamedLayout nach `state.active = new Set(...)`: `clearAllDrawings(); drawVrvp();`. Zwei Ursachen: (1) clearAllDrawings lief nur beim SYMBOL-Wechsel — bei gleichem Symbol (BTC-Layout→Vergleichs-Layout) blieben FRVPs/Linien stehen. (2) removeIndicator("vrvp") ruft drawVrvp, während vrvp NOCH im alten state.active steckt → malte das Profil frisch. Der zweite drawVrvp-Aufruf nach dem Set-Wechsel cleart wirklich. Dazu gbRenderTiers()-Nachzug (clearAllDrawings nullt gbActiveTier — sonst zeigt ein Button "Im Chart ✓" ohne Band).
+- **AERO (Punkt 7):** loadData unterscheidet jetzt Binance-HTTP-4xx: "Binance kennt AEROUSDT nicht — Paar dort nicht (mehr) gelistet." AERO ist vermutlich nicht auf Binance Spot — User prüft die Meldung nach Deploy.
+
+### Pattern-Engine-Ausbau (aus Gemini-Review + eigenen Funden)
+- **Scan-Marge (Gemini c):** scanPatterns scannt `from-150` bis to, filtert dann `rightIdx(p) >= from` (rightIdx = confirmedAt ?? channel.to ?? letzter Pivot). Angeschnittene Muster links werden erkannt, gezeichnet wird nur was im Sichtfeld endet.
+- **"Sym" → "Form"** überall (overlays-Label, Hover, Statuszeile, FAQ) — ein Prozentwert namens "Sym" wirkt wie eine Trefferquote.
+- **volRatio (patterns.js):** nach dem Rückmapping, am VOLLEN Datensatz: Volumen der Bestätigungskerze / Mittel der 20 Bars davor. NUR Information im Hover ("Vol 1.6×" / "(dünn)") — bewusst KEIN Filter, damit die Nullmodell-Kalibrierung unverändert bleibt.
+- **FAQ-Konsole-Befehl gefixt:** `PatternEngine.backtest(window.__tvGetDataList())` — das frühere `chart.getDataList()` scheiterte (chart ist nicht global, IIFE).
+
+### Muster-FAQ neu (User-Vorgaben: 10 SVGs nur für gerichtete, nur qualitativ, keine Nullmodell-Zahlen je Block)
+20 Blöcke: Intro (erwähnt Schlusskurs-Bestätigung + Scan-Marge), 14 Muster-Blöcke (10 mit Inline-SVG: Double Top/Bottom, H&S/iH&S, auf-/absteigendes Dreieck, steigender/fallender Keil, Bull/Bear-Flagge; textlich mit Verweis: Triple, Wimpel, sym. Dreieck, Rechteck), Warn-Block (Erwartung≠Wahrscheinlichkeit, deckt Gemini a+b ab), Strenge, Seltenheits-Sammelblock, Vol-Hover-Erklärung, Selbst-nachmessen. SVG-Konvention: Muster stroke var(--text-dim), Erwartungs-Pfeil gestrichelt var(--up)/var(--down) mit Spitze, Hilfslinien var(--accent) dash. CSS: .pat-fig float:right 140×76.
+
+### E2E-Harness erweitert (e2e-layout.js)
+Neuer Schritt 5b: leeres Layout nach BTC-Layout laden → alte Overlay-IDs müssen tot sein, drawings/active leer (Punkt-6-Regression). Tag-Test prüft: KLC-Tags global false, applyTheme lässt sie aus, drawIndicatorTags wirft nicht. Hook `window.__T` wird beim Kopieren vor das schliessende `})();` injiziert.

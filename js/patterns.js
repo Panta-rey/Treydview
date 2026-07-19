@@ -863,6 +863,18 @@
           p.pole.from += from;
           p.pole.to   += from;
         }
+
+        // Volumen an der Bestätigungskerze relativ zum 20-Bar-Schnitt davor.
+        // Reine Zusatzinformation (Hover) — kein Filter, damit die gegen das
+        // Nullmodell kalibrierten Fehlalarmraten unverändert bleiben.
+        if (p.confirmedAt != null && p.confirmedAt >= 21) {
+          let s = 0;
+          for (let k = p.confirmedAt - 20; k < p.confirmedAt; k++) s += data[k].volume || 0;
+          const mean = s / 20;
+          p.volRatio = mean > 0 ? (data[p.confirmedAt].volume || 0) / mean : null;
+        } else {
+          p.volRatio = null;
+        }
       });
       return found;
     },

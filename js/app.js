@@ -170,8 +170,8 @@ function baseStyles() {
           show: cs.lastLine !== false || cs.lastText !== false,
           upColor: cs.upColor, downColor: cs.downColor,
           line: { show: cs.lastLine !== false, style: "dashed", dashedValue: [4, 4], size: 1 },
-          text: { show: cs.lastText !== false, size: cs.lastSize || 12,
-                  family: "'IBM Plex Mono',monospace", color: "#ffffff" },
+          // Text zeichnet der eigene Tag-Renderer (immer zuoberst) — KLC nur Linie
+          text: { show: false },
         },
         // Lokale Hochs/Tiefs im sichtbaren Bereich
         high: { show: cs.hiLoShow !== false, textSize: cs.hiLoSize || 12,
@@ -186,8 +186,9 @@ function baseStyles() {
       // Dunkel gewinnt klar: gemessen an allen 54 Linienfarben scheitern
       // mit weissem Text 49, mit dunklem nur 8 — und die 8 wurden in
       // config.js aufgehellt. Money Noodles weisse Linie war der Auslöser.
-      lastValueMark: { show: indicatorTagsWanted(), text: { show: true, color: "#0d1117", size: 12,
-                                           family: "'IBM Plex Mono',monospace" } },
+      // KLC-eigene Indikator-Tags IMMER aus — TreydView zeichnet sie selbst
+      // (eigenes Canvas, echt pro Linie schaltbar; KLC kann nur global).
+      lastValueMark: { show: false },
       tooltip: { showRule: "none" },
     },
     xAxis: {
@@ -247,31 +248,6 @@ function buildCreate(ind) {
   return create;
 }
 
-// Globaler Preis-Tag-Zustand für Indikatoren. KLineCharts kennt NUR einen
-// globalen lastValueMark-Schalter (im Bundle verifiziert). Regel: Tag AN,
-// solange irgendein sichtbarer Plot eines aktiven Indikators ihn will.
-// WICHTIG: applyTheme() muss DIESELBE Quelle nutzen — vorher hardcodete es
-// show:true und überschrieb jede Abwahl beim nächsten Theme-Durchlauf.
-function indicatorTagsWanted() {
-  try {
-    let any = false;
-    CONFIG.INDICATORS.forEach(ind => {
-      if (!state.active.has(ind.key)) return;
-      const sv = Settings.get(ind.key);
-      (ind.plots || []).forEach(p => {
-        const pl = sv.plots[p.key];
-        if (pl && pl.visible !== false && pl.showLast !== false) any = true;
-      });
-    });
-    return any;
-  } catch (e) { return true; }
-}
-
-function applyIndicatorTags() {
-  try {
-    chart.setStyles({ indicator: { lastValueMark: { show: indicatorTagsWanted() } } });
-  } catch (e) {}
-}
 
 // ---------- Indikatoren anwenden ----------
 function applyIndicator(ind) {
@@ -300,7 +276,7 @@ function applyAllActive() {
   // Erst Overlays, dann Sub-Panes (Reihenfolge = stabilere Pane-Höhen)
   CONFIG.INDICATORS.filter(i => i.pane === "main").forEach(i => { if (state.active.has(i.key)) applyIndicator(i); });
   CONFIG.INDICATORS.filter(i => i.pane === "sub").forEach(i => { if (state.active.has(i.key)) applyIndicator(i); });
-  applyIndicatorTags();
+  scheduleTagDraw();
 }
 
 // ---------- VRVP-Canvas ----------
@@ -431,6 +407,7 @@ chart.subscribeAction("onVisibleRangeChange", () => {
     _redrawQueued = false;
     if (state.active.has("vrvp")) { try { drawVrvp(); } catch (e) {} }
     if (state.compareAssets.length > 0) { try { drawCompare(); } catch (e) {} }
+    try { drawIndicatorTags(); } catch (e) {}
   });
 });
 
@@ -455,6 +432,13 @@ async function loadData() {
     // HTTP 500 heisst: der Worker ist erreichbar und wirft einen Fehler.
     // Die URL zu prüfen führt dann in die Irre — sie stimmt ja.
     const isWorker = state.symbol.type === "worker";
+    // Binance HTTP 400 = "Invalid symbol": das Paar existiert dort nicht.
+    // Ohne diesen Hinweis sieht es wie ein Netzwerkfehler aus (AERO-Fall).
+    if (!isWorker && /HTTP 4\d\d/.test(err.message)) {
+      setStatus(`Fehler: Binance kennt ${state.symbol.id} nicht — Paar dort nicht (mehr) gelistet.`);
+      setLive("offline", "Fehler");
+      return;
+    }
     const hint = !isWorker ? ""
       : /HTTP 5\d\d/.test(err.message) ? " — der Worker antwortet, wirft aber einen Fehler. Cloudflare-Logs prüfen (nicht die URL)."
       : /HTTP 4\d\d/.test(err.message) ? " — Worker-Route nicht gefunden. Pfad in WORKER_BASE_URL prüfen."
@@ -466,6 +450,7 @@ async function loadData() {
   // Antwort gehört zu einem inzwischen überholten Wechsel → verwerfen.
   if (seq !== _loadSeq) return;
   chart.applyNewData(candles);
+  scheduleTagDraw();
   // 2.9: Nach einem Asset-Wechsel liegen die Preisniveaus ganz woanders
   // (BTC ~60'000, ETH ~2'500). Ohne Auto-Skalierung müsste man die
   // Y-Achse erst suchen. autoScaleY() skaliert neu und entsperrt danach
@@ -480,6 +465,7 @@ async function loadData() {
     state.closeStream = DataLayer.openBinanceStream(
       state.symbol.id, state.timeframe.binanceInterval,
       (candle) => {
+        scheduleTagDraw();
         chart.updateData(candle);
         updatePriceHeader(candle, chart.getDataList().at(-2));
         updateLegend();
@@ -797,7 +783,7 @@ function drawCompare() {
   // Eigene Y-Achse rechts (Prozent-Beschriftung)
   const axisX = w - 4;
   ctx.fillStyle = T.text;
-  ctx.font = "11px 'IBM Plex Mono', monospace";
+  ctx.font = "13px 'IBM Plex Mono', monospace";
   ctx.textAlign = "right";
   const steps = 6;
   for (let s = 0; s <= steps; s++) {
@@ -837,7 +823,7 @@ function drawCompare() {
     if (chips[i].y - chips[i - 1].y < 14) chips[i].y = chips[i - 1].y + 14;
   }
 
-  ctx.font = "10px 'IBM Plex Mono', monospace";
+  ctx.font = "12px 'IBM Plex Mono', monospace";
   ctx.textAlign = "left";
   chips.forEach(c => {
     const txt = `${c.label} ${c.pct >= 0 ? "+" : ""}${c.pct.toFixed(1)}%`;
@@ -1003,7 +989,7 @@ function renderIndPanel() {
     check.addEventListener("change", () => {
       if (check.checked) { state.active.add(ind.key); applyIndicator(ind); }
       else { state.active.delete(ind.key); removeIndicator(ind); }
-      applyIndicatorTags();
+      scheduleTagDraw();
       saveWorkspace();
       updateLegend();
       resize();
@@ -1020,7 +1006,7 @@ function renderIndPanel() {
         Settings.open(ind.key, (key) => {
           const i = CONFIG.INDICATORS.find(x => x.key === key);
           if (state.active.has(key)) { removeIndicator(i); applyIndicator(i); }
-          applyIndicatorTags();
+          scheduleTagDraw();
           updateLegend();
         });
       });
@@ -1138,6 +1124,100 @@ function autoZoom() {
 function setChartCursor(cursor) {
   const el = document.getElementById("mainChart");
   if (el) el.classList.toggle("cursor-pointer", cursor === "pointer");
+}
+
+
+// ============================================================
+// EIGENER PREIS-TAG-RENDERER (Canvas über dem Chart)
+//
+// Warum selbst zeichnen: KLineCharts kennt für Indikator-Tags NUR einen
+// globalen Schalter, und Tag-Hintergrund = Linienfarbe inkl. Deckkraft
+// (im Bundle verifiziert). Pro Linie schalten, Deckkraft entkoppeln und
+// "aktueller Preis immer zuoberst" gehen nur mit eigener Zeichnung.
+// Werte kommen aus chart.getIndicatorByPaneId(...).result, Positionen aus
+// convertToPixel({...}, {paneId, absolute:true}) — beides API-verifiziert.
+// ============================================================
+function ensureTagCanvas() {
+  if (state.tagCanvas) return state.tagCanvas;
+  const c = document.createElement("canvas");
+  // z-index 11: über dem VRVP-Canvas (10), pointer-events aus
+  c.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;z-index:11;";
+  chartEl.style.position = "relative";
+  chartEl.appendChild(c);
+  state.tagCanvas = c;
+  return c;
+}
+
+let _tagQueued = false;
+function scheduleTagDraw() {
+  if (_tagQueued) return;
+  _tagQueued = true;
+  requestAnimationFrame(() => { _tagQueued = false; try { drawIndicatorTags(); } catch (e) {} });
+}
+
+function formatTagValue(v, price) {
+  if (v == null || !isFinite(v)) return null;
+  if (price) {
+    const frac = Math.abs(v) >= 1000 ? 1 : Math.abs(v) >= 1 ? 2 : 4;
+    return v.toLocaleString("de-CH", { minimumFractionDigits: 0, maximumFractionDigits: frac });
+  }
+  return v.toFixed(2);
+}
+
+function drawIndicatorTags() {
+  const c = ensureTagCanvas();
+  const W = chartEl.clientWidth, H = chartEl.clientHeight;
+  if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+  const ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, W, H);
+
+  const data = chart.getDataList();
+  if (!data || !data.length) return;
+  const lastTs = data[data.length - 1].timestamp;
+  const cs = state.chartStyle;
+
+  const drawTag = (y, text, bg, size) => {
+    if (y == null || !isFinite(y) || y < 0 || y > H) return;
+    ctx.font = size + "px 'IBM Plex Mono', monospace";
+    const tw = ctx.measureText(text).width;
+    const th = size + 6;
+    const x0 = W - tw - 10;
+    ctx.fillStyle = bg;
+    ctx.fillRect(x0, y - th / 2, tw + 10, th);
+    ctx.fillStyle = textOn(bg.startsWith("#") ? bg : "#888888");
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x0 + 5, y + 0.5);
+  };
+
+  // --- Indikator-Tags: echt pro Linie (showLast) ---
+  CONFIG.INDICATORS.forEach(ind => {
+    if (!state.active.has(ind.key) || ind.noTags || ind.key === "vrvp") return;
+    const paneId = ind.pane === "sub" ? (state.subPaneIds[ind.key] || "pane_" + ind.key) : "candle_pane";
+    let inst = null;
+    try { inst = chart.getIndicatorByPaneId(paneId, ind.name); } catch (e) {}
+    if (!inst || !Array.isArray(inst.result) || !inst.result.length) return;
+    const lastRow = inst.result[inst.result.length - 1] || {};
+    const sv = Settings.get(ind.key);
+    (ind.plots || []).forEach(p => {
+      const pl = sv.plots[p.key];
+      if (!pl || pl.visible === false || pl.showLast === false) return;
+      const v = lastRow[p.key];
+      if (v == null || !isFinite(v)) return;
+      let y = null;
+      try { y = chart.convertToPixel({ timestamp: lastTs, value: v }, { paneId, absolute: true }).y; } catch (e) {}
+      drawTag(y, formatTagValue(v, ind.pane !== "sub"), pl.hex || "#888888", 12);
+    });
+  });
+
+  // --- Aktueller Preis: IMMER zuletzt gezeichnet = immer zuoberst ---
+  if (cs.lastText !== false) {
+    const k = data[data.length - 1];
+    const up = k.close >= k.open;
+    const bg = up ? cs.upColor : cs.downColor;
+    let y = null;
+    try { y = chart.convertToPixel({ timestamp: lastTs, value: k.close }, { paneId: "candle_pane", absolute: true }).y; } catch (e) {}
+    drawTag(y, formatTagValue(k.close, true), bg, cs.lastSize || 12);
+  }
 }
 
 // ---------- Zeichnungs-Register ----------
@@ -1412,6 +1492,15 @@ function startTool(overlayName) {
 // KLineCharts liefert Klick-Koordinaten relativ zum Chart-Canvas. Das Menü
 // liegt per position:fixed im Fenster — ohne den Offset des Containers
 // erscheint es systematisch versetzt statt an der Zeichnung.
+// Menüs dürfen nie über den Bildrand ragen — sonst ist "Übernehmen"
+// unerreichbar. Nach dem Einblenden die ECHTE Grösse messen und klemmen
+// (menuPosition schätzt nur; das FRVP-Menü ist höher als die Schätzung).
+function clampMenuToViewport(menu) {
+  const r = menu.getBoundingClientRect();
+  if (r.bottom > window.innerHeight - 6) menu.style.top = Math.max(6, window.innerHeight - r.height - 6) + "px";
+  if (r.right > window.innerWidth - 6) menu.style.left = Math.max(6, window.innerWidth - r.width - 6) + "px";
+}
+
 function menuPosition(event, menuW = 130, menuH = 70) {
   const rect = document.getElementById("mainChart").getBoundingClientRect();
   const cx = event?.pointerCoordinate?.x ?? event?.x;
@@ -1470,6 +1559,7 @@ function openOverlayMenu(overlay, event) {
   dashEl.onchange = apply;
 
   menu.classList.remove("hidden");
+  clampMenuToViewport(menu);
   document.getElementById("overlayDelete").onclick = () => {
     chart.removeOverlay(overlay.id);
     menu.classList.add("hidden");
@@ -1518,6 +1608,7 @@ function openFrvpMenu(overlay, event) {
   menu.style.left = p.x + "px";
   menu.style.top  = p.y + "px";
   menu.classList.remove("hidden");
+  clampMenuToViewport(menu);   // echte Höhe > Schätzung -> nachkorrigieren
 
   document.getElementById("frvpApply").onclick = () => {
     const op = parseInt(document.getElementById("frvpOpacity").value, 10) || 55;
@@ -2684,7 +2775,11 @@ function showPatternHint(p) {
   const dir = p.direction === "bearish" ? "fallend" : p.direction === "bullish" ? "steigend" : "neutral";
   const conf = p.confirmedAt != null ? "bestätigt" : "unbestätigt";
   const tgt = p.target != null ? `  ·  Ziel ${p.target.toLocaleString("de-CH", { maximumFractionDigits: 0 })}` : "";
-  setStatus(`${p.label}  ·  ${dir}  ·  ${conf}  ·  Sym ${Math.round(p.quality * 100)}%${tgt}`);
+  // Volumen der Bestätigungskerze vs. 20-Bar-Schnitt: Ausbrüche auf dünnem
+  // Volumen sind weniger glaubwürdig. Reine Information, kein Filter.
+  const vol = p.volRatio != null
+    ? `  ·  Vol ${p.volRatio.toFixed(1)}×${p.volRatio < 1 ? " (dünn)" : ""}` : "";
+  setStatus(`${p.label}  ·  ${dir}  ·  ${conf}  ·  Form ${Math.round(p.quality * 100)}%${vol}${tgt}`);
 }
 function clearPatternHint() {
   if (_patHintPrev != null) { setStatus(_patHintPrev); _patHintPrev = null; }
@@ -2714,7 +2809,14 @@ function scanPatterns() {
   document.querySelectorAll("#patTypes input[type=checkbox]").forEach(cb => {
     if (!cb.checked) enabled[cb.dataset.pat] = false;
   });
-  const found = PatternEngine.scan(data, { from, to }, { ...state.patternOpts, ...enabled });
+  // Mit linker Marge scannen: eine H&S, deren linke Schulter knapp
+  // ausserhalb des Bildschirms liegt, würde sonst nicht erkannt. 150 Bars
+  // decken das breiteste Muster (Trendlinien-Fenster + Fahnenmast) ab.
+  // Gezeichnet wird trotzdem nur, was rechts im Sichtfeld endet.
+  const scanFrom = Math.max(0, from - 150);
+  let found = PatternEngine.scan(data, { from: scanFrom, to }, { ...state.patternOpts, ...enabled });
+  const rightIdx = (p) => p.confirmedAt ?? p.channel?.to ?? p.points[p.points.length - 1].index;
+  found = found.filter(p => rightIdx(p) >= from);
 
   if (found.length === 0) {
     setStatus("Keine Muster im sichtbaren Bereich");
@@ -2775,7 +2877,7 @@ function scanPatterns() {
   });
 
   const confirmed = found.filter(p => p.confirmedAt != null).length;
-  setStatus(`${found.length} Muster (${confirmed} bestätigt) · Sym% = Symmetrie, keine Trefferquote · Rechtsklick löscht`);
+  setStatus(`${found.length} Muster (${confirmed} bestätigt) · Form% = Formqualität, keine Trefferquote · Rechtsklick löscht`);
 }
 
 // ---------- Y-Achse entsperren ----------
@@ -2811,6 +2913,7 @@ function autoScaleY() {
 // ---------- Theme (Hell / Dunkel) ----------
 function applyTheme() {
   document.documentElement.setAttribute("data-theme", state.theme);
+  setTimeout(scheduleTagDraw, 30);
   // Icon wechseln: Mond im Dunkelmodus, Sonne im Hellmodus
   const icon = document.getElementById("themeIcon");
   if (icon) {
@@ -2913,6 +3016,18 @@ async function applyNamedLayout(name) {
   });
   state.active = new Set(l.active || CONFIG.DEFAULT_ACTIVE);
 
+  // ---- Altlasten des VORHERIGEN Layouts vollständig räumen ----
+  // clearAllDrawings lief bisher nur beim Symbol-Wechsel. Bei gleichem
+  // Symbol (BTC-Layout -> Vergleichs-Layout auf BTC) blieben FRVPs und
+  // Linien stehen. Und drawVrvp oben lief noch mit ALTEM state.active
+  // (vrvp drin) und malte das Profil frisch — deshalb hier, NACH dem
+  // Set-Wechsel, erneut: jetzt cleart es wirklich.
+  clearAllDrawings();
+  drawVrvp();
+  // clearAllDrawings hat gbActiveTier genullt — Tier-Buttons nachziehen,
+  // sonst zeigt einer "Im Chart ✓" ohne Band im Chart.
+  if (state.gbResult) gbRenderTiers();
+
   // Vergleichs-Assets aus dem Layout übernehmen. Ohne das bleibt der
   // alte Compare-State stehen und man sieht Kerzen UND Vergleichslinien
   // gleichzeitig.
@@ -2950,7 +3065,7 @@ async function applyNamedLayout(name) {
   updateLegend();
 
   restoreDrawings(l.drawings);
-  applyIndicatorTags();
+  scheduleTagDraw();
 
   // Kerzen aus- bzw. wieder einblenden — je nachdem ob das Layout
   // Vergleiche enthält. Muss NACH loadData laufen.

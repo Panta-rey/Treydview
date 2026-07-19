@@ -539,9 +539,10 @@
       // Label mit Chip-Hintergrund (lesbar auf jedem Untergrund)
       const ys = pivots.map(c => c.y);
       const labelY = bearish ? Math.min(...ys) - 10 : Math.max(...ys) + 10;
-      // "Sym" statt nur "%": die Zahl misst Symmetrie/Ausprägung des Musters,
+      // "Form" statt nur "%": die Zahl misst Symmetrie/Ausprägung des Musters —
+      // bewusst NICHT "Wahrscheinlichkeit", ein Prozentwert wirkt sonst wie eine Trefferquote.
       // NICHT die Trefferwahrscheinlichkeit. Ohne Label liest man sie als Konfidenz.
-      const q = ed.quality != null ? `  Sym ${Math.round(ed.quality * 100)}%` : "";
+      const q = ed.quality != null ? `  Form ${Math.round(ed.quality * 100)}%` : "";
       const lc = labelColors();
       // Scrollt das Muster halb aus dem Bild, liegt die Mitte zwischen erstem
       // und letztem Pivot ausserhalb — dann sieht man nur noch die Punkte und
@@ -860,7 +861,7 @@
 
       // Label
       const lc = labelColors();
-      const q = ed.quality != null ? `  Sym ${Math.round(ed.quality * 100)}%` : "";
+      const q = ed.quality != null ? `  Form ${Math.round(ed.quality * 100)}%` : "";
       // Label ins Sichtfeld klemmen — sonst bleiben beim Rausscrollen nur
       // die Linien ohne Bezeichnung übrig.
       const W2 = bounding?.width || 1200;
