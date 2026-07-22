@@ -121,8 +121,18 @@ Object.defineProperty(state, "watchlist", {
   set(v) { this.watchlists[this.activeWatchlist] = v; },
 });
 
-// Debug-Zugriff aus der Browser-Konsole: window.state
+// Debug-Zugriff aus der Browser-Konsole: window.__tvState
 window.__tvState = state;
+
+// Bybit-Debug: __tvTestBybit("AEROUSDT","D") in Konsole eingeben
+window.__tvTestBybit = async (symbol, interval) => {
+  const url = `${CONFIG.BYBIT_REST}/v5/market/kline?category=spot&symbol=${symbol}&interval=${interval}&limit=5`;
+  console.log("Bybit URL:", url);
+  const res = await fetch(url);
+  const json = await res.json();
+  console.log("Bybit response:", JSON.stringify(json).slice(0,500));
+  return json;
+};
 
 // Farbpalette für Vergleichs-Assets
 // 15 gut unterscheidbare Farben. Reihenfolge so gewählt, dass benachbarte
@@ -607,7 +617,10 @@ document.getElementById("assetSearch").addEventListener("input", e => renderAsse
 // - Defaults: CONFIG.DEFAULT_SYMBOLS immer enthalten, nie doppelt
 // - Label: "BASE/QUOTE (Exchange)"
 const ALLOWED_QUOTES = new Set(["USDT", "USDC", "USD", "BTC"]);
-const VOL_MIN = 5_000_000;
+// Volumen-Filter: 24h-Handelsvolumen in Quote-Währung (z.B. USDT).
+// 1 Mio statt 5 Mio — 5 Mio war zu aggressiv und hat liquide Tokens
+// wie RENDER/USDT in ruhigen Marktphasen rausgefiltert.
+const VOL_MIN = 1_000_000;
 
 // Hilfsfunktion: Binance-24h-Ticker für Volumenfilter
 async function _fetchBinanceTicker24h() {
