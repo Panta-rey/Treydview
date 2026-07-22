@@ -628,44 +628,23 @@ document.getElementById("assetSearch").addEventListener("input", e => renderAsse
 // - Defaults: CONFIG.DEFAULT_SYMBOLS immer enthalten, nie doppelt
 // - Label: "BASE/QUOTE (Exchange)"
 const ALLOWED_QUOTES = new Set(["USDT", "USDC", "USD", "BTC"]);
-// Volumen-Filter: 24h-Handelsvolumen in Quote-Währung (z.B. USDT).
-// 1 Mio statt 5 Mio — 5 Mio war zu aggressiv und hat liquide Tokens
-// wie RENDER/USDT in ruhigen Marktphasen rausgefiltert.
-const VOL_MIN = 1_000_000;
-
-// Hilfsfunktion: Binance-24h-Ticker für Volumenfilter
-async function _fetchBinanceTicker24h() {
-  try {
-    const res = await fetch(`${CONFIG.BINANCE_REST}/ticker/24hr`);
-    if (!res.ok) return null;
-    const arr = await res.json();
-    const map = {};
-    arr.forEach(t => { map[t.symbol] = parseFloat(t.quoteVolume); });
-    return map;
-  } catch (e) { return null; }
-}
 
 async function loadAllExchangeSymbols() {
   const defaultIds = new Set(CONFIG.DEFAULT_SYMBOLS.map(s => s.id));
   const seen = new Set(CONFIG.DEFAULT_SYMBOLS.map(s => s.id));
   const result = [...CONFIG.DEFAULT_SYMBOLS];
 
-  // --- Binance: alle USDT/USDC/BTC/USD Pairs mit Volumen-Filter ---
+  // --- Binance: alle USDT/USDC/BTC/USD Pairs (Status TRADING) ---
+  // Kein Volumen-Filter: Binance listet nur aktive Pairs als TRADING,
+  // und RENDER/USDT etc. können in ruhigen Phasen < 1M haben obwohl liquide.
   try {
-    const [infoRes, volMap] = await Promise.all([
-      fetch(`${CONFIG.BINANCE_REST}/exchangeInfo`),
-      _fetchBinanceTicker24h(),
-    ]);
+    const infoRes = await fetch(`${CONFIG.BINANCE_REST}/exchangeInfo`);
     if (infoRes.ok) {
       const info = await infoRes.json();
       info.symbols
         .filter(s => s.status === "TRADING" && ALLOWED_QUOTES.has(s.quoteAsset))
         .forEach(s => {
           if (seen.has(s.symbol)) return;
-          if (volMap !== null) {
-            const vol = volMap[s.symbol] || 0;
-            if (!defaultIds.has(s.symbol) && vol < VOL_MIN) return;
-          }
           seen.add(s.symbol);
           result.push({ id: s.symbol, label: `${s.baseAsset}/${s.quoteAsset} (Binance)`, type: "binance" });
         });
@@ -705,12 +684,13 @@ async function loadAllExchangeSymbols() {
     }
   } catch (e) {}
 
-  // --- Bybit: alle Spot-Pairs mit Volumen-Filter ---
+  // --- Bybit: Spot-Pairs mit Volumen-Filter (viele Trash-Tokens) ---
   try {
     const res = await fetch(`${CONFIG.BYBIT_REST}/v5/market/tickers?category=spot`);
     if (res.ok) {
       const json = await res.json();
       if (json.retCode === 0) {
+        const BYBIT_VOL_MIN = 1_000_000;   // Turnover in USD
         (json.result?.list || []).forEach(t => {
           const sym = t.symbol;
           const quote = ["USDT","USDC","BTC","USD"].find(q => sym.endsWith(q));
@@ -719,7 +699,7 @@ async function loadAllExchangeSymbols() {
           const pairId = `${sym}_BY`;
           if (seen.has(pairId)) return;
           const vol = parseFloat(t.turnover24h) || 0;
-          if (!defaultIds.has(pairId) && vol < VOL_MIN) return;
+          if (!defaultIds.has(pairId) && vol < BYBIT_VOL_MIN) return;
           seen.add(pairId);
           result.push({ id: pairId, label: `${base}/${quote} (Bybit)`, type: "bybit", bybitSymbol: sym });
         });
@@ -2338,32 +2318,42 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
 // - Einzel-Finger-Pan ist bereits in KLC eingebaut
 (function initTouch() {
   const el = document.getElementById("mainChart");
-  let lastDist = null;
 
-  // Long-Press: Touch-Geräte haben keinen Rechtsklick. Ein langer Druck
-  // (~500ms) an einer Stelle löst ein synthetisches contextmenu-Event aus,
-  // sodass die bestehenden Rechtsklick-Menüs (Preislinien-Stil etc.) auch
-  // auf Handy/Tablet erreichbar sind. Nur wenn gerade nicht gezeichnet wird.
+  // Pinch-State
+  let pinching = false;
+  let lastDist = null;
+  let lastMidX = null;
+
+  // Long-Press State
   let lpTimer = null, lpStart = null;
   const LP_MS = 500, LP_MOVE = 12;
+  const cancelLongPress = () => {
+    if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+    lpStart = null;
+  };
 
-  const cancelLongPress = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } lpStart = null; };
-
+  // WICHTIG: nicht passive — nur so kann touchmove preventDefault() nutzen
+  // um Browser-Scroll während Pinch zu unterdrücken.
   el.addEventListener("touchstart", (e) => {
     if (e.touches.length === 2) {
+      // Pinch beginnt
+      pinching = true;
+      cancelLongPress();
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
-      lastDist = Math.sqrt(dx*dx + dy*dy);
-      cancelLongPress();
-    } else {
+      lastDist = Math.sqrt(dx * dx + dy * dy);
+      lastMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      e.preventDefault();   // Browser-Pinch-to-Zoom deaktivieren
+    } else if (e.touches.length === 1) {
+      pinching = false;
       lastDist = null;
       // Long-Press nur ausserhalb des Zeichnen-Modus
-      if (!state.activeTool && e.touches.length === 1) {
+      if (!state.activeTool) {
         const t = e.touches[0];
         lpStart = { x: t.clientX, y: t.clientY };
         lpTimer = setTimeout(() => {
           lpTimer = null;
-          // Synthetisches contextmenu-Event an der Druckstelle
+          if (!lpStart) return;
           const ev = new MouseEvent("contextmenu", {
             bubbles: true, cancelable: true,
             clientX: lpStart.x, clientY: lpStart.y,
@@ -2372,69 +2362,61 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
         }, LP_MS);
       }
     }
-  }, { passive: true });
+  }, { passive: false });
 
   el.addEventListener("touchmove", (e) => {
-    // Bei Bewegung Long-Press abbrechen
+    // Long-Press bei Bewegung abbrechen
     if (lpStart && e.touches.length === 1) {
       const t = e.touches[0];
-      if (Math.abs(t.clientX - lpStart.x) > LP_MOVE || Math.abs(t.clientY - lpStart.y) > LP_MOVE) {
+      if (Math.abs(t.clientX - lpStart.x) > LP_MOVE ||
+          Math.abs(t.clientY - lpStart.y) > LP_MOVE) {
         cancelLongPress();
       }
     }
-    if (e.touches.length === 2 && lastDist != null) {
-      e.preventDefault();
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      const scale = dist / lastDist;
-      const rect = el.getBoundingClientRect();
 
-      // Preisskala-Bereich (rechts ~80px): kein Zoom wenn beide Finger dort
-      const axisW = 80;
-      const t0inAxis = (e.touches[0].clientX - rect.left) > (rect.width - axisW);
-      const t1inAxis = (e.touches[1].clientX - rect.left) > (rect.width - axisW);
-      if (t0inAxis && t1inAxis) { lastDist = dist; return; }
+    if (!pinching || e.touches.length !== 2 || lastDist == null) return;
+    e.preventDefault();
 
-      // Pinch-Richtung: Winkel zwischen den Fingern bestimmt ob
-      // horizontal (Zeit-Zoom) oder vertikal (Preis-Zoom).
-      // Schwelle 2.0: Finger müssen deutlich vertikaler als horizontal sein
-      // bevor wir auf Y-Achsen-Zoom wechseln. Sonst landet fast jeder
-      // diagonale Pinch im vertikalen Branch.
-      const isVertical = Math.abs(dy) > Math.abs(dx) * 2.0 && Math.abs(dy) > 20;
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist === 0) return;
 
-      if (isVertical) {
-        // Vertikaler Pinch: Preisbereich strecken/stauchen via yAxis.setRange
-        try {
-          const pane = chart.getDrawPaneById("candle_pane");
-          if (pane) {
-            const yAxis = pane.getAxisComponent();
-            if (yAxis) {
-              const r = yAxis.getRange();
-              if (r && r.from != null && r.to != null) {
-                const mid   = (r.from + r.to) / 2;
-                const half  = (r.to - r.from) / 2;
-                // scale < 1 = Finger nähern sich = Range vergrössern (rauszoomen)
-                // scale > 1 = Finger entfernen sich = Range verkleinern (reinzoomen)
-                const newHalf = half / scale;
-                yAxis.setRange({ from: mid - newHalf, to: mid + newHalf });
-              }
-            }
-          }
-        } catch (_) {}
-      } else {
-        // Horizontaler Pinch: Zeit-Zoom via KLC
-        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        try {
-          chart.zoomAtCoordinate(scale, { x: midX - rect.left, y: 0 }, 0);
-        } catch (_) {}
-      }
+    const scale = dist / lastDist;
+    const rect = el.getBoundingClientRect();
+
+    // Preisskala rechts (~80px): kein Zoom wenn beide Finger dort
+    const axisW = 80;
+    const x0 = e.touches[0].clientX - rect.left;
+    const x1 = e.touches[1].clientX - rect.left;
+    if (x0 > rect.width - axisW && x1 > rect.width - axisW) {
       lastDist = dist;
+      return;
     }
+
+    // Horizontaler Chart-Zoom via KLC (Zeit-Achse)
+    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+    try {
+      chart.zoomAtCoordinate(scale, { x: midX, y: 0 }, 0);
+    } catch (_) {}
+
+    lastDist = dist;
+    lastMidX = midX;
   }, { passive: false });
 
-  el.addEventListener("touchend", () => { lastDist = null; cancelLongPress(); }, { passive: true });
-  el.addEventListener("touchcancel", () => { lastDist = null; cancelLongPress(); }, { passive: true });
+  el.addEventListener("touchend", (e) => {
+    if (e.touches.length < 2) {
+      pinching = false;
+      lastDist = null;
+    }
+    if (e.touches.length === 0) cancelLongPress();
+  }, { passive: true });
+
+  el.addEventListener("touchcancel", () => {
+    pinching = false;
+    lastDist = null;
+    cancelLongPress();
+  }, { passive: true });
 })();
 
 // ---------- Workspace speichern ----------
