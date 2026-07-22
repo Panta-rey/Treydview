@@ -2395,7 +2395,9 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
 
     if (bothOnAxis) {
       // Y-Achsen-Zoom: Finger auseinander = reinzoomen (kleinerer Preisbereich)
-      // Finger zusammen = rauszoomen (grösserer Preisbereich)
+      // Finger zusammen = rauszoomen (grösserer Preisbereich).
+      // setAutoCalcTickFlag(false) verhindert dass KLC den Range sofort
+      // wieder überschreibt (was bei autoScaleY passiert).
       try {
         const pane = chart.getDrawPaneById("candle_pane");
         if (pane) {
@@ -2405,6 +2407,8 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
             if (r && r.from != null && r.to != null) {
               const mid     = (r.from + r.to) / 2;
               const newHalf = ((r.to - r.from) / 2) / scale;
+              // Auto-Calc ausschalten bevor setRange — sonst überschreibt KLC sofort
+              yAxis.setAutoCalcTickFlag(false);
               yAxis.setRange({ from: mid - newHalf, to: mid + newHalf });
             }
           }
