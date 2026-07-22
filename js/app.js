@@ -2319,125 +2319,85 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
 (function initTouch() {
   const el = document.getElementById("mainChart");
 
-  // Pinch-State
-  let pinching = false;
-  let lastDist = null;
-  let lastMidX = null;
+  // KLC verwaltet Pinch-Zoom (X-Achse) komplett selbst via _initPinch().
+  // Wir fügen NUR den Y-Achsen-Zoom hinzu (beide Finger auf Preisskala)
+  // und den Long-Press für Rechtsklick-Menüs.
+  // Wichtig: Wir konkurrieren NICHT mit KLC's touchmove-Handler.
 
-  // Long-Press State
+  // ---------- Long-Press → Rechtsklick-Menü ----------
   let lpTimer = null, lpStart = null;
   const LP_MS = 500, LP_MOVE = 12;
-  const cancelLongPress = () => {
-    if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
-    lpStart = null;
-  };
+  const cancelLP = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } lpStart = null; };
 
-  // WICHTIG: nicht passive — nur so kann touchmove preventDefault() nutzen
-  // um Browser-Scroll während Pinch zu unterdrücken.
   el.addEventListener("touchstart", (e) => {
-    if (e.touches.length === 2) {
-      // Pinch beginnt
-      pinching = true;
-      cancelLongPress();
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      lastDist = Math.sqrt(dx * dx + dy * dy);
-      lastMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      e.preventDefault();   // Browser-Pinch-to-Zoom deaktivieren
-    } else if (e.touches.length === 1) {
-      pinching = false;
-      lastDist = null;
-      // Long-Press nur ausserhalb des Zeichnen-Modus
-      if (!state.activeTool) {
-        const t = e.touches[0];
-        lpStart = { x: t.clientX, y: t.clientY };
-        lpTimer = setTimeout(() => {
-          lpTimer = null;
-          if (!lpStart) return;
-          const ev = new MouseEvent("contextmenu", {
-            bubbles: true, cancelable: true,
-            clientX: lpStart.x, clientY: lpStart.y,
-          });
-          el.dispatchEvent(ev);
-        }, LP_MS);
-      }
-    }
-  }, { passive: false });
+    if (e.touches.length !== 1) { cancelLP(); return; }
+    if (state.activeTool) return;
+    const t = e.touches[0];
+    lpStart = { x: t.clientX, y: t.clientY };
+    lpTimer = setTimeout(() => {
+      if (!lpStart) return;
+      el.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true, cancelable: true,
+        clientX: lpStart.x, clientY: lpStart.y,
+      }));
+      cancelLP();
+    }, LP_MS);
+  }, { passive: true });
 
   el.addEventListener("touchmove", (e) => {
-    // Long-Press bei Bewegung abbrechen
-    if (lpStart && e.touches.length === 1) {
-      const t = e.touches[0];
-      if (Math.abs(t.clientX - lpStart.x) > LP_MOVE ||
-          Math.abs(t.clientY - lpStart.y) > LP_MOVE) {
-        cancelLongPress();
-      }
-    }
+    if (e.touches.length !== 1 || !lpStart) return;
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - lpStart.x) > LP_MOVE || Math.abs(t.clientY - lpStart.y) > LP_MOVE) cancelLP();
+  }, { passive: true });
 
-    if (!pinching || e.touches.length !== 2 || lastDist == null) return;
-    e.preventDefault();
+  el.addEventListener("touchend",   cancelLP, { passive: true });
+  el.addEventListener("touchcancel", cancelLP, { passive: true });
 
-    const dx = e.touches[0].clientX - e.touches[1].clientX;
-    const dy = e.touches[0].clientY - e.touches[1].clientY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist === 0) return;
+  // ---------- Y-Achsen-Zoom (Pinch auf Preisskala) ----------
+  // Eigener separater Pinch-Tracker NUR für die Preisskala.
+  // KLC's Pinch läuft weiter ungestört für die X-Achse.
+  let yPinchDist = null;
 
-    const scale = dist / lastDist;
+  el.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 2) { yPinchDist = null; return; }
     const rect = el.getBoundingClientRect();
-
-    // Preisskala rechts (~80px):
-    // Beide Finger dort → Y-Achsen-Zoom (Preisbereich strecken/stauchen)
-    // Sonst → horizontaler Zeit-Zoom
     const axisW = 80;
     const x0 = e.touches[0].clientX - rect.left;
     const x1 = e.touches[1].clientX - rect.left;
-    const bothOnAxis = x0 > rect.width - axisW && x1 > rect.width - axisW;
-
-    if (bothOnAxis) {
-      // Beide Finger auf der Preisskala → Y-Zoom.
-      // e.stopPropagation() verhindert dass KLC's eigener pinchEvent
-      // gleichzeitig X-Zoom auslöst.
-      e.stopPropagation();
-      const currentScale = scale;
-      setTimeout(() => {
-        try {
-          const pane = chart.getDrawPaneById("candle_pane");
-          if (!pane) return;
-          const yAxis = pane.getAxisComponent();
-          if (!yAxis) return;
-          const r = yAxis.getRange();
-          if (!r || r.from == null || r.to == null) return;
-          const mid     = (r.from + r.to) / 2;
-          const newHalf = ((r.to - r.from) / 2) / currentScale;
-          yAxis.setAutoCalcTickFlag(false);
-          yAxis.setRange({ from: mid - newHalf, to: mid + newHalf });
-        } catch (_) {}
-      }, 0);
+    // Nur aktivieren wenn BEIDE Finger auf der Preisskala (rechts)
+    if (x0 > rect.width - axisW && x1 > rect.width - axisW) {
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      yPinchDist = Math.abs(dy);
     } else {
-      // Horizontaler Chart-Zoom via KLC (Zeit-Achse)
-      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
-      try {
-        chart.zoomAtCoordinate(scale, { x: midX, y: 0 }, 0);
-      } catch (_) {}
+      yPinchDist = null;
     }
-
-    lastDist = dist;
-    lastMidX = midX;
-  }, { passive: false });
-
-  el.addEventListener("touchend", (e) => {
-    if (e.touches.length < 2) {
-      pinching = false;
-      lastDist = null;
-    }
-    if (e.touches.length === 0) cancelLongPress();
   }, { passive: true });
 
-  el.addEventListener("touchcancel", () => {
-    pinching = false;
-    lastDist = null;
-    cancelLongPress();
+  // Separater touchmove NUR für Y-Pinch — passive:false nur wenn nötig
+  el.addEventListener("touchmove", (e) => {
+    if (e.touches.length !== 2 || yPinchDist === null) return;
+    const dy = Math.abs(e.touches[0].clientY - e.touches[1].clientY);
+    if (dy === 0 || yPinchDist === 0) { yPinchDist = dy; return; }
+    const scale = dy / yPinchDist;
+    yPinchDist = dy;
+    // Y-Achse skalieren: scale>1 = Finger auseinander = Range verkleinern (rein)
+    //                    scale<1 = Finger zusammen   = Range vergrössern (raus)
+    try {
+      const pane = chart.getDrawPaneById("candle_pane");
+      if (!pane) return;
+      const yAxis = pane.getAxisComponent();
+      if (!yAxis) return;
+      const r = yAxis.getRange();
+      if (!r || r.from == null || r.to == null) return;
+      const mid     = (r.from + r.to) / 2;
+      const newHalf = ((r.to - r.from) / 2) / scale;
+      yAxis.setAutoCalcTickFlag(false);
+      yAxis.setRange({ from: mid - newHalf, to: mid + newHalf });
+    } catch (_) {}
   }, { passive: true });
+
+  el.addEventListener("touchend",    () => { yPinchDist = null; }, { passive: true });
+  el.addEventListener("touchcancel", () => { yPinchDist = null; }, { passive: true });
 })();
 
 // ---------- Workspace speichern ----------
