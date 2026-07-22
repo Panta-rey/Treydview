@@ -2385,20 +2385,38 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
     const scale = dist / lastDist;
     const rect = el.getBoundingClientRect();
 
-    // Preisskala rechts (~80px): kein Zoom wenn beide Finger dort
+    // Preisskala rechts (~80px):
+    // Beide Finger dort → Y-Achsen-Zoom (Preisbereich strecken/stauchen)
+    // Sonst → horizontaler Zeit-Zoom
     const axisW = 80;
     const x0 = e.touches[0].clientX - rect.left;
     const x1 = e.touches[1].clientX - rect.left;
-    if (x0 > rect.width - axisW && x1 > rect.width - axisW) {
-      lastDist = dist;
-      return;
-    }
+    const bothOnAxis = x0 > rect.width - axisW && x1 > rect.width - axisW;
 
-    // Horizontaler Chart-Zoom via KLC (Zeit-Achse)
-    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
-    try {
-      chart.zoomAtCoordinate(scale, { x: midX, y: 0 }, 0);
-    } catch (_) {}
+    if (bothOnAxis) {
+      // Y-Achsen-Zoom: Finger auseinander = reinzoomen (kleinerer Preisbereich)
+      // Finger zusammen = rauszoomen (grösserer Preisbereich)
+      try {
+        const pane = chart.getDrawPaneById("candle_pane");
+        if (pane) {
+          const yAxis = pane.getAxisComponent();
+          if (yAxis) {
+            const r = yAxis.getRange();
+            if (r && r.from != null && r.to != null) {
+              const mid     = (r.from + r.to) / 2;
+              const newHalf = ((r.to - r.from) / 2) / scale;
+              yAxis.setRange({ from: mid - newHalf, to: mid + newHalf });
+            }
+          }
+        }
+      } catch (_) {}
+    } else {
+      // Horizontaler Chart-Zoom via KLC (Zeit-Achse)
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+      try {
+        chart.zoomAtCoordinate(scale, { x: midX, y: 0 }, 0);
+      } catch (_) {}
+    }
 
     lastDist = dist;
     lastMidX = midX;
