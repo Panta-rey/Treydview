@@ -718,12 +718,20 @@ function renderCompareList(filter = "") {
   if (!list) return;
   list.innerHTML = "";
   const f = filter.toUpperCase().trim();
-  // Alle Exchanges vergleichbar (binance, coinbase, kraken, bybit) —
-  // nur Gold (worker) ausschliessen, da kein OHLC-Endpoint für beliebige TFs
-  const items = state.allSymbols.filter(s => s.type !== "worker" &&
-    (f ? (s.id.toUpperCase().includes(f) || s.label.toUpperCase().includes(f)) : true) &&
-    s.id !== state.symbol.id &&
-    !state.compareAssets.some(c => c.id === s.id));
+
+  // Quote-Währung des aktiven Symbols ermitteln (aus Label: "BTC/USDT (Binance)" → "USDT")
+  const activeQuote = (["USDT","USDC","USD","BTC"]
+    .find(q => state.symbol.label.includes("/" + q)) || "").toUpperCase();
+
+  const items = state.allSymbols.filter(s => {
+    if (s.type === "worker") return false;   // Gold nie vergleichbar
+    if (s.id === state.symbol.id) return false;
+    if (state.compareAssets.some(c => c.id === s.id)) return false;
+    // Gleiche Quote-Währung wie aktives Symbol
+    if (activeQuote && !s.label.includes("/" + activeQuote)) return false;
+    if (f) return s.id.toUpperCase().includes(f) || s.label.toUpperCase().includes(f);
+    return true;
+  });
   items.slice(0, 80).forEach(sym => {
     const item = document.createElement("div");
     item.className = "dd-item";
@@ -731,7 +739,7 @@ function renderCompareList(filter = "") {
     item.addEventListener("click", () => addCompareAsset(sym));
     list.appendChild(item);
   });
-  if (items.length === 0) list.innerHTML = '<div class="dd-empty">Kein Symbol</div>';
+  if (items.length === 0) list.innerHTML = '<div class="dd-empty">Kein Symbol mit gleicher Quote-Währung</div>';
 }
 
 function renderCompareActive() {
