@@ -257,6 +257,53 @@ const DataLayer = {
     })).sort((a, b) => a.timestamp - b.timestamp);
   },
 
+  // ---------- Bybit (v5 public) ----------
+  // Endpoint: GET https://api.bybit.com/v5/market/kline
+  //           ?category=spot&symbol=AEROUSDT&interval=<code>&limit=1000&end=<ms>
+  // Antwort:  { result: { list: [[start, open, high, low, close, volume, turnover], ...] } }
+  //           list ist NEUESTE zuerst, start = MILLISEKUNDEN. Max 1000/Request.
+  // interval-Codes: 15,60,240 (Minuten) · "D","W","M".
+  // CORS: Bybit erlaubt Browser-Zugriff auf public v5. Sandbox-untestbar.
+
+  async fetchBybitKlines(symbol, interval, limit) {
+    const MAX_PER_REQ = 1000;
+    const all = [];
+    let end = null;
+    let guard = Math.ceil(limit / MAX_PER_REQ) + 2;
+    while (all.length < limit && guard-- > 0) {
+      const chunk = await this._fetchBybitChunk(symbol, interval, end);
+      if (!chunk.length) break;
+      all.unshift(...chunk);
+      end = chunk[0].timestamp - 1;   // vor der ältesten Kerze weiter
+      if (chunk.length < MAX_PER_REQ) break;
+    }
+    return this._dedupe(all).slice(-limit);
+  },
+
+  async fetchBybitKlinesBefore(symbol, interval, beforeTimestamp, limit = 1000) {
+    const chunk = await this._fetchBybitChunk(symbol, interval, beforeTimestamp - 1);
+    return this._dedupe(chunk.filter(r => r.timestamp < beforeTimestamp));
+  },
+
+  async _fetchBybitChunk(symbol, interval, end) {
+    let url = `${CONFIG.BYBIT_REST}/v5/market/kline?category=spot&symbol=${symbol}&interval=${interval}&limit=1000`;
+    if (end) url += `&end=${end}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Bybit HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.retCode !== 0) throw new Error(`Bybit: ${json.retMsg || "Fehler"}`);
+    const list = json.result?.list || [];
+    // [start, open, high, low, close, volume, turnover] — aufsteigend sortieren
+    return list.map(k => ({
+      timestamp: parseInt(k[0], 10),   // bereits Millisekunden
+      open:   parseFloat(k[1]),
+      high:   parseFloat(k[2]),
+      low:    parseFloat(k[3]),
+      close:  parseFloat(k[4]),
+      volume: parseFloat(k[5]),
+    })).sort((a, b) => a.timestamp - b.timestamp);
+  },
+
   // ---------- Gold via Worker ----------
   // Toleranter Parser — Details siehe README. Bei abweichendem
   // Worker-Format NUR normalizeGoldRow() anpassen.

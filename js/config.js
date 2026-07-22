@@ -23,19 +23,23 @@ const CONFIG = {
     { id: "AERO-USD", label: "AERO/USD (Coinbase)", type: "coinbase", coinbaseProduct: "AERO-USD" },
     { id: "BTC-USD",  label: "BTC/USD (Coinbase)",  type: "coinbase", coinbaseProduct: "BTC-USD"  },
     { id: "ETH-USD",  label: "ETH/USD (Coinbase)",  type: "coinbase", coinbaseProduct: "ETH-USD"  },
+    // Bybit: listet AERO/USDT (Spot)
+    { id: "AEROUSDT_BY", label: "AERO/USDT (Bybit)", type: "bybit", bybitSymbol: "AEROUSDT" },
+    { id: "BTCUSDT_BY",  label: "BTC/USDT (Bybit)",  type: "bybit", bybitSymbol: "BTCUSDT"  },
   ],
 
   TIMEFRAMES: [
-    { id: "15m", label: "15m", binanceInterval: "15m", krakenInterval: "15",    coinbaseInterval: 900   },
-    { id: "1h",  label: "1h",  binanceInterval: "1h",  krakenInterval: "60",    coinbaseInterval: 3600  },
-    { id: "4h",  label: "4h",  binanceInterval: "4h",  krakenInterval: "240",   coinbaseInterval: 21600 },
-    { id: "1d",  label: "1D",  binanceInterval: "1d",  krakenInterval: "1440",  coinbaseInterval: 86400 },
-    { id: "1w",  label: "1W",  binanceInterval: "1w",  krakenInterval: "10080"                          },
-    { id: "1M",  label: "1M",  binanceInterval: "1M",  krakenInterval: "21600"                          },
+    { id: "15m", label: "15m", binanceInterval: "15m", krakenInterval: "15",    coinbaseInterval: 900,   bybitInterval: "15"  },
+    { id: "1h",  label: "1h",  binanceInterval: "1h",  krakenInterval: "60",    coinbaseInterval: 3600,  bybitInterval: "60"  },
+    { id: "4h",  label: "4h",  binanceInterval: "4h",  krakenInterval: "240",   coinbaseInterval: 21600, bybitInterval: "240" },
+    { id: "1d",  label: "1D",  binanceInterval: "1d",  krakenInterval: "1440",  coinbaseInterval: 86400, bybitInterval: "D"   },
+    { id: "1w",  label: "1W",  binanceInterval: "1w",  krakenInterval: "10080",                          bybitInterval: "W"   },
+    { id: "1M",  label: "1M",  binanceInterval: "1M",  krakenInterval: "21600",                          bybitInterval: "M"   },
   ],
 
   KRAKEN_REST:   "https://api.kraken.com/0/public",
   COINBASE_REST: "https://api.exchange.coinbase.com",
+  BYBIT_REST:    "https://api.bybit.com",
 
   CANDLE_LIMIT: 5000,        // per Pagination (Binance max 1000/Request)
   LAZY_LOAD_CHUNK: 1000,     // Nachladen beim Zurückscrollen

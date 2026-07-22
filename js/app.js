@@ -287,6 +287,9 @@ function buildCreate(ind) {
 
 // ---------- Indikatoren anwenden ----------
 function applyIndicator(ind) {
+  // Im Vergleichsmodus keine Indikatoren auf den Chart — state.active wird
+  // vom Aufrufer (Checkbox) gesetzt, gezeichnet wird erst beim Verlassen.
+  if (state.compareAssets && state.compareAssets.length > 0) return;
   if (ind.key === "vrvp") { setTimeout(drawVrvp, 80); return; } // VRVP = Canvas, kein KLC-Indikator
   const create = buildCreate(ind);
   if (ind.pane === "sub") {
@@ -466,6 +469,8 @@ async function loadData() {
       candles = await DataLayer.fetchKrakenKlines(state.symbol.krakenPair, state.timeframe.krakenInterval, CONFIG.CANDLE_LIMIT);
     } else if (state.symbol.type === "coinbase") {
       candles = await DataLayer.fetchCoinbaseKlines(state.symbol.coinbaseProduct, state.timeframe.coinbaseInterval, CONFIG.CANDLE_LIMIT);
+    } else if (state.symbol.type === "bybit") {
+      candles = await DataLayer.fetchBybitKlines(state.symbol.bybitSymbol, state.timeframe.bybitInterval, CONFIG.CANDLE_LIMIT);
     } else {
       candles = await DataLayer.fetchGoldHistory();
     }
@@ -503,10 +508,11 @@ async function loadData() {
   setStatus(`${candles.length} Candles · ${state.symbol.label} · ${state.timeframe.label}`);
   if (state.active.has("vrvp")) setTimeout(drawVrvp, 120);
 
-  if (state.symbol.type === "kraken" || state.symbol.type === "coinbase") {
-    // Kraken/Coinbase: kein WebSocket-Kerzenstream im gleichen Format —
-    // "Daily"-artige Anzeige ohne Live-Update.
-    setLive("offline", state.symbol.type === "kraken" ? "Kraken" : "Coinbase");
+  if (state.symbol.type === "kraken" || state.symbol.type === "coinbase" || state.symbol.type === "bybit") {
+    // Kraken/Coinbase/Bybit: kein WebSocket-Kerzenstream integriert —
+    // Anzeige ohne Live-Update.
+    const lbl = state.symbol.type === "kraken" ? "Kraken" : state.symbol.type === "coinbase" ? "Coinbase" : "Bybit";
+    setLive("offline", lbl);
   } else if (state.symbol.type === "binance") {
     state.closeStream = DataLayer.openBinanceStream(
       state.symbol.id, state.timeframe.binanceInterval,
@@ -926,6 +932,22 @@ function drawLine(ctx, dataList, from, to, valFn, color, width, dl, pctToY, char
 
 function applyCompareIndicator() {
   if (state.compareAssets.length > 0) {
+    // Vergleichsmodus: ALLE Indikatoren vom Chart nehmen. Die Y-Achse läuft
+    // hier in % relativer Performance — Indikatoren auf Preisbasis wären
+    // sinnlos und störend. state.active bleibt unverändert, damit die
+    // Indikatoren beim Verlassen des Vergleichs zurückkommen.
+    CONFIG.INDICATORS.forEach(ind => {
+      if (state.active.has(ind.key)) { try { removeIndicator(ind); } catch (e) {} }
+    });
+    // VRVP-Canvas leeren (removeIndicator("vrvp") tut das zwar schon, aber
+    // sicher ist sicher)
+    if (state.vrvpCanvas) {
+      state.vrvpCanvas.getContext("2d").clearRect(0, 0, state.vrvpCanvas.width, state.vrvpCanvas.height);
+    }
+    // Preis-Tags weg
+    if (state.tagCanvas) {
+      state.tagCanvas.getContext("2d").clearRect(0, 0, state.tagCanvas.width, state.tagCanvas.height);
+    }
     // Kerzen/Achse ausblenden: USD-Beschriftung transparent, Kerzen unsichtbar
     chart.setStyles({
       candle: {
@@ -942,13 +964,13 @@ function applyCompareIndicator() {
   } else {
     // Kerzen/Achse wiederherstellen, Canvas leeren
     chart.setStyles(baseStyles());
-    // Indikatoren neu anwenden — setStyles() setzt KLC intern zurück,
-    // dadurch können Linien hängen bleiben oder verschwinden.
+    // Indikatoren wieder anwenden (waren beim Vergleich entfernt)
     CONFIG.INDICATORS.forEach(ind => {
       if (!state.active.has(ind.key)) return;
-      removeIndicator(ind);
-      applyIndicator(ind);
+      try { removeIndicator(ind); } catch (e) {}   // Doppel-Registrierung vermeiden
+      try { applyIndicator(ind); } catch (e) {}
     });
+    scheduleTagDraw();
     if (_compareCanvas) {
       _compareCanvas.getContext("2d").clearRect(0, 0, _compareCanvas.width, _compareCanvas.height);
     }
@@ -971,12 +993,14 @@ function renderTfList() {
   const goldMode     = state.symbol.type === "worker";
   const krakenMode   = state.symbol.type === "kraken";
   const coinbaseMode = state.symbol.type === "coinbase";
+  const bybitMode    = state.symbol.type === "bybit";
   CONFIG.TIMEFRAMES.forEach(tf => {
     const item = document.createElement("div");
-    // Gold: nur Daily. Kraken: kein Monthly. Coinbase: nur bis Daily (kein W/M).
+    // Gold: nur Daily. Kraken: kein Monthly. Coinbase: nur bis Daily. Bybit: alle.
     const disabled = (goldMode && tf.id !== "1d")
                   || (krakenMode && !tf.krakenInterval)
-                  || (coinbaseMode && !tf.coinbaseInterval);
+                  || (coinbaseMode && !tf.coinbaseInterval)
+                  || (bybitMode && !tf.bybitInterval);
     item.className = "dd-item" + (tf.id === state.timeframe.id ? " active" : "") + (disabled ? " disabled" : "");
     item.textContent = tf.label;
     if (!disabled) item.addEventListener("click", () => {
@@ -1097,15 +1121,18 @@ function updateLegend(hoverData) {
     + `  Vol ${(d.volume||0).toLocaleString("de-CH",{maximumFractionDigits:0})}`
     + `</div>`;
 
-  // Aktive Indikatoren auflisten (Name + Farbpunkte der sichtbaren Plots)
-  CONFIG.INDICATORS.filter(i => state.active.has(i.key)).forEach(ind => {
-    const sv = Settings.get(ind.key);
-    const dots = (ind.plots || [])
-      .filter(p => sv.plots[p.key] && sv.plots[p.key].visible !== false)
-      .map(p => `<span class="lg-dot" style="background:${sv.plots[p.key].color}"></span>`)
-      .join("");
-    html += `<div class="legend-line"><span class="lg-name">${ind.label}</span>${dots}</div>`;
-  });
+  // Aktive Indikatoren auflisten (Name + Farbpunkte der sichtbaren Plots).
+  // Im Vergleichsmodus NICHT — dort sind die Indikatoren vom Chart entfernt.
+  if (state.compareAssets.length === 0) {
+    CONFIG.INDICATORS.filter(i => state.active.has(i.key)).forEach(ind => {
+      const sv = Settings.get(ind.key);
+      const dots = (ind.plots || [])
+        .filter(p => sv.plots[p.key] && sv.plots[p.key].visible !== false)
+        .map(p => `<span class="lg-dot" style="background:${sv.plots[p.key].color}"></span>`)
+        .join("");
+      html += `<div class="legend-line"><span class="lg-name">${ind.label}</span>${dots}</div>`;
+    });
+  }
   body.innerHTML = html;
 }
 
@@ -1236,6 +1263,10 @@ function drawIndicatorTags() {
   if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
   const ctx = c.getContext("2d");
   ctx.clearRect(0, 0, W, H);
+
+  // Im Vergleichsmodus keine Tags (weder Indikator- noch Preis-Tags) —
+  // die Y-Achse zeigt Prozente, Preis-Tags wären dort schlicht falsch.
+  if (state.compareAssets && state.compareAssets.length > 0) return;
 
   const data = chart.getDataList();
   if (!data || !data.length) return;
@@ -2375,6 +2406,10 @@ function switchSymbol(sym) {
   if (sym.type === "coinbase" && !state.timeframe.coinbaseInterval) {
     state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
   }
+  // Bybit: alle TFs unterstützt, aber sicherheitshalber Guard
+  if (sym.type === "bybit" && !state.timeframe.bybitInterval) {
+    state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
+  }
   renderTfList();
   renderCompareList();
   renderWatchlist();
@@ -2404,7 +2439,7 @@ chart.setLoadDataCallback(async ({ type, data, callback }) => {
   // Nur ältere Daten (forward = nach links), nur Binance, nicht im Replay
   if (type !== "forward" || !data) { callback([], false); return; }
   const exType = state.symbol.type;
-  if (exType !== "binance" && exType !== "kraken" && exType !== "coinbase") { callback([], false); return; }
+  if (exType !== "binance" && exType !== "kraken" && exType !== "coinbase" && exType !== "bybit") { callback([], false); return; }
 
   setStatus("Lade ältere Kerzen …");
   try {
@@ -2417,6 +2452,11 @@ chart.setLoadDataCallback(async ({ type, data, callback }) => {
     } else if (exType === "coinbase") {
       older = await DataLayer.fetchCoinbaseKlinesBefore(
         state.symbol.coinbaseProduct, state.timeframe.coinbaseInterval,
+        data.timestamp, CONFIG.LAZY_LOAD_CHUNK
+      );
+    } else if (exType === "bybit") {
+      older = await DataLayer.fetchBybitKlinesBefore(
+        state.symbol.bybitSymbol, state.timeframe.bybitInterval,
         data.timestamp, CONFIG.LAZY_LOAD_CHUNK
       );
     } else {
