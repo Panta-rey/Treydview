@@ -928,39 +928,30 @@
     },
   });
 
-  // ---------- Polyline ----------
-  // Unbegrenzte Punkte (totalStep: 0). Rechte Maustaste oder Enter beendet,
-  // ESC löscht (wie alle anderen Werkzeuge).
+  // ---------- Polyline (nur Rendering) ----------
+  // Das Zeichnen läuft klickbasiert über eigene Handler in app.js
+  // (startPolyline), analog zum Freihand-Werkzeug. Hier nur die Darstellung
+  // der fertigen Mehrpunkt-Linie.
   klinecharts.registerOverlay({
     name: "polyline",
-    totalStep: 0,
+    totalStep: 2,
     needDefaultPointFigure: true,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates }) => {
+    createPointFigures: ({ coordinates, overlay }) => {
       if (coordinates.length < 2) return [];
+      const ed = overlay.extendData || {};
+      const color = ed.color || "#e8b64c";
+      const size  = ed.size || 1.5;
       const figs = [];
       for (let i = 0; i < coordinates.length - 1; i++) {
         figs.push({
           type: "line",
           attrs: { coordinates: [coordinates[i], coordinates[i + 1]] },
-          styles: { style: "solid", size: 1.5, dashedValue: [4, 4], smooth: false },
+          styles: { style: "solid", color, size, smooth: false },
         });
       }
       return figs;
-    },
-    // Rechtsklick während des Zeichnens: letzten "Geist"-Punkt entfernen
-    // und Overlay abschliessen. KLC entfernt den noch nicht gesetzten
-    // Endpunkt automatisch wenn onRightClick true zurückgibt + performOverlayMoveEnd.
-    onRightClick: (e) => {
-      // Nur während des aktiven Zeichnens (nicht bei selektiertem Overlay)
-      if (e.overlay && e.overlay.isDrawing?.()) {
-        // Letzten schwebenden Punkt abschneiden = nichts tun, KLC stoppt
-        return true;  // true = Event konsumiert, KLC beendet den Punkt-Modus
-      }
-      // Bereits fertige Polyline: normales Overlay-Menü
-      if (typeof openOverlayMenu === "function") openOverlayMenu(e.overlay, e);
-      return true;
     },
   });
 

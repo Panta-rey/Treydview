@@ -206,6 +206,57 @@ const DataLayer = {
     }));
   },
 
+  // ---------- Coinbase (Exchange/Advanced Trade public) ----------
+  // Endpoint: GET https://api.exchange.coinbase.com/products/<id>/candles
+  //           ?granularity=<sec>&start=<ISO>&end=<ISO>
+  // Antwort:  [[time, low, high, open, close, volume], ...]  (time = SEKUNDEN,
+  //           NEUESTE zuerst). Max. 300 Kerzen pro Request.
+  // CORS: Coinbase erlaubt Browser-Zugriff auf die public Endpoints.
+  // WICHTIG: Von der Sandbox aus ungetestet (Host blockiert) — im Browser prüfen.
+
+  async fetchCoinbaseKlines(productId, granularitySec, limit) {
+    const MAX_PER_REQ = 300;
+    const all = [];
+    let end = new Date();   // neueste zuerst, rückwärts paginieren
+    let guard = Math.ceil(limit / MAX_PER_REQ) + 2;
+    while (all.length < limit && guard-- > 0) {
+      const start = new Date(end.getTime() - MAX_PER_REQ * granularitySec * 1000);
+      const chunk = await this._fetchCoinbaseChunk(productId, granularitySec, start, end);
+      if (!chunk.length) break;
+      all.unshift(...chunk);
+      // Nächster Request endet an der ältesten Kerze dieses Chunks
+      end = new Date(chunk[0].timestamp - 1);
+      if (chunk.length < MAX_PER_REQ) break;   // Historie erschöpft
+    }
+    return this._dedupe(all).slice(-limit);
+  },
+
+  async fetchCoinbaseKlinesBefore(productId, granularitySec, beforeTimestamp, limit = 300) {
+    const end   = new Date(beforeTimestamp - 1);
+    const start = new Date(end.getTime() - Math.min(300, limit) * granularitySec * 1000);
+    const chunk = await this._fetchCoinbaseChunk(productId, granularitySec, start, end);
+    return this._dedupe(chunk.filter(r => r.timestamp < beforeTimestamp));
+  },
+
+  async _fetchCoinbaseChunk(productId, granularitySec, start, end) {
+    const url = `${CONFIG.COINBASE_REST}/products/${productId}/candles`
+      + `?granularity=${granularitySec}`
+      + `&start=${start.toISOString()}&end=${end.toISOString()}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Coinbase HTTP ${res.status}`);
+    const raw = await res.json();
+    if (!Array.isArray(raw)) throw new Error("Coinbase: unerwartetes Format");
+    // [time, low, high, open, close, volume] — nach Zeit aufsteigend sortieren
+    return raw.map(k => ({
+      timestamp: k[0] * 1000,     // Sekunden → Millisekunden
+      low:    parseFloat(k[1]),
+      high:   parseFloat(k[2]),
+      open:   parseFloat(k[3]),
+      close:  parseFloat(k[4]),
+      volume: parseFloat(k[5]),
+    })).sort((a, b) => a.timestamp - b.timestamp);
+  },
+
   // ---------- Gold via Worker ----------
   // Toleranter Parser — Details siehe README. Bei abweichendem
   // Worker-Format NUR normalizeGoldRow() anpassen.

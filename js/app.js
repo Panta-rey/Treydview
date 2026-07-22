@@ -464,6 +464,8 @@ async function loadData() {
       candles = await DataLayer.fetchBinanceKlines(state.symbol.id, state.timeframe.binanceInterval, CONFIG.CANDLE_LIMIT);
     } else if (state.symbol.type === "kraken") {
       candles = await DataLayer.fetchKrakenKlines(state.symbol.krakenPair, state.timeframe.krakenInterval, CONFIG.CANDLE_LIMIT);
+    } else if (state.symbol.type === "coinbase") {
+      candles = await DataLayer.fetchCoinbaseKlines(state.symbol.coinbaseProduct, state.timeframe.coinbaseInterval, CONFIG.CANDLE_LIMIT);
     } else {
       candles = await DataLayer.fetchGoldHistory();
     }
@@ -501,10 +503,10 @@ async function loadData() {
   setStatus(`${candles.length} Candles · ${state.symbol.label} · ${state.timeframe.label}`);
   if (state.active.has("vrvp")) setTimeout(drawVrvp, 120);
 
-  if (state.symbol.type === "kraken") {
-    // Kraken hat keinen öffentlichen WebSocket für OHLC-Kerzen im gleichen
-    // Format — wir zeigen "Daily" wie bei Gold (kein Live-Update).
-    setLive("offline", "Kraken");
+  if (state.symbol.type === "kraken" || state.symbol.type === "coinbase") {
+    // Kraken/Coinbase: kein WebSocket-Kerzenstream im gleichen Format —
+    // "Daily"-artige Anzeige ohne Live-Update.
+    setLive("offline", state.symbol.type === "kraken" ? "Kraken" : "Coinbase");
   } else if (state.symbol.type === "binance") {
     state.closeStream = DataLayer.openBinanceStream(
       state.symbol.id, state.timeframe.binanceInterval,
@@ -966,12 +968,15 @@ if (_compareSearchEl) _compareSearchEl.addEventListener("input", e => renderComp
 function renderTfList() {
   const list = document.getElementById("tfList");
   list.innerHTML = "";
-  const goldMode   = state.symbol.type === "worker";
-  const krakenMode = state.symbol.type === "kraken";
+  const goldMode     = state.symbol.type === "worker";
+  const krakenMode   = state.symbol.type === "kraken";
+  const coinbaseMode = state.symbol.type === "coinbase";
   CONFIG.TIMEFRAMES.forEach(tf => {
     const item = document.createElement("div");
-    // Gold: nur Daily. Kraken: kein Monthly (21600min = KLC-Limit überschritten)
-    const disabled = (goldMode && tf.id !== "1d") || (krakenMode && !tf.krakenInterval);
+    // Gold: nur Daily. Kraken: kein Monthly. Coinbase: nur bis Daily (kein W/M).
+    const disabled = (goldMode && tf.id !== "1d")
+                  || (krakenMode && !tf.krakenInterval)
+                  || (coinbaseMode && !tf.coinbaseInterval);
     item.className = "dd-item" + (tf.id === state.timeframe.id ? " active" : "") + (disabled ? " disabled" : "");
     item.textContent = tf.label;
     if (!disabled) item.addEventListener("click", () => {
@@ -1458,6 +1463,124 @@ function stopFreehand() {
   renderDrawbar();
 }
 
+// ---------- Polyline (klickbasiert) ----------
+// KLineCharts kann keine Mehrpunkt-Linien nativ. Also sammeln wir Klicks
+// selbst (wie Freihand, nur klick- statt bewegungsbasiert): jeder Linksklick
+// setzt einen Punkt, Rechtsklick / Enter / Doppelklick schliesst ab, ESC
+// bricht ab. Nach jedem Klick wird die Vorschau-Linie neu gezeichnet.
+let _polyPoints = null;
+let _polyHandlers = null;
+let _polyPreviewId = null;
+
+function _polyRedrawPreview() {
+  if (_polyPreviewId != null) { try { chart.removeOverlay(_polyPreviewId); } catch (e) {} _polyPreviewId = null; }
+  if (!_polyPoints || _polyPoints.length < 2) return;
+  try {
+    _polyPreviewId = chart.createOverlay({
+      name: "polyline",
+      points: _polyPoints.slice(),
+      extendData: { color: state.drawStyle.color, size: state.drawStyle.width || 1.5 },
+    });
+    if (Array.isArray(_polyPreviewId)) _polyPreviewId = _polyPreviewId[0];
+  } catch (e) {}
+}
+
+function startPolyline() {
+  state.activeTool = "polyline";
+  renderDrawbar();
+  setStatus("Polylinie: klicken für Punkte, Rechtsklick oder Enter beendet, ESC bricht ab");
+  const el = document.getElementById("mainChart");
+  el.classList.add("cursor-crosshair");
+  _polyPoints = [];
+
+  // Scroll/Zoom aus, damit Klicks nicht als Pan interpretiert werden
+  try { chart.setScrollEnabled(false); chart.setZoomEnabled(false); } catch (e) {}
+
+  const toPoint = (ev) => {
+    const rect = el.getBoundingClientRect();
+    const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
+    const y = (ev.touches ? ev.touches[0].clientY : ev.clientY) - rect.top;
+    try {
+      const v = chart.convertFromPixel({ x, y }, { paneId: "candle_pane" });
+      return (v && v.timestamp != null && v.value != null) ? { timestamp: v.timestamp, value: v.value } : null;
+    } catch (e) { return null; }
+  };
+
+  const onClick = (ev) => {
+    if (ev.button != null && ev.button !== 0) return;   // nur Linksklick
+    const p = toPoint(ev);
+    if (!p) return;
+    _polyPoints.push(p);
+    ev.preventDefault();
+    ev.stopPropagation();
+    _polyRedrawPreview();
+  };
+
+  // Rechtsklick beendet die Polylinie (kein Kontextmenü währenddessen)
+  const onContext = (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    finishPolyline();
+  };
+
+  // Doppelklick beendet ebenfalls
+  const onDbl = (ev) => { ev.preventDefault(); ev.stopPropagation(); finishPolyline(); };
+
+  _polyHandlers = { onClick, onContext, onDbl, el };
+  el.addEventListener("mousedown", onClick, { capture: true });
+  el.addEventListener("touchstart", onClick, { capture: true, passive: false });
+  el.addEventListener("contextmenu", onContext, { capture: true });
+  el.addEventListener("dblclick", onDbl, { capture: true });
+}
+
+function finishPolyline() {
+  if (!_polyPoints) return;
+  const pts = _polyPoints.slice();
+  // Vorschau entfernen
+  if (_polyPreviewId != null) { try { chart.removeOverlay(_polyPreviewId); } catch (e) {} _polyPreviewId = null; }
+  const pin = state.pinTool;
+  stopPolyline();
+  if (pts.length >= 2) {
+    try {
+      const ed = { color: state.drawStyle.color, size: state.drawStyle.width || 1.5 };
+      const id = chart.createOverlay({
+        name: "polyline",
+        points: pts,
+        extendData: ed,
+        onRightClick: (e) => { openOverlayMenu(e.overlay, e); return true; },
+        onSelected:   (e) => { state.selectedOverlayId = e.overlay.id; return false; },
+        onDeselected: () => { state.selectedOverlayId = null; return false; },
+        onMouseEnter: () => { setChartCursor("pointer"); return false; },
+        onMouseLeave: () => { setChartCursor(""); return false; },
+        onRemoved: (e) => { unregisterDrawing(e.overlay.id); return false; },
+      });
+      const oid = Array.isArray(id) ? id[0] : id;
+      if (oid) registerDrawing(oid, "polyline", pts, ed, null);
+    } catch (e) {}
+  }
+  if (pin) setTimeout(() => startPolyline(), 0);
+}
+
+function stopPolyline() {
+  // Nichts aktiv? Nur Scroll/Zoom sicherstellen und raus — sonst würde
+  // jeder Werkzeugstart activeTool fälschlich zurücksetzen.
+  if (!_polyHandlers && _polyPreviewId == null && !_polyPoints) return;
+  try { chart.setScrollEnabled(true); chart.setZoomEnabled(true); } catch (e) {}
+  if (_polyPreviewId != null) { try { chart.removeOverlay(_polyPreviewId); } catch (e) {} _polyPreviewId = null; }
+  if (_polyHandlers) {
+    const { onClick, onContext, onDbl, el } = _polyHandlers;
+    el.removeEventListener("mousedown", onClick, { capture: true });
+    el.removeEventListener("touchstart", onClick, { capture: true });
+    el.removeEventListener("contextmenu", onContext, { capture: true });
+    el.removeEventListener("dblclick", onDbl, { capture: true });
+    el.classList.remove("cursor-crosshair");
+  }
+  _polyHandlers = null;
+  _polyPoints = null;
+  state.activeTool = null;
+  renderDrawbar();
+}
+
 // ---------- Drawing-Toolbar ----------
 function currentOverlayStyles() {
   const ds = state.drawStyle;
@@ -1492,9 +1615,11 @@ function currentOverlayStyles() {
 }
 
 function startTool(overlayName) {
-  // Freihand läuft über eigene Maus-Handler, nicht über KLineCharts
-  if (overlayName === "freehand") { startFreehand(); return; }
+  // Freihand und Polyline laufen über eigene Maus-Handler, nicht über KLineCharts
+  if (overlayName === "freehand") { stopPolyline(); startFreehand(); return; }
+  if (overlayName === "polyline") { stopFreehand(); startPolyline(); return; }
   stopFreehand();
+  stopPolyline();
   state.activeTool = overlayName;
   const overlayConfig = {
     name: overlayName,
@@ -1520,6 +1645,11 @@ function startTool(overlayName) {
       }
       // Ins Register aufnehmen, damit Layouts die Zeichnung sichern können
       if (e?.overlay?.id) captureDrawing(e.overlay.id);
+      // AVWAP: der generische onDrawEnd hier überschreibt den aus der
+      // Overlay-Registrierung — deshalb die Indikator-Bridge direkt aufrufen.
+      if (overlayName === "avwap" && e?.overlay?.points?.[0]?.timestamp) {
+        window.__tvAnchorVwap?.(e.overlay.points[0].timestamp, e.overlay.id);
+      }
       state.drawingId = null;
       if (state.pinTool) {
         setTimeout(() => startTool(overlayName), 0);
@@ -1532,7 +1662,11 @@ function startTool(overlayName) {
     },
     onSelected:   (e) => { state.selectedOverlayId = e.overlay.id; return false; },
     onDeselected: () => { state.selectedOverlayId = null; return false; },
-    onRemoved:    (e) => { unregisterDrawing(e.overlay.id); return false; },
+    onRemoved:    (e) => {
+      unregisterDrawing(e.overlay.id);
+      if (overlayName === "avwap") window.__tvRemoveAnchorVwap?.(e.overlay.id);
+      return false;
+    },
     // 2.15: Zeigt an, dass die Zeichnung anklickbar ist. Ohne das sieht
     // man dem Fadenkreuz nicht an, dass hier etwas zu holen ist.
     onMouseEnter: () => { setChartCursor("pointer"); return false; },
@@ -1927,6 +2061,8 @@ document.addEventListener("click", (e) => {
 // Tastatur: ESC bricht Zeichnen ab, Entf löscht selektiertes Overlay
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
+    // Polyline aktiv: abbrechen (Vorschau weg, kein Overlay)
+    if (state.activeTool === "polyline") { stopPolyline(); return; }
     if (state.drawingId != null) {
       chart.removeOverlay(state.drawingId);
       state.drawingId = null;
@@ -1935,14 +2071,9 @@ document.addEventListener("keydown", (e) => {
     state.activeTool = null;
     document.getElementById("posToolTopBtn")?.classList.remove("active");
     renderDrawbar();
-  } else if (e.key === "Enter" && state.activeTool === "polyline" && state.drawingId != null) {
-    // Enter: Polyline abschliessen — letzten schwebenden Punkt löschen und
-    // Overlay als fertig markieren (kein removeOverlay, Linie bleibt erhalten)
-    try { chart.overrideOverlay({ id: state.drawingId, isDrawing: false }); } catch (_) {}
-    captureDrawing(state.drawingId);
-    state.drawingId = null;
-    if (!state.pinTool) { state.activeTool = null; renderDrawbar(); }
-    else setTimeout(() => startTool("polyline"), 0);
+  } else if (e.key === "Enter" && state.activeTool === "polyline") {
+    // Enter: Polylinie abschliessen
+    finishPolyline();
   } else if ((e.key === "Delete" || e.key === "Backspace") && state.selectedOverlayId != null) {
     // Nicht löschen wenn der Fokus in einem Eingabefeld liegt
     const tag = document.activeElement?.tagName;
@@ -2240,6 +2371,10 @@ function switchSymbol(sym) {
   if (sym.type === "kraken" && !state.timeframe.krakenInterval) {
     state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
   }
+  // Coinbase: kein W/M — auf 1D wechseln falls nötig
+  if (sym.type === "coinbase" && !state.timeframe.coinbaseInterval) {
+    state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
+  }
   renderTfList();
   renderCompareList();
   renderWatchlist();
@@ -2268,19 +2403,28 @@ function clearAllDrawings() {
 chart.setLoadDataCallback(async ({ type, data, callback }) => {
   // Nur ältere Daten (forward = nach links), nur Binance, nicht im Replay
   if (type !== "forward" || !data) { callback([], false); return; }
-  if (state.symbol.type !== "binance" && state.symbol.type !== "kraken") { callback([], false); return; }
+  const exType = state.symbol.type;
+  if (exType !== "binance" && exType !== "kraken" && exType !== "coinbase") { callback([], false); return; }
 
   setStatus("Lade ältere Kerzen …");
   try {
-    const older = state.symbol.type === "kraken"
-      ? await DataLayer.fetchKrakenKlinesBefore(
-          state.symbol.krakenPair, state.timeframe.krakenInterval,
-          data.timestamp, CONFIG.LAZY_LOAD_CHUNK
-        )
-      : await DataLayer.fetchBinanceKlinesBefore(
-          state.symbol.id, state.timeframe.binanceInterval,
-          data.timestamp, CONFIG.LAZY_LOAD_CHUNK
-        );
+    let older;
+    if (exType === "kraken") {
+      older = await DataLayer.fetchKrakenKlinesBefore(
+        state.symbol.krakenPair, state.timeframe.krakenInterval,
+        data.timestamp, CONFIG.LAZY_LOAD_CHUNK
+      );
+    } else if (exType === "coinbase") {
+      older = await DataLayer.fetchCoinbaseKlinesBefore(
+        state.symbol.coinbaseProduct, state.timeframe.coinbaseInterval,
+        data.timestamp, CONFIG.LAZY_LOAD_CHUNK
+      );
+    } else {
+      older = await DataLayer.fetchBinanceKlinesBefore(
+        state.symbol.id, state.timeframe.binanceInterval,
+        data.timestamp, CONFIG.LAZY_LOAD_CHUNK
+      );
+    }
     const more = older.length >= CONFIG.LAZY_LOAD_CHUNK;
     callback(older, more);
     setTimeout(() => {

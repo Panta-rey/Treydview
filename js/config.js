@@ -19,18 +19,23 @@ const CONFIG = {
     { id: "XBTUSD",   label: "BTC/USD (Kraken)",  type: "kraken", krakenPair: "XBTUSD"  },
     { id: "ETHUSD_K", label: "ETH/USD (Kraken)",  type: "kraken", krakenPair: "ETHUSD"  },
     { id: "SOLUSD_K", label: "SOL/USD (Kraken)",  type: "kraken", krakenPair: "SOLUSD"  },
+    // Coinbase: AERO seit 2024 gelistet (mehr Historie als Binance Dez 2024)
+    { id: "AERO-USD", label: "AERO/USD (Coinbase)", type: "coinbase", coinbaseProduct: "AERO-USD" },
+    { id: "BTC-USD",  label: "BTC/USD (Coinbase)",  type: "coinbase", coinbaseProduct: "BTC-USD"  },
+    { id: "ETH-USD",  label: "ETH/USD (Coinbase)",  type: "coinbase", coinbaseProduct: "ETH-USD"  },
   ],
 
   TIMEFRAMES: [
-    { id: "15m", label: "15m", binanceInterval: "15m", krakenInterval: "15"   },
-    { id: "1h",  label: "1h",  binanceInterval: "1h",  krakenInterval: "60"   },
-    { id: "4h",  label: "4h",  binanceInterval: "4h",  krakenInterval: "240"  },
-    { id: "1d",  label: "1D",  binanceInterval: "1d",  krakenInterval: "1440" },
-    { id: "1w",  label: "1W",  binanceInterval: "1w",  krakenInterval: "10080"},
-    { id: "1M",  label: "1M",  binanceInterval: "1M",  krakenInterval: "21600"},
+    { id: "15m", label: "15m", binanceInterval: "15m", krakenInterval: "15",    coinbaseInterval: 900   },
+    { id: "1h",  label: "1h",  binanceInterval: "1h",  krakenInterval: "60",    coinbaseInterval: 3600  },
+    { id: "4h",  label: "4h",  binanceInterval: "4h",  krakenInterval: "240",   coinbaseInterval: 21600 },
+    { id: "1d",  label: "1D",  binanceInterval: "1d",  krakenInterval: "1440",  coinbaseInterval: 86400 },
+    { id: "1w",  label: "1W",  binanceInterval: "1w",  krakenInterval: "10080"                          },
+    { id: "1M",  label: "1M",  binanceInterval: "1M",  krakenInterval: "21600"                          },
   ],
 
-  KRAKEN_REST: "https://api.kraken.com/0/public",
+  KRAKEN_REST:   "https://api.kraken.com/0/public",
+  COINBASE_REST: "https://api.exchange.coinbase.com",
 
   CANDLE_LIMIT: 5000,        // per Pagination (Binance max 1000/Request)
   LAZY_LOAD_CHUNK: 1000,     // Nachladen beim Zurückscrollen
@@ -45,7 +50,7 @@ const CONFIG = {
   // ------------------------------------------------------------
   INDICATORS: [
     {
-      key: "mnoodle", noTags: true,   // Preis-Tags komplett aus (User-Wunsch) name: "MNOODLE", pane: "main", label: "Money Noodle", noTags: true,
+      key: "mnoodle", name: "MNOODLE", pane: "main", label: "Money Noodle", noTags: true,   // Preis-Tags komplett aus (User-Wunsch)
       inputs: [
         { key: "fastPeriod", label: "Fast EMA",         default: 12 },
         { key: "medPeriod",  label: "Medium EMA",       default: 21 },
