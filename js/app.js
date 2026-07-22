@@ -121,6 +121,9 @@ Object.defineProperty(state, "watchlist", {
   set(v) { this.watchlists[this.activeWatchlist] = v; },
 });
 
+// Debug-Zugriff aus der Browser-Konsole: window.state
+window.__tvState = state;
+
 // Farbpalette für Vergleichs-Assets
 // 15 gut unterscheidbare Farben. Reihenfolge so gewählt, dass benachbarte
 // Einträge nie ähnliche Töne bekommen.
@@ -478,6 +481,7 @@ async function loadData() {
       candles = await DataLayer.fetchCoinbaseKlines(state.symbol.coinbaseProduct, state.timeframe.coinbaseInterval, CONFIG.CANDLE_LIMIT);
     } else if (state.symbol.type === "bybit") {
       candles = await DataLayer.fetchBybitKlines(state.symbol.bybitSymbol, state.timeframe.bybitInterval, CONFIG.CANDLE_LIMIT);
+      if (!candles || candles.length === 0) throw new Error(`Bybit: keine Kerzen für ${state.symbol.bybitSymbol} / ${state.timeframe.bybitInterval}`);
     } else {
       candles = await DataLayer.fetchGoldHistory();
     }
@@ -609,21 +613,20 @@ const VOL_MIN = 5_000_000;
 async function _fetchBinanceTicker24h() {
   try {
     const res = await fetch(`${CONFIG.BINANCE_REST}/ticker/24hr`);
-    if (!res.ok) return {};
+    if (!res.ok) return null;
     const arr = await res.json();
     const map = {};
     arr.forEach(t => { map[t.symbol] = parseFloat(t.quoteVolume); });
     return map;
-  } catch (e) { return {}; }
+  } catch (e) { return null; }
 }
 
 async function loadAllExchangeSymbols() {
-  // IDs der Defaults sichern — dürfen nie wegfallen
   const defaultIds = new Set(CONFIG.DEFAULT_SYMBOLS.map(s => s.id));
   const seen = new Set(CONFIG.DEFAULT_SYMBOLS.map(s => s.id));
-  const result = [...CONFIG.DEFAULT_SYMBOLS];   // Defaults immer vorne
+  const result = [...CONFIG.DEFAULT_SYMBOLS];
 
-  // --- Binance ---
+  // --- Binance: alle USDT/USDC/BTC/USD Pairs mit Volumen-Filter ---
   try {
     const [infoRes, volMap] = await Promise.all([
       fetch(`${CONFIG.BINANCE_REST}/exchangeInfo`),
@@ -635,43 +638,31 @@ async function loadAllExchangeSymbols() {
         .filter(s => s.status === "TRADING" && ALLOWED_QUOTES.has(s.quoteAsset))
         .forEach(s => {
           if (seen.has(s.symbol)) return;
-          const vol = volMap[s.symbol] || 0;
-          if (!defaultIds.has(s.symbol) && vol < VOL_MIN) return;
+          if (volMap !== null) {
+            const vol = volMap[s.symbol] || 0;
+            if (!defaultIds.has(s.symbol) && vol < VOL_MIN) return;
+          }
           seen.add(s.symbol);
-          result.push({
-            id: s.symbol,
-            label: `${s.baseAsset}/${s.quoteAsset} (Binance)`,
-            type: "binance",
-          });
+          result.push({ id: s.symbol, label: `${s.baseAsset}/${s.quoteAsset} (Binance)`, type: "binance" });
         });
     }
-  } catch (e) { /* Binance Fehler: nur Defaults */ }
+  } catch (e) {}
 
-  // --- Coinbase ---
+  // --- Coinbase: alle aktiven Pairs ---
   try {
     const res = await fetch(`${CONFIG.COINBASE_REST}/products`);
     if (res.ok) {
       const arr = await res.json();
-      arr
-        .filter(p => p.status === "online" && ALLOWED_QUOTES.has(p.quote_currency))
+      arr.filter(p => p.status === "online" && ALLOWED_QUOTES.has(p.quote_currency))
         .forEach(p => {
-          const id = p.id;   // z.B. "BTC-USD"
-          if (seen.has(id)) return;
-          // Coinbase hat kein 24h-Volumen im /products-Endpunkt.
-          // Wir nehmen alle aktiven Paare mit erlaubter Quote auf —
-          // Coinbase listet ohnehin nur liquide Paare.
-          seen.add(id);
-          result.push({
-            id,
-            label: `${p.base_currency}/${p.quote_currency} (Coinbase)`,
-            type: "coinbase",
-            coinbaseProduct: id,
-          });
+          if (seen.has(p.id)) return;
+          seen.add(p.id);
+          result.push({ id: p.id, label: `${p.base_currency}/${p.quote_currency} (Coinbase)`, type: "coinbase", coinbaseProduct: p.id });
         });
     }
-  } catch (e) { /* Coinbase nicht erreichbar */ }
+  } catch (e) {}
 
-  // --- Kraken ---
+  // --- Kraken: alle online Pairs ---
   try {
     const res = await fetch(`${CONFIG.KRAKEN_REST}/AssetPairs`);
     if (res.ok) {
@@ -679,62 +670,44 @@ async function loadAllExchangeSymbols() {
       if (!json.error?.length) {
         Object.entries(json.result || {}).forEach(([key, p]) => {
           if (p.status !== "online") return;
-          // Kraken-Quote normalisieren: ZUSD→USD, XXBT→BTC
           const q = (p.quote || "").replace(/^Z/, "").replace(/^X/, "");
-          const b = (p.base  || "").replace(/^Z/, "").replace(/^X/, "");
           if (!ALLOWED_QUOTES.has(q)) return;
-          // Verwende wsname (z.B. "XBT/USD") für ein sauberes Paar-Label
-          const altName = p.wsname || `${b}/${q}`;
-          const pairId = `${key}_KR`;   // eindeutige ID für state.allSymbols
+          const pairId = `${key}_KR`;
           if (seen.has(pairId)) return;
-          // Kraken-Volumen steht nicht im AssetPairs-Endpunkt —
-          // wir filtern hier auf bekannte Hauptpaare via Quote-Filter
           seen.add(pairId);
-          result.push({
-            id: pairId,
-            label: `${altName} (Kraken)`,
-            type: "kraken",
-            krakenPair: key,   // echter API-Key für OHLC-Requests
-          });
+          result.push({ id: pairId, label: `${p.wsname || key} (Kraken)`, type: "kraken", krakenPair: key });
         });
       }
     }
-  } catch (e) { /* Kraken nicht erreichbar */ }
+  } catch (e) {}
 
-  // --- Bybit ---
+  // --- Bybit: alle Spot-Pairs mit Volumen-Filter ---
   try {
     const res = await fetch(`${CONFIG.BYBIT_REST}/v5/market/tickers?category=spot`);
     if (res.ok) {
       const json = await res.json();
       if (json.retCode === 0) {
         (json.result?.list || []).forEach(t => {
-          const sym = t.symbol;   // z.B. "BTCUSDT"
-          if (seen.has(`${sym}_BY`)) return;
-          // Quote aus Symbol ableiten (letzte 3-4 Zeichen)
+          const sym = t.symbol;
           const quote = ["USDT","USDC","BTC","USD"].find(q => sym.endsWith(q));
           if (!quote) return;
           const base = sym.slice(0, sym.length - quote.length);
-          const vol = parseFloat(t.turnover24h) || 0;
-          if (!defaultIds.has(`${sym}_BY`) && vol < VOL_MIN) return;
           const pairId = `${sym}_BY`;
+          if (seen.has(pairId)) return;
+          const vol = parseFloat(t.turnover24h) || 0;
+          if (!defaultIds.has(pairId) && vol < VOL_MIN) return;
           seen.add(pairId);
-          result.push({
-            id: pairId,
-            label: `${base}/${quote} (Bybit)`,
-            type: "bybit",
-            bybitSymbol: sym,
-          });
+          result.push({ id: pairId, label: `${base}/${quote} (Bybit)`, type: "bybit", bybitSymbol: sym });
         });
       }
     }
-  } catch (e) { /* Bybit nicht erreichbar */ }
+  } catch (e) {}
 
   state.allSymbols = result;
   renderAssetList();
   renderCompareList();
 }
 
-// Alias für bestehende Aufrufer (init-Sequenz etc.)
 async function loadBinanceSymbols() {
   return loadAllExchangeSymbols();
 }
@@ -1083,6 +1056,13 @@ function applyCompareIndicator() {
     try { gbClearBands(); } catch (e) {}
     try { clearPatterns(); } catch (e) {}
     try { clearSMC(); } catch (e) {}
+    // Alle Overlays (FRVP, Zeichnungen, Fibonacci etc.) verstecken —
+    // sie laufen auf Preis-Basis und hätten im %-Vergleich falsche Positionen.
+    // IDs merken für Wiederherstellung.
+    state._hiddenDrawingIds = [];
+    (state.drawings || []).forEach(d => {
+      try { chart.removeOverlay(d.id); state._hiddenDrawingIds.push(d.id); } catch (e) {}
+    });
     if (state.tagCanvas) {
       state.tagCanvas.getContext("2d").clearRect(0, 0, state.tagCanvas.width, state.tagCanvas.height);
     }
@@ -1115,6 +1095,11 @@ function applyCompareIndicator() {
       try { applyIndicator(ind); } catch (e) {}
     });
     if (state.gbOpen && !state.gbCollapsed) { try { gbDrawBands(); } catch (e) {} }
+    // Gespeicherte Overlays (FRVP, Zeichnungen) wiederherstellen
+    if (state._hiddenDrawingIds && state._hiddenDrawingIds.length) {
+      state._hiddenDrawingIds = [];
+      try { restoreDrawings(state.drawings); } catch (e) {}
+    }
     scheduleTagDraw();
     if (_compareCanvas) {
       _compareCanvas.getContext("2d").clearRect(0, 0, _compareCanvas.width, _compareCanvas.height);
@@ -2381,8 +2366,10 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
 
       // Pinch-Richtung: Winkel zwischen den Fingern bestimmt ob
       // horizontal (Zeit-Zoom) oder vertikal (Preis-Zoom).
-      // |dy| > |dx| * 0.7 = überwiegend vertikale Geste → Y-Achse skalieren
-      const isVertical = Math.abs(dy) > Math.abs(dx) * 0.7;
+      // Schwelle 2.0: Finger müssen deutlich vertikaler als horizontal sein
+      // bevor wir auf Y-Achsen-Zoom wechseln. Sonst landet fast jeder
+      // diagonale Pinch im vertikalen Branch.
+      const isVertical = Math.abs(dy) > Math.abs(dx) * 2.0 && Math.abs(dy) > 20;
 
       if (isVertical) {
         // Vertikaler Pinch: Preisbereich strecken/stauchen via yAxis.setRange
