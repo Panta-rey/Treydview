@@ -10,10 +10,10 @@ const CONFIG = {
   BINANCE_WS:      "wss://stream.binance.com:9443/ws",
 
   DEFAULT_SYMBOLS: [
-    { id: "BTCUSDT",  label: "BTC/USDT",  type: "binance" },
-    { id: "ETHUSDT",  label: "ETH/USDT",  type: "binance" },
-    { id: "SOLUSDT",  label: "SOL/USDT",  type: "binance" },
-    { id: "AEROUSDT", label: "AERO/USDT", type: "binance" },
+    { id: "BTCUSDT",  label: "BTC/USDT (Binance)",  type: "binance" },
+    { id: "ETHUSDT",  label: "ETH/USDT (Binance)",  type: "binance" },
+    { id: "SOLUSDT",  label: "SOL/USDT (Binance)",  type: "binance" },
+    { id: "AEROUSDT", label: "AERO/USDT (Binance)", type: "binance" },
     { id: "XAUUSD",   label: "Gold XAU/USD", type: "worker" },
     // Kraken: längere Geschichte (BTC seit 2013, ETH seit 2016)
     { id: "XBTUSD_KR",  label: "BTC/USD (Kraken)",  type: "kraken", krakenPair: "XXBTZUSD" },
