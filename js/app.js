@@ -448,7 +448,10 @@ chart.subscribeAction("onVisibleRangeChange", () => {
   _redrawQueued = true;
   requestAnimationFrame(() => {
     _redrawQueued = false;
-    if (state.active.has("vrvp")) { try { drawVrvp(); } catch (e) {} }
+    // Im Vergleichsmodus kein VRVP — auch nicht wenn state.active es enthält
+    if (state.active.has("vrvp") && state.compareAssets.length === 0) {
+      try { drawVrvp(); } catch (e) {}
+    }
     if (state.compareAssets.length > 0) { try { drawCompare(); } catch (e) {} }
     try { drawIndicatorTags(); } catch (e) {}
   });
@@ -525,7 +528,7 @@ async function loadData() {
         chart.updateData(candle);
         updatePriceHeader(candle, chart.getDataList().at(-2));
         updateLegend();
-        if (state.active.has("vrvp")) requestAnimationFrame(drawVrvp);
+        if (state.active.has("vrvp") && state.compareAssets.length === 0) requestAnimationFrame(drawVrvp);
         if (state.compareAssets.length > 0) requestAnimationFrame(() => { try { drawCompare(); } catch (e) {} });
       },
       (s) => {
@@ -1094,7 +1097,16 @@ function applyCompareIndicator() {
       },
       yAxis: { tickText: { color: "rgba(0,0,0,0)" }, axisLine: { color: "rgba(0,0,0,0)" }, tickLine: { color: "rgba(0,0,0,0)" } },
     });
-    setTimeout(() => { try { drawCompare(); } catch (e) {} }, 80);
+    setTimeout(() => {
+      try { drawCompare(); } catch (e) {}
+      // VRVP nochmals leeren: onVisibleRangeChange kann nach dem ersten
+      // Clear noch einmal feuern (KLC interne Scroll-Anpassung beim
+      // style-Wechsel). Der Flag in onVisibleRangeChange verhindert neue
+      // Zeichnungen; hier stellen wir sicher dass der Canvas leer ist.
+      if (state.vrvpCanvas) {
+        state.vrvpCanvas.getContext("2d").clearRect(0, 0, state.vrvpCanvas.width, state.vrvpCanvas.height);
+      }
+    }, 100);
   } else {
     chart.setStyles(baseStyles());
     CONFIG.INDICATORS.forEach(ind => {
