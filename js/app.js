@@ -2372,17 +2372,44 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
       const dist = Math.sqrt(dx*dx + dy*dy);
       const scale = dist / lastDist;
       const rect = el.getBoundingClientRect();
-      // Preisskala-Breite: KLineCharts reserviert ~60-80px am rechten Rand.
-      // Wenn beide Finger in diesem Bereich sind → kein Chart-Zoom, sonst
-      // würde jede Berührung der Skala den Chart-Ausschnitt verzerren.
+
+      // Preisskala-Bereich (rechts ~80px): kein Zoom wenn beide Finger dort
       const axisW = 80;
       const t0inAxis = (e.touches[0].clientX - rect.left) > (rect.width - axisW);
       const t1inAxis = (e.touches[1].clientX - rect.left) > (rect.width - axisW);
       if (t0inAxis && t1inAxis) { lastDist = dist; return; }
-      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      try {
-        chart.zoomAtCoordinate(scale, { x: midX - rect.left, y: 0 }, 0);
-      } catch (_) {}
+
+      // Pinch-Richtung: Winkel zwischen den Fingern bestimmt ob
+      // horizontal (Zeit-Zoom) oder vertikal (Preis-Zoom).
+      // |dy| > |dx| * 0.7 = überwiegend vertikale Geste → Y-Achse skalieren
+      const isVertical = Math.abs(dy) > Math.abs(dx) * 0.7;
+
+      if (isVertical) {
+        // Vertikaler Pinch: Preisbereich strecken/stauchen via yAxis.setRange
+        try {
+          const pane = chart.getDrawPaneById("candle_pane");
+          if (pane) {
+            const yAxis = pane.getAxisComponent();
+            if (yAxis) {
+              const r = yAxis.getRange();
+              if (r && r.from != null && r.to != null) {
+                const mid   = (r.from + r.to) / 2;
+                const half  = (r.to - r.from) / 2;
+                // scale < 1 = Finger nähern sich = Range vergrössern (rauszoomen)
+                // scale > 1 = Finger entfernen sich = Range verkleinern (reinzoomen)
+                const newHalf = half / scale;
+                yAxis.setRange({ from: mid - newHalf, to: mid + newHalf });
+              }
+            }
+          }
+        } catch (_) {}
+      } else {
+        // Horizontaler Pinch: Zeit-Zoom via KLC
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        try {
+          chart.zoomAtCoordinate(scale, { x: midX - rect.left, y: 0 }, 0);
+        } catch (_) {}
+      }
       lastDist = dist;
     }
   }, { passive: false });
