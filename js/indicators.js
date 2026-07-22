@@ -392,6 +392,41 @@ klinecharts.registerIndicator({
   },
 });
 
+// ---------- ANCHORED VWAP ----------
+// VWAP ab einem vom Nutzer gewählten Bar (Ankerpunkt = Timestamp in
+// calcParams[0]). Alles vor dem Anker gibt {}, ab dem Anker kumuliert
+// die Berechnung. Farbe/Breite kommen aus extendData.plots (wie bei
+// allen anderen Indikatoren) — der Overlay setzt calcParams beim Platzieren.
+klinecharts.registerIndicator({
+  name: "AVWAP",
+  shortName: "AVWAP",
+  precision: 2,
+  calcParams: [0],   // 0 = kein Anker gesetzt (Overlay setzt ihn)
+  figures: [
+    {
+      key: "avwap",
+      title: "AVWAP: ",
+      type: "line",
+      styles: (d, ind) => plotStyle(ind, "avwap", "#c792ea", 2),
+    },
+  ],
+  calc: (dataList, indicator) => {
+    const anchorTs = indicator.calcParams[0];
+    if (!anchorTs) return dataList.map(() => ({}));
+    let sPV = 0, sV = 0, started = false;
+    return dataList.map(d => {
+      if (!started && d.timestamp < anchorTs) return {};
+      started = true;
+      const typ = (d.high + d.low + d.close) / 3;
+      const vol = d.volume || 0;
+      sPV += typ * vol;
+      sV  += vol;
+      if (sV === 0) return {};
+      return { avwap: sPV / sV };
+    });
+  },
+});
+
 // ---------- GAUSSIAN CHANNEL (gefüllt, trendgefärbt) ----------
 // Nach Donovan Wall [DW]: Fill zwischen hband/lband, Farbe grün wenn
 // Filter steigt, rot wenn er fällt. Fill via draw-Callback.

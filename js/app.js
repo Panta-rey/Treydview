@@ -133,6 +133,34 @@ const chart = klinecharts.init("mainChart");
 // Bridge: FRVP-Overlay (overlays.js) braucht Zugriff auf die Candle-Daten
 window.__tvGetDataList = () => chart.getDataList();
 
+// ---------- Anchored VWAP Bridge ----------
+// Overlay setzt den Anker-Timestamp; hier aktivieren/entfernen wir den
+// AVWAP-Indikator mit diesem Timestamp als calcParam. Mehrere AVWAPs
+// gleichzeitig möglich — jede Overlay-ID bekommt einen eigenen Pane.
+const _avwapPanes = {};   // overlayId -> paneId
+
+window.__tvAnchorVwap = (timestamp, overlayId) => {
+  // Indikator direkt im Hauptpane: kein Sub-Pane nötig, da AVWAP eine
+  // Preis-Kurve ist (wie EMA). Er wird mit einem eindeutigen Namen
+  // registriert, damit mehrere gleichzeitig laufen können.
+  const name = "AVWAP";
+  try {
+    const paneId = chart.createIndicator(
+      { name, calcParams: [timestamp], extendData: { plots: { avwap: { color: "#c792ea", opacity: 80, width: 2 } } } },
+      true,
+      { id: "candle_pane" }
+    );
+    _avwapPanes[overlayId] = paneId || "candle_pane";
+  } catch (e) {}
+  scheduleTagDraw();
+};
+
+window.__tvRemoveAnchorVwap = (overlayId) => {
+  try { chart.removeIndicator("candle_pane", "AVWAP"); } catch (e) {}
+  delete _avwapPanes[overlayId];
+  scheduleTagDraw();
+};
+
 function baseStyles() {
   const cs = state.chartStyle;
   return {
@@ -424,9 +452,13 @@ async function loadData() {
   setStatus(`Lade ${state.symbol.label} (${state.timeframe.label}) …`);
   let candles;
   try {
-    candles = state.symbol.type === "binance"
-      ? await DataLayer.fetchBinanceKlines(state.symbol.id, state.timeframe.binanceInterval, CONFIG.CANDLE_LIMIT)
-      : await DataLayer.fetchGoldHistory();
+    if (state.symbol.type === "binance") {
+      candles = await DataLayer.fetchBinanceKlines(state.symbol.id, state.timeframe.binanceInterval, CONFIG.CANDLE_LIMIT);
+    } else if (state.symbol.type === "kraken") {
+      candles = await DataLayer.fetchKrakenKlines(state.symbol.krakenPair, state.timeframe.krakenInterval, CONFIG.CANDLE_LIMIT);
+    } else {
+      candles = await DataLayer.fetchGoldHistory();
+    }
   } catch (err) {
     if (seq !== _loadSeq) return;   // inzwischen wurde neu geladen
     // HTTP 500 heisst: der Worker ist erreichbar und wirft einen Fehler.
@@ -461,7 +493,11 @@ async function loadData() {
   setStatus(`${candles.length} Candles · ${state.symbol.label} · ${state.timeframe.label}`);
   if (state.active.has("vrvp")) setTimeout(drawVrvp, 120);
 
-  if (state.symbol.type === "binance") {
+  if (state.symbol.type === "kraken") {
+    // Kraken hat keinen öffentlichen WebSocket für OHLC-Kerzen im gleichen
+    // Format — wir zeigen "Daily" wie bei Gold (kein Live-Update).
+    setLive("offline", "Kraken");
+  } else if (state.symbol.type === "binance") {
     state.closeStream = DataLayer.openBinanceStream(
       state.symbol.id, state.timeframe.binanceInterval,
       (candle) => {
@@ -907,10 +943,12 @@ if (_compareSearchEl) _compareSearchEl.addEventListener("input", e => renderComp
 function renderTfList() {
   const list = document.getElementById("tfList");
   list.innerHTML = "";
-  const goldMode = state.symbol.type === "worker";
+  const goldMode   = state.symbol.type === "worker";
+  const krakenMode = state.symbol.type === "kraken";
   CONFIG.TIMEFRAMES.forEach(tf => {
     const item = document.createElement("div");
-    const disabled = goldMode && tf.id !== "1d";
+    // Gold: nur Daily. Kraken: kein Monthly (21600min = KLC-Limit überschritten)
+    const disabled = (goldMode && tf.id !== "1d") || (krakenMode && !tf.krakenInterval);
     item.className = "dd-item" + (tf.id === state.timeframe.id ? " active" : "") + (disabled ? " disabled" : "");
     item.textContent = tf.label;
     if (!disabled) item.addEventListener("click", () => {
@@ -1190,19 +1228,6 @@ function drawIndicatorTags() {
   };
 
   // --- Indikator-Tags: echt pro Linie (showLast) ---
-  // Manche Indikatoren benennen ihre Ergebnis-Felder anders als die
-  // Config-Plot-Keys (EMA e1 -> ema1, RVWAP line -> rvwap, GC upper/midUp/
-  // lower -> gcUpper/gcMid/gcLower, Hull up -> mhull). Ohne dieses Mapping
-  // liefert lastRow[p.key] undefined -> das Tag wird nie gezeichnet und der
-  // Ein/Aus-Schalter wirkt tot. Plots, die absichtlich KEIN Tag bekommen
-  // (GC midDown, Hull down/band), stehen nicht im Mapping -> werden
-  // übersprungen (rk == null).
-  const TAG_RESULT_KEY = {
-    ema:   { e1: "ema1", e2: "ema2", e3: "ema3", e4: "ema4" },
-    rvwap: { line: "rvwap" },
-    gc:    { upper: "gcUpper", midUp: "gcMid", lower: "gcLower" },
-    hull:  { up: "mhull" },
-  };
   CONFIG.INDICATORS.forEach(ind => {
     if (!state.active.has(ind.key) || ind.noTags || ind.key === "vrvp") return;
     const paneId = ind.pane === "sub" ? (state.subPaneIds[ind.key] || "pane_" + ind.key) : "candle_pane";
@@ -1211,29 +1236,14 @@ function drawIndicatorTags() {
     if (!inst || !Array.isArray(inst.result) || !inst.result.length) return;
     const lastRow = inst.result[inst.result.length - 1] || {};
     const sv = Settings.get(ind.key);
-    const keyMap = TAG_RESULT_KEY[ind.key];
     (ind.plots || []).forEach(p => {
       const pl = sv.plots[p.key];
       if (!pl || pl.visible === false || pl.showLast === false) return;
-      // Ergebnis-Key bestimmen. Bei gemappten Indikatoren zählt nur, was im
-      // Mapping steht; alles andere (Fills, Gegen-Trend-Linien) wird bewusst
-      // übersprungen.
-      const rk = keyMap ? keyMap[p.key] : p.key;
-      if (keyMap && rk == null) return;
-      const v = lastRow[rk];
+      const v = lastRow[p.key];
       if (v == null || !isFinite(v)) return;
-      // Trendabhängige Tag-Farbe: GC-Mittellinie und Hull-Linie wechseln je
-      // nach Richtung die Farbe. Die passende Farbe kommt aus dem jeweils
-      // aktiven Gegenstück-Plot.
-      let hex = pl.hex || "#888888";
-      if (ind.key === "gc" && p.key === "midUp") {
-        hex = (sv.plots[lastRow.gcUp ? "midUp" : "midDown"] || pl).hex || hex;
-      } else if (ind.key === "hull" && p.key === "up") {
-        hex = (sv.plots[lastRow.up ? "up" : "down"] || pl).hex || hex;
-      }
       let y = null;
       try { y = chart.convertToPixel({ timestamp: lastTs, value: v }, { paneId, absolute: true }).y; } catch (e) {}
-      drawTag(y, formatTagValue(v, ind.pane !== "sub"), hex, 12);
+      drawTag(y, formatTagValue(v, ind.pane !== "sub"), pl.hex || "#888888", 12);
     });
   });
 
@@ -1258,7 +1268,7 @@ const SAVED_OVERLAYS = new Set([
   "segment", "horizontalStraightLine", "verticalStraightLine", "priceLine",
   "rectangle", "rayLine", "priceChannelLine", "parallelStraightLine",
   "frvp", "fibRetracement", "fibExtension", "priceRange", "dateRange",
-  "simpleAnnotation", "freehand", "positionTool",
+  "simpleAnnotation", "freehand", "positionTool", "polyline", "avwap",
 ]);
 
 function registerDrawing(id, name, points, extendData, styles) {
@@ -1309,9 +1319,21 @@ function restoreDrawings(list) {
           if (d.name === "frvp") openFrvpMenu(e.overlay, e); else openOverlayMenu(e.overlay, e);
           return true;
         },
-        onRemoved: (e) => { unregisterDrawing(e.overlay.id); return false; },
+        onRemoved: (e) => {
+          unregisterDrawing(e.overlay.id);
+          if (d.name === "avwap" && typeof window.__tvRemoveAnchorVwap === "function") {
+            window.__tvRemoveAnchorVwap(e.overlay.id);
+          }
+          return false;
+        },
       });
-      if (id) state.drawings.push({ ...d, id });
+      if (id) {
+        state.drawings.push({ ...d, id });
+        // AVWAP-Indikator beim Wiederherstellen neu aktivieren
+        if (d.name === "avwap" && d.points?.[0]?.timestamp) {
+          setTimeout(() => window.__tvAnchorVwap?.(d.points[0].timestamp, id), 50);
+        }
+      }
     } catch (e) {}
   });
 }
@@ -1631,6 +1653,7 @@ function openFrvpMenu(overlay, event) {
   document.getElementById("frvpOpacity").oninput = (e) => {
     document.getElementById("frvpOpacityVal").textContent = e.target.value + "%";
   };
+  document.getElementById("frvpExtendRight").checked = ext.extendRight === true;
 
   const p = menuPosition(event, 260, 380);
   menu.style.left = p.x + "px";
@@ -1650,9 +1673,10 @@ function openFrvpMenu(overlay, event) {
       showPOC:   document.getElementById("frvpShowPOC").checked,
       colorUp:   hexToRgba(document.getElementById("frvpColorUp").value,   op),
       colorDown: hexToRgba(document.getElementById("frvpColorDown").value, op),
-      colorVAH:  document.getElementById("frvpColorVAH").value,
-      colorVAL:  document.getElementById("frvpColorVAL").value,
-      colorPOC:  document.getElementById("frvpColorPOC").value,
+      colorVAH:    document.getElementById("frvpColorVAH").value,
+      colorVAL:    document.getElementById("frvpColorVAL").value,
+      colorPOC:    document.getElementById("frvpColorPOC").value,
+      extendRight: document.getElementById("frvpExtendRight").checked,
     };
     chart.overrideOverlay({ id: overlay.id, extendData: newExt });
     // Als Vorlage für künftige FRVPs merken (Punkt 4)
@@ -1741,6 +1765,7 @@ const DRAW_CATEGORIES = [
       { overlay: "rayLine",                 label: "Strahl",           desc: "Halbgerade ab einem Punkt" },
       { overlay: "priceChannelLine",        label: "Parallelkanal",    desc: "Zwei parallele Trendlinien" },
       { overlay: "parallelStraightLine",    label: "Parallele Linien", desc: "Mehrere parallele Geraden" },
+      { overlay: "polyline",                label: "Polylinie",         desc: "Mehrpunkt-Linie, ESC zum Beenden" },
     ],
   },
   {
@@ -1748,6 +1773,7 @@ const DRAW_CATEGORIES = [
     icon: `<svg viewBox="0 0 24 24"><rect x="3" y="4" width="6" height="3" rx="1" fill="currentColor"/><rect x="3" y="9" width="12" height="3" rx="1" fill="currentColor"/><rect x="3" y="14" width="9" height="3" rx="1" fill="currentColor"/><rect x="3" y="19" width="5" height="2" rx="1" fill="currentColor"/></svg>`,
     tools: [
       { overlay: "frvp",        label: "Fixed Range Vol.",  desc: "Volumen pro Preisstufe" },
+      { overlay: "avwap",       label: "Anchored VWAP",     desc: "VWAP ab einem Klick-Punkt" },
     ],
   },
   {
@@ -2207,14 +2233,19 @@ function clearAllDrawings() {
 chart.setLoadDataCallback(async ({ type, data, callback }) => {
   // Nur ältere Daten (forward = nach links), nur Binance, nicht im Replay
   if (type !== "forward" || !data) { callback([], false); return; }
-  if (state.symbol.type !== "binance") { callback([], false); return; }
+  if (state.symbol.type !== "binance" && state.symbol.type !== "kraken") { callback([], false); return; }
 
   setStatus("Lade ältere Kerzen …");
   try {
-    const older = await DataLayer.fetchBinanceKlinesBefore(
-      state.symbol.id, state.timeframe.binanceInterval,
-      data.timestamp, CONFIG.LAZY_LOAD_CHUNK
-    );
+    const older = state.symbol.type === "kraken"
+      ? await DataLayer.fetchKrakenKlinesBefore(
+          state.symbol.krakenPair, state.timeframe.krakenInterval,
+          data.timestamp, CONFIG.LAZY_LOAD_CHUNK
+        )
+      : await DataLayer.fetchBinanceKlinesBefore(
+          state.symbol.id, state.timeframe.binanceInterval,
+          data.timestamp, CONFIG.LAZY_LOAD_CHUNK
+        );
     const more = older.length >= CONFIG.LAZY_LOAD_CHUNK;
     callback(older, more);
     setTimeout(() => {

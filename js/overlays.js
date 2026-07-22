@@ -194,9 +194,15 @@
       const valPrice = pMin + vaLow * rowH;
 
       // Pixel-Koordinaten
-      const xLeft    = Math.min(coordinates[0].x, coordinates[1].x);
-      const xRight   = Math.max(coordinates[0].x, coordinates[1].x);
-      const boxWidth = xRight - xLeft;
+      const xLeft  = Math.min(coordinates[0].x, coordinates[1].x);
+      // extendRight: VAH/VAL/POC-Linien bis zum rechten Chart-Rand verlängern.
+      // bounding kommt vom yAxis-Objekt (KLC-intern); als Fallback nehmen wir
+      // eine grosszügige Breite, die in der Praxis nie sichtbar ist.
+      const chartW  = (typeof xAxis?.getBounding === "function" ? xAxis.getBounding().width : null)
+                   || (typeof yAxis?.getBounding === "function" ? yAxis.getBounding().right : null)
+                   || 2400;
+      const xRight   = (ext.extendRight) ? chartW : Math.max(coordinates[0].x, coordinates[1].x);
+      const boxWidth = Math.max(coordinates[0].x, coordinates[1].x) - xLeft;
       const maxBarW  = boxWidth * (widthPct / 100);
 
       // Gesamt-Preis-Range in Pixel für Hitbox
@@ -232,7 +238,7 @@
         });
       }
 
-      // ---- VAH-Linie ----
+      // ---- VAH-Linie (verlängert bis xRight wenn extendRight) ----
       if (showVAH) {
         const yVAH = yAxis.convertToPixel(vahPrice);
         figures.push({
@@ -243,7 +249,7 @@
         });
       }
 
-      // ---- VAL-Linie ----
+      // ---- VAL-Linie (verlängert bis xRight wenn extendRight) ----
       if (showVAL) {
         const yVAL = yAxis.convertToPixel(valPrice);
         figures.push({
@@ -254,7 +260,7 @@
         });
       }
 
-      // ---- POC-Linie ----
+      // ---- POC-Linie (verlängert bis xRight wenn extendRight) ----
       if (showPOC) {
         const yPOC = yAxis.convertToPixel(pocPrice);
         figures.push({
@@ -878,6 +884,70 @@
         },
       });
 
+      return figs;
+    },
+  });
+
+  // ---------- Anchored VWAP ----------
+  // 1 Klick = Ankerpunkt. Das Overlay zeichnet nur eine senkrechte Marker-
+  // Linie am Ankerpunkt; die eigentliche VWAP-Kurve kommt vom AVWAP-Indikator,
+  // den das Overlay via window.__tvAnchorVwap(timestamp) aktiviert.
+  // Warum Overlay + Indikator getrennt: KLineCharts-Indikatoren können keine
+  // interaktiven Klick-Punkte setzen; Overlays können keine Kurvendaten aus
+  // allen historischen Bars berechnen. Die Kombination gibt beides.
+  klinecharts.registerOverlay({
+    name: "avwap",
+    totalStep: 2,   // 1 Klick = fertig
+    needDefaultPointFigure: true,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, overlay, yAxis }) => {
+      if (coordinates.length < 1) return [];
+      const x = coordinates[0].x;
+      // Ankerlinie von oben nach unten durch das Preis-Pane
+      const yTop    = yAxis ? yAxis.convertToPixel(yAxis.getRange?.()?.to ?? 1e9) : 0;
+      const yBottom = yAxis ? yAxis.convertToPixel(yAxis.getRange?.()?.from ?? 0)  : 2000;
+      return [{
+        type: "line",
+        attrs: { coordinates: [{ x, y: yTop }, { x, y: yBottom }] },
+        styles: { style: "dashed", color: "rgba(199,146,234,0.6)", size: 1, dashedValue: [4, 3], smooth: false },
+      }];
+    },
+    onDrawEnd: (ev) => {
+      const ts = ev?.overlay?.points?.[0]?.timestamp;
+      if (ts && typeof window.__tvAnchorVwap === "function") {
+        window.__tvAnchorVwap(ts, ev.overlay.id);
+      }
+      return false;
+    },
+    onRemoved: (ev) => {
+      if (typeof window.__tvRemoveAnchorVwap === "function") {
+        window.__tvRemoveAnchorVwap(ev.overlay.id);
+      }
+      return false;
+    },
+  });
+
+  // ---------- Polyline ----------
+  // Unbegrenzte Punkte (totalStep: 0). Jeder Klick fügt einen Punkt hinzu,
+  // Doppelklick oder ESC beendet. KLineCharts behandelt totalStep: 0 als
+  // "offen" — der letzte Punkt folgt dem Mauszeiger bis zum Abschluss.
+  klinecharts.registerOverlay({
+    name: "polyline",
+    totalStep: 0,
+    needDefaultPointFigure: true,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, overlay }) => {
+      if (coordinates.length < 2) return [];
+      const figs = [];
+      for (let i = 0; i < coordinates.length - 1; i++) {
+        figs.push({
+          type: "line",
+          attrs: { coordinates: [coordinates[i], coordinates[i + 1]] },
+          styles: { style: "solid", size: 1.5, dashedValue: [4, 4], smooth: false },
+        });
+      }
       return figs;
     },
   });

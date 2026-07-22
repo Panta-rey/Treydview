@@ -15,16 +15,22 @@ const CONFIG = {
     { id: "SOLUSDT",  label: "SOL/USDT",  type: "binance" },
     { id: "AEROUSDT", label: "AERO/USDT", type: "binance" },
     { id: "XAUUSD",   label: "Gold XAU/USD", type: "worker" },
+    // Kraken: längere Geschichte (BTC seit 2013, ETH seit 2016)
+    { id: "XBTUSD",   label: "BTC/USD (Kraken)",  type: "kraken", krakenPair: "XBTUSD"  },
+    { id: "ETHUSD_K", label: "ETH/USD (Kraken)",  type: "kraken", krakenPair: "ETHUSD"  },
+    { id: "SOLUSD_K", label: "SOL/USD (Kraken)",  type: "kraken", krakenPair: "SOLUSD"  },
   ],
 
   TIMEFRAMES: [
-    { id: "15m", label: "15m", binanceInterval: "15m" },
-    { id: "1h",  label: "1h",  binanceInterval: "1h"  },
-    { id: "4h",  label: "4h",  binanceInterval: "4h"  },
-    { id: "1d",  label: "1D",  binanceInterval: "1d"  },
-    { id: "1w",  label: "1W",  binanceInterval: "1w"  },
-    { id: "1M",  label: "1M",  binanceInterval: "1M"  },
+    { id: "15m", label: "15m", binanceInterval: "15m", krakenInterval: "15"   },
+    { id: "1h",  label: "1h",  binanceInterval: "1h",  krakenInterval: "60"   },
+    { id: "4h",  label: "4h",  binanceInterval: "4h",  krakenInterval: "240"  },
+    { id: "1d",  label: "1D",  binanceInterval: "1d",  krakenInterval: "1440" },
+    { id: "1w",  label: "1W",  binanceInterval: "1w",  krakenInterval: "10080"},
+    { id: "1M",  label: "1M",  binanceInterval: "1M",  krakenInterval: "21600"},
   ],
+
+  KRAKEN_REST: "https://api.kraken.com/0/public",
 
   CANDLE_LIMIT: 5000,        // per Pagination (Binance max 1000/Request)
   LAZY_LOAD_CHUNK: 1000,     // Nachladen beim Zurückscrollen
@@ -39,7 +45,7 @@ const CONFIG = {
   // ------------------------------------------------------------
   INDICATORS: [
     {
-      key: "mnoodle", name: "MNOODLE", pane: "main", label: "Money Noodle", noTags: true,   // Preis-Tags komplett aus (User-Wunsch)
+      key: "mnoodle", noTags: true,   // Preis-Tags komplett aus (User-Wunsch) name: "MNOODLE", pane: "main", label: "Money Noodle", noTags: true,
       inputs: [
         { key: "fastPeriod", label: "Fast EMA",         default: 12 },
         { key: "medPeriod",  label: "Medium EMA",       default: 21 },

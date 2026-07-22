@@ -154,6 +154,58 @@ const DataLayer = {
     };
   },
 
+  // ---------- Kraken ----------
+  // Kraken OHLC-Endpoint liefert max. 720 Kerzen pro Request. Für mehr
+  // paginieren wir rückwärts via since-Parameter (Unix-Sekunden).
+  // API: GET /0/public/OHLC?pair=XBTUSD&interval=1440&since=<unix_s>
+  // Antwort: { result: { XBTUSD: [[time,o,h,l,c,vwap,vol,count], ...], last: <unix_s> } }
+
+  async fetchKrakenKlines(pair, intervalMin, limit) {
+    const MAX_PER_REQ = 720;
+    const all = [];
+    // Kraken liefert IMMER die letzten 720 Kerzen wenn kein since angegeben.
+    // Für mehr Kerzen: since = ältester Timestamp des letzten Chunks - 1.
+    let since = null;
+    let guard = Math.ceil(limit / MAX_PER_REQ) + 2;
+    while (all.length < limit && guard-- > 0) {
+      const chunk = await this._fetchKrakenChunk(pair, intervalMin, since);
+      if (!chunk.length) break;
+      // Neueste Kerze ist oft unfertig — nur beim letzten Request behalten
+      const isFirst = all.length === 0;
+      const rows = isFirst ? chunk : chunk.filter(r => r.timestamp < chunk.at(-1).timestamp);
+      all.unshift(...rows);
+      if (chunk.length < MAX_PER_REQ) break;   // keine weiteren Daten
+      since = Math.floor(chunk[0].timestamp / 1000) - 1;
+    }
+    return this._dedupe(all).slice(-limit);
+  },
+
+  async fetchKrakenKlinesBefore(pair, intervalMin, beforeTimestamp, limit = 720) {
+    const since = Math.floor(beforeTimestamp / 1000) - Math.ceil(limit * intervalMin * 60);
+    const chunk = await this._fetchKrakenChunk(pair, intervalMin, since);
+    return this._dedupe(chunk.filter(r => r.timestamp < beforeTimestamp));
+  },
+
+  async _fetchKrakenChunk(pair, intervalMin, since) {
+    let url = `${CONFIG.KRAKEN_REST}/OHLC?pair=${pair}&interval=${intervalMin}`;
+    if (since) url += `&since=${since}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Kraken HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.error && json.error.length) throw new Error(`Kraken: ${json.error[0]}`);
+    // Antwort-Key = Paar-Name (manchmal mit X/Z-Prefix normalisiert)
+    const resultKey = Object.keys(json.result || {}).find(k => k !== "last");
+    if (!resultKey) return [];
+    return (json.result[resultKey] || []).map(k => ({
+      timestamp: k[0] * 1000,          // Sekunden → Millisekunden
+      open:   parseFloat(k[1]),
+      high:   parseFloat(k[2]),
+      low:    parseFloat(k[3]),
+      close:  parseFloat(k[4]),
+      volume: parseFloat(k[6]),
+    }));
+  },
+
   // ---------- Gold via Worker ----------
   // Toleranter Parser — Details siehe README. Bei abweichendem
   // Worker-Format NUR normalizeGoldRow() anpassen.
