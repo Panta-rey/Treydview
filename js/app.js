@@ -1190,6 +1190,19 @@ function drawIndicatorTags() {
   };
 
   // --- Indikator-Tags: echt pro Linie (showLast) ---
+  // Manche Indikatoren benennen ihre Ergebnis-Felder anders als die
+  // Config-Plot-Keys (EMA e1 -> ema1, RVWAP line -> rvwap, GC upper/midUp/
+  // lower -> gcUpper/gcMid/gcLower, Hull up -> mhull). Ohne dieses Mapping
+  // liefert lastRow[p.key] undefined -> das Tag wird nie gezeichnet und der
+  // Ein/Aus-Schalter wirkt tot. Plots, die absichtlich KEIN Tag bekommen
+  // (GC midDown, Hull down/band), stehen nicht im Mapping -> werden
+  // übersprungen (rk == null).
+  const TAG_RESULT_KEY = {
+    ema:   { e1: "ema1", e2: "ema2", e3: "ema3", e4: "ema4" },
+    rvwap: { line: "rvwap" },
+    gc:    { upper: "gcUpper", midUp: "gcMid", lower: "gcLower" },
+    hull:  { up: "mhull" },
+  };
   CONFIG.INDICATORS.forEach(ind => {
     if (!state.active.has(ind.key) || ind.noTags || ind.key === "vrvp") return;
     const paneId = ind.pane === "sub" ? (state.subPaneIds[ind.key] || "pane_" + ind.key) : "candle_pane";
@@ -1198,14 +1211,29 @@ function drawIndicatorTags() {
     if (!inst || !Array.isArray(inst.result) || !inst.result.length) return;
     const lastRow = inst.result[inst.result.length - 1] || {};
     const sv = Settings.get(ind.key);
+    const keyMap = TAG_RESULT_KEY[ind.key];
     (ind.plots || []).forEach(p => {
       const pl = sv.plots[p.key];
       if (!pl || pl.visible === false || pl.showLast === false) return;
-      const v = lastRow[p.key];
+      // Ergebnis-Key bestimmen. Bei gemappten Indikatoren zählt nur, was im
+      // Mapping steht; alles andere (Fills, Gegen-Trend-Linien) wird bewusst
+      // übersprungen.
+      const rk = keyMap ? keyMap[p.key] : p.key;
+      if (keyMap && rk == null) return;
+      const v = lastRow[rk];
       if (v == null || !isFinite(v)) return;
+      // Trendabhängige Tag-Farbe: GC-Mittellinie und Hull-Linie wechseln je
+      // nach Richtung die Farbe. Die passende Farbe kommt aus dem jeweils
+      // aktiven Gegenstück-Plot.
+      let hex = pl.hex || "#888888";
+      if (ind.key === "gc" && p.key === "midUp") {
+        hex = (sv.plots[lastRow.gcUp ? "midUp" : "midDown"] || pl).hex || hex;
+      } else if (ind.key === "hull" && p.key === "up") {
+        hex = (sv.plots[lastRow.up ? "up" : "down"] || pl).hex || hex;
+      }
       let y = null;
       try { y = chart.convertToPixel({ timestamp: lastTs, value: v }, { paneId, absolute: true }).y; } catch (e) {}
-      drawTag(y, formatTagValue(v, ind.pane !== "sub"), pl.hex || "#888888", 12);
+      drawTag(y, formatTagValue(v, ind.pane !== "sub"), hex, 12);
     });
   });
 

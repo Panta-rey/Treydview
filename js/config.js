@@ -39,7 +39,7 @@ const CONFIG = {
   // ------------------------------------------------------------
   INDICATORS: [
     {
-      key: "mnoodle", noTags: true,   // Preis-Tags komplett aus (User-Wunsch) name: "MNOODLE", pane: "main", label: "Money Noodle", noTags: true,
+      key: "mnoodle", name: "MNOODLE", pane: "main", label: "Money Noodle", noTags: true,   // Preis-Tags komplett aus (User-Wunsch)
       inputs: [
         { key: "fastPeriod", label: "Fast EMA",         default: 12 },
         { key: "medPeriod",  label: "Medium EMA",       default: 21 },
