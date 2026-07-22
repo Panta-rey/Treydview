@@ -16,9 +16,9 @@ const CONFIG = {
     { id: "AEROUSDT", label: "AERO/USDT", type: "binance" },
     { id: "XAUUSD",   label: "Gold XAU/USD", type: "worker" },
     // Kraken: längere Geschichte (BTC seit 2013, ETH seit 2016)
-    { id: "XBTUSD",   label: "BTC/USD (Kraken)",  type: "kraken", krakenPair: "XBTUSD"  },
-    { id: "ETHUSD_K", label: "ETH/USD (Kraken)",  type: "kraken", krakenPair: "ETHUSD"  },
-    { id: "SOLUSD_K", label: "SOL/USD (Kraken)",  type: "kraken", krakenPair: "SOLUSD"  },
+    { id: "XBTUSD_KR",  label: "BTC/USD (Kraken)",  type: "kraken", krakenPair: "XXBTZUSD" },
+    { id: "ETHUSD_KR",  label: "ETH/USD (Kraken)",  type: "kraken", krakenPair: "XETHZUSD" },
+    { id: "SOLUSD_KR",  label: "SOL/USD (Kraken)",  type: "kraken", krakenPair: "SOLUSD"   },
     // Coinbase: AERO seit 2024 gelistet (mehr Historie als Binance Dez 2024)
     { id: "AERO-USD", label: "AERO/USD (Coinbase)", type: "coinbase", coinbaseProduct: "AERO-USD" },
     { id: "BTC-USD",  label: "BTC/USD (Coinbase)",  type: "coinbase", coinbaseProduct: "BTC-USD"  },

@@ -592,26 +592,148 @@ function renderAssetList(filter = "") {
 }
 document.getElementById("assetSearch").addEventListener("input", e => renderAssetList(e.target.value));
 
-async function loadBinanceSymbols() {
+// ---------- Multi-Exchange Symbol-Loader ----------
+// Lädt Paare von Binance, Coinbase, Kraken und Bybit. Filter-Regeln:
+// - Quote: nur USDT, USDC, USD, BTC
+// - Status: nur aktiv gehandelt
+// - Volumen: 24h-Äquivalent > 5 Mio USD
+// - Defaults: CONFIG.DEFAULT_SYMBOLS immer enthalten, nie doppelt
+// - Label: "BASE/QUOTE (Exchange)"
+const ALLOWED_QUOTES = new Set(["USDT", "USDC", "USD", "BTC"]);
+const VOL_MIN = 5_000_000;
+
+// Hilfsfunktion: Binance-24h-Ticker für Volumenfilter
+async function _fetchBinanceTicker24h() {
   try {
-    const res = await fetch(`${CONFIG.BINANCE_REST}/exchangeInfo`);
-    const data = await res.json();
-    const usdt = data.symbols
-      .filter(s => s.quoteAsset === "USDT" && s.status === "TRADING")
-      .map(s => ({ id: s.symbol, label: s.baseAsset + "/USDT", type: "binance" }));
-    // Bestehende IDs: DEFAULT_SYMBOLS (inkl. Kraken/Gold) + neue Binance-Pairs
-    const existing = new Set(state.allSymbols.map(s => s.id));
-    // Nicht-Binance-Symbole (Kraken, Gold) vorne behalten
-    const nonBinance = state.allSymbols.filter(s => s.type !== "binance");
-    const binanceDefault = CONFIG.DEFAULT_SYMBOLS.filter(s => s.type === "binance");
-    state.allSymbols = [
-      ...nonBinance,
-      ...binanceDefault,
-      ...usdt.filter(s => !existing.has(s.id)),
-    ];
-    renderAssetList();
-    renderCompareList();
-  } catch (_) { renderAssetList(); }
+    const res = await fetch(`${CONFIG.BINANCE_REST}/ticker/24hr`);
+    if (!res.ok) return {};
+    const arr = await res.json();
+    const map = {};
+    arr.forEach(t => { map[t.symbol] = parseFloat(t.quoteVolume); });
+    return map;
+  } catch (e) { return {}; }
+}
+
+async function loadAllExchangeSymbols() {
+  // IDs der Defaults sichern — dürfen nie wegfallen
+  const defaultIds = new Set(CONFIG.DEFAULT_SYMBOLS.map(s => s.id));
+  const seen = new Set(CONFIG.DEFAULT_SYMBOLS.map(s => s.id));
+  const result = [...CONFIG.DEFAULT_SYMBOLS];   // Defaults immer vorne
+
+  // --- Binance ---
+  try {
+    const [infoRes, volMap] = await Promise.all([
+      fetch(`${CONFIG.BINANCE_REST}/exchangeInfo`),
+      _fetchBinanceTicker24h(),
+    ]);
+    if (infoRes.ok) {
+      const info = await infoRes.json();
+      info.symbols
+        .filter(s => s.status === "TRADING" && ALLOWED_QUOTES.has(s.quoteAsset))
+        .forEach(s => {
+          if (seen.has(s.symbol)) return;
+          const vol = volMap[s.symbol] || 0;
+          if (!defaultIds.has(s.symbol) && vol < VOL_MIN) return;
+          seen.add(s.symbol);
+          result.push({
+            id: s.symbol,
+            label: `${s.baseAsset}/${s.quoteAsset} (Binance)`,
+            type: "binance",
+          });
+        });
+    }
+  } catch (e) { /* Binance Fehler: nur Defaults */ }
+
+  // --- Coinbase ---
+  try {
+    const res = await fetch(`${CONFIG.COINBASE_REST}/products`);
+    if (res.ok) {
+      const arr = await res.json();
+      arr
+        .filter(p => p.status === "online" && ALLOWED_QUOTES.has(p.quote_currency))
+        .forEach(p => {
+          const id = p.id;   // z.B. "BTC-USD"
+          if (seen.has(id)) return;
+          // Coinbase hat kein 24h-Volumen im /products-Endpunkt.
+          // Wir nehmen alle aktiven Paare mit erlaubter Quote auf —
+          // Coinbase listet ohnehin nur liquide Paare.
+          seen.add(id);
+          result.push({
+            id,
+            label: `${p.base_currency}/${p.quote_currency} (Coinbase)`,
+            type: "coinbase",
+            coinbaseProduct: id,
+          });
+        });
+    }
+  } catch (e) { /* Coinbase nicht erreichbar */ }
+
+  // --- Kraken ---
+  try {
+    const res = await fetch(`${CONFIG.KRAKEN_REST}/AssetPairs`);
+    if (res.ok) {
+      const json = await res.json();
+      if (!json.error?.length) {
+        Object.entries(json.result || {}).forEach(([key, p]) => {
+          if (p.status !== "online") return;
+          // Kraken-Quote normalisieren: ZUSD→USD, XXBT→BTC
+          const q = (p.quote || "").replace(/^Z/, "").replace(/^X/, "");
+          const b = (p.base  || "").replace(/^Z/, "").replace(/^X/, "");
+          if (!ALLOWED_QUOTES.has(q)) return;
+          // Verwende wsname (z.B. "XBT/USD") für ein sauberes Paar-Label
+          const altName = p.wsname || `${b}/${q}`;
+          const pairId = `${key}_KR`;   // eindeutige ID für state.allSymbols
+          if (seen.has(pairId)) return;
+          // Kraken-Volumen steht nicht im AssetPairs-Endpunkt —
+          // wir filtern hier auf bekannte Hauptpaare via Quote-Filter
+          seen.add(pairId);
+          result.push({
+            id: pairId,
+            label: `${altName} (Kraken)`,
+            type: "kraken",
+            krakenPair: key,   // echter API-Key für OHLC-Requests
+          });
+        });
+      }
+    }
+  } catch (e) { /* Kraken nicht erreichbar */ }
+
+  // --- Bybit ---
+  try {
+    const res = await fetch(`${CONFIG.BYBIT_REST}/v5/market/tickers?category=spot`);
+    if (res.ok) {
+      const json = await res.json();
+      if (json.retCode === 0) {
+        (json.result?.list || []).forEach(t => {
+          const sym = t.symbol;   // z.B. "BTCUSDT"
+          if (seen.has(`${sym}_BY`)) return;
+          // Quote aus Symbol ableiten (letzte 3-4 Zeichen)
+          const quote = ["USDT","USDC","BTC","USD"].find(q => sym.endsWith(q));
+          if (!quote) return;
+          const base = sym.slice(0, sym.length - quote.length);
+          const vol = parseFloat(t.turnover24h) || 0;
+          if (!defaultIds.has(`${sym}_BY`) && vol < VOL_MIN) return;
+          const pairId = `${sym}_BY`;
+          seen.add(pairId);
+          result.push({
+            id: pairId,
+            label: `${base}/${quote} (Bybit)`,
+            type: "bybit",
+            bybitSymbol: sym,
+          });
+        });
+      }
+    }
+  } catch (e) { /* Bybit nicht erreichbar */ }
+
+  state.allSymbols = result;
+  renderAssetList();
+  renderCompareList();
+}
+
+// Alias für bestehende Aufrufer (init-Sequenz etc.)
+async function loadBinanceSymbols() {
+  return loadAllExchangeSymbols();
 }
 
 // ---------- Multi-Asset-Vergleich ----------
@@ -620,12 +742,13 @@ function renderCompareList(filter = "") {
   if (!list) return;
   list.innerHTML = "";
   const f = filter.toUpperCase().trim();
-  // Nur Binance-Assets vergleichbar (brauchen Kline-Endpoint)
-  const items = state.allSymbols.filter(s => s.type === "binance" &&
-    (f ? (s.id.includes(f) || s.label.toUpperCase().includes(f)) : true) &&
+  // Alle Exchanges vergleichbar (binance, coinbase, kraken, bybit) —
+  // nur Gold (worker) ausschliessen, da kein OHLC-Endpoint für beliebige TFs
+  const items = state.allSymbols.filter(s => s.type !== "worker" &&
+    (f ? (s.id.toUpperCase().includes(f) || s.label.toUpperCase().includes(f)) : true) &&
     s.id !== state.symbol.id &&
     !state.compareAssets.some(c => c.id === s.id));
-  items.slice(0, 60).forEach(sym => {
+  items.slice(0, 80).forEach(sym => {
     const item = document.createElement("div");
     item.className = "dd-item";
     item.textContent = sym.label;
@@ -704,7 +827,17 @@ function removeCompareAsset(id) {
 // Kline-Daten eines Vergleichs-Assets im aktuellen Timeframe holen
 async function refreshCompareData(entry) {
   try {
-    const candles = await DataLayer.fetchBinanceKlines(entry.id, state.timeframe.binanceInterval, CONFIG.CANDLE_LIMIT);
+    let candles;
+    const tf = state.timeframe;
+    if (entry.type === "coinbase") {
+      candles = await DataLayer.fetchCoinbaseKlines(entry.coinbaseProduct, tf.coinbaseInterval || 86400, CONFIG.CANDLE_LIMIT);
+    } else if (entry.type === "kraken") {
+      candles = await DataLayer.fetchKrakenKlines(entry.krakenPair, tf.krakenInterval || "1440", CONFIG.CANDLE_LIMIT);
+    } else if (entry.type === "bybit") {
+      candles = await DataLayer.fetchBybitKlines(entry.bybitSymbol, tf.bybitInterval || "D", CONFIG.CANDLE_LIMIT);
+    } else {
+      candles = await DataLayer.fetchBinanceKlines(entry.id, tf.binanceInterval, CONFIG.CANDLE_LIMIT);
+    }
     entry.data = candles.map(c => ({ timestamp: c.timestamp, close: c.close }));
     window.__tvCompareAssets = state.compareAssets;
   } catch (e) {
@@ -936,23 +1069,20 @@ function drawLine(ctx, dataList, from, to, valFn, color, width, dl, pctToY, char
 
 function applyCompareIndicator() {
   if (state.compareAssets.length > 0) {
-    // Vergleichsmodus: ALLE Indikatoren vom Chart nehmen. Die Y-Achse läuft
-    // hier in % relativer Performance — Indikatoren auf Preisbasis wären
-    // sinnlos und störend. state.active bleibt unverändert, damit die
-    // Indikatoren beim Verlassen des Vergleichs zurückkommen.
+    // Vergleichsmodus: ALLES entfernen was auf Preis-Basis läuft —
+    // Indikatoren, VRVP, Grid-Bot-Bänder, Muster, FVG/OB.
     CONFIG.INDICATORS.forEach(ind => {
       if (state.active.has(ind.key)) { try { removeIndicator(ind); } catch (e) {} }
     });
-    // VRVP-Canvas leeren (removeIndicator("vrvp") tut das zwar schon, aber
-    // sicher ist sicher)
     if (state.vrvpCanvas) {
       state.vrvpCanvas.getContext("2d").clearRect(0, 0, state.vrvpCanvas.width, state.vrvpCanvas.height);
     }
-    // Preis-Tags weg
+    try { gbClearBands(); } catch (e) {}
+    try { clearPatterns(); } catch (e) {}
+    try { clearSMC(); } catch (e) {}
     if (state.tagCanvas) {
       state.tagCanvas.getContext("2d").clearRect(0, 0, state.tagCanvas.width, state.tagCanvas.height);
     }
-    // Kerzen/Achse ausblenden: USD-Beschriftung transparent, Kerzen unsichtbar
     chart.setStyles({
       candle: {
         type: "area",
@@ -966,14 +1096,13 @@ function applyCompareIndicator() {
     });
     setTimeout(() => { try { drawCompare(); } catch (e) {} }, 80);
   } else {
-    // Kerzen/Achse wiederherstellen, Canvas leeren
     chart.setStyles(baseStyles());
-    // Indikatoren wieder anwenden (waren beim Vergleich entfernt)
     CONFIG.INDICATORS.forEach(ind => {
       if (!state.active.has(ind.key)) return;
-      try { removeIndicator(ind); } catch (e) {}   // Doppel-Registrierung vermeiden
+      try { removeIndicator(ind); } catch (e) {}
       try { applyIndicator(ind); } catch (e) {}
     });
+    if (state.gbOpen && !state.gbCollapsed) { try { gbDrawBands(); } catch (e) {} }
     scheduleTagDraw();
     if (_compareCanvas) {
       _compareCanvas.getContext("2d").clearRect(0, 0, _compareCanvas.width, _compareCanvas.height);
@@ -1291,6 +1420,16 @@ function drawIndicatorTags() {
   };
 
   // --- Indikator-Tags: echt pro Linie (showLast) ---
+  // TAG_RESULT_KEY: Config-Plot-Key → Ergebnis-Key im indicators.js-Result.
+  // EMA e1..e4 → ema1..ema4, RVWAP line → rvwap, GC upper/midUp/lower →
+  // gcUpper/gcMid/gcLower, Hull up → mhull. Plots die KEIN Tag bekommen
+  // (GC midDown, Hull down/band) stehen absichtlich nicht im Mapping.
+  const TAG_RESULT_KEY = {
+    ema:   { e1: "ema1", e2: "ema2", e3: "ema3", e4: "ema4" },
+    rvwap: { line: "rvwap" },
+    gc:    { upper: "gcUpper", midUp: "gcMid", lower: "gcLower" },
+    hull:  { up: "mhull" },
+  };
   CONFIG.INDICATORS.forEach(ind => {
     if (!state.active.has(ind.key) || ind.noTags || ind.key === "vrvp") return;
     const paneId = ind.pane === "sub" ? (state.subPaneIds[ind.key] || "pane_" + ind.key) : "candle_pane";
@@ -1299,14 +1438,25 @@ function drawIndicatorTags() {
     if (!inst || !Array.isArray(inst.result) || !inst.result.length) return;
     const lastRow = inst.result[inst.result.length - 1] || {};
     const sv = Settings.get(ind.key);
+    const keyMap = TAG_RESULT_KEY[ind.key];
     (ind.plots || []).forEach(p => {
       const pl = sv.plots[p.key];
       if (!pl || pl.visible === false || pl.showLast === false) return;
-      const v = lastRow[p.key];
+      // Ergebnis-Key: gemappte Indikatoren nur wenn Key im Mapping steht
+      const rk = keyMap ? keyMap[p.key] : p.key;
+      if (keyMap && rk == null) return;
+      const v = lastRow[rk];
       if (v == null || !isFinite(v)) return;
+      // Trendabhängige Tag-Farbe für GC-Mittellinie und Hull-Linie
+      let hex = pl.hex || "#888888";
+      if (ind.key === "gc" && p.key === "midUp") {
+        hex = (sv.plots[lastRow.gcUp ? "midUp" : "midDown"] || pl).hex || hex;
+      } else if (ind.key === "hull" && p.key === "up") {
+        hex = (sv.plots[lastRow.up ? "up" : "down"] || pl).hex || hex;
+      }
       let y = null;
       try { y = chart.convertToPixel({ timestamp: lastTs, value: v }, { paneId, absolute: true }).y; } catch (e) {}
-      drawTag(y, formatTagValue(v, ind.pane !== "sub"), pl.hex || "#888888", 12);
+      drawTag(y, formatTagValue(v, ind.pane !== "sub"), hex, 12);
     });
   });
 
@@ -2209,8 +2359,15 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       const dist = Math.sqrt(dx*dx + dy*dy);
       const scale = dist / lastDist;
-      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
       const rect = el.getBoundingClientRect();
+      // Preisskala-Breite: KLineCharts reserviert ~60-80px am rechten Rand.
+      // Wenn beide Finger in diesem Bereich sind → kein Chart-Zoom, sonst
+      // würde jede Berührung der Skala den Chart-Ausschnitt verzerren.
+      const axisW = 80;
+      const t0inAxis = (e.touches[0].clientX - rect.left) > (rect.width - axisW);
+      const t1inAxis = (e.touches[1].clientX - rect.left) > (rect.width - axisW);
+      if (t0inAxis && t1inAxis) { lastDist = dist; return; }
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
       try {
         chart.zoomAtCoordinate(scale, { x: midX - rect.left, y: 0 }, 0);
       } catch (_) {}
