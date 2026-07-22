@@ -134,6 +134,17 @@ window.__tvTestBybit = async (symbol, interval) => {
   return json;
 };
 
+// Bybit vollständiger Fetch-Test: __tvTestBybitFull("AEROUSDT","D")
+window.__tvTestBybitFull = async (symbol, interval) => {
+  try {
+    const candles = await DataLayer.fetchBybitKlines(symbol, interval, 500);
+    console.log("Bybit candles count:", candles.length);
+    console.log("First:", candles[0]);
+    console.log("Last:", candles.at(-1));
+    return candles;
+  } catch(e) { console.error("Bybit error:", e); }
+};
+
 // Farbpalette für Vergleichs-Assets
 // 15 gut unterscheidbare Farben. Reihenfolge so gewählt, dass benachbarte
 // Einträge nie ähnliche Töne bekommen.
