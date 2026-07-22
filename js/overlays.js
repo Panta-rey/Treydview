@@ -928,6 +928,62 @@
     },
   });
 
+  // ---------- SMC-Zone (FVG / Order Block) ----------
+  // Programmatisch erzeugtes Rechteck zwischen zwei Punkten
+  // (coordinates[0] = links/oben, coordinates[1] = rechts/unten).
+  // Farbe & Beschriftung kommen aus extendData. "Gefüllte"/mitigierte Zonen
+  // werden gestrichelt und blasser gezeichnet.
+  klinecharts.registerOverlay({
+    name: "smcZone",
+    totalStep: 1,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, overlay, bounding }) => {
+      if (coordinates.length < 2) return [];
+      const ed = overlay.extendData || {};
+      const bearish = ed.type === "bearish";
+      const done = !!ed.closed;   // gefüllt/mitigiert
+      // Grundfarbe je Richtung
+      const rgb = bearish ? "208,94,94" : "63,182,139";
+      const fillA   = done ? 0.06 : (ed.kind === "ob" ? 0.16 : 0.12);
+      const border  = `rgba(${rgb},${done ? 0.5 : 0.95})`;
+      const figs = [{
+        type: "rect",
+        attrs: rectAttrs(coordinates[0], coordinates[1]),
+        styles: {
+          style: "stroke_fill",
+          color: `rgba(${rgb},${fillA})`,
+          borderColor: border,
+          borderSize: 1,
+          borderStyle: done ? "dashed" : "solid",
+          dashedValue: [4, 3],
+        },
+        ignoreEvent: false,
+      }];
+      // Label links in der Zone
+      const x = Math.min(coordinates[0].x, coordinates[1].x) + 4;
+      const yTop = Math.min(coordinates[0].y, coordinates[1].y);
+      if (ed.label) {
+        figs.push({
+          type: "text",
+          attrs: { x, y: yTop, text: ed.label, align: "left", baseline: "top" },
+          styles: {
+            style: "stroke_fill",
+            color: border,
+            backgroundColor: "rgba(13,17,23,0.75)",
+            borderColor: border,
+            borderSize: 0,
+            size: 10,
+            paddingLeft: 3, paddingRight: 3, paddingTop: 1, paddingBottom: 1,
+          },
+          ignoreEvent: true,
+        });
+      }
+      return figs;
+    },
+  });
+
   // ---------- Polyline (nur Rendering) ----------
   // Das Zeichnen läuft klickbasiert über eigene Handler in app.js
   // (startPolyline), analog zum Freihand-Werkzeug. Hier nur die Darstellung

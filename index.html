@@ -151,6 +151,38 @@
       </div>
     </div>
 
+    <!-- Smart Money Concepts: FVG / Order Blocks -->
+    <div class="dropdown" id="smcDropdown">
+      <button class="action-btn" id="smcTrigger" title="Fair Value Gaps &amp; Order Blocks">
+        <svg viewBox="0 0 24 24" class="ab-icon">
+          <rect x="3" y="4" width="7" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="2"/>
+          <rect x="13" y="14" width="8" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="2"/>
+          <line x1="6.5" y1="9" x2="6.5" y2="14" stroke="currentColor" stroke-width="2" stroke-dasharray="2,2"/>
+        </svg>
+      </button>
+      <div class="dd-panel dd-panel--right" id="smcPanel">
+        <div class="pat-header">Smart Money Concepts</div>
+        <div class="pat-types">
+          <div class="pat-group">Fair Value Gaps</div>
+          <label><input type="checkbox" id="smcFvgBull" checked> Bullish FVG</label>
+          <label><input type="checkbox" id="smcFvgBear" checked> Bearish FVG</label>
+          <div class="pat-group">Order Blocks</div>
+          <label><input type="checkbox" id="smcObBull" checked> Bullish OB</label>
+          <label><input type="checkbox" id="smcObBear" checked> Bearish OB</label>
+          <div class="pat-group">Optionen</div>
+          <label><input type="checkbox" id="smcShowFilled"> Gefüllte/mitigierte zeigen</label>
+          <label><input type="checkbox" id="smcExtendRight" checked> Nach rechts verlängern</label>
+        </div>
+        <div class="pat-info">
+          Scannt den sichtbaren Bereich. FVG = 3-Kerzen-Imbalance, OB = letzte Gegenkerze vor Impuls.
+        </div>
+        <div class="pat-actions">
+          <button id="smcScanBtn" class="pat-scan">Scannen</button>
+          <button id="smcClearBtn" class="pat-clear">Löschen</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Layouts -->
     <div class="dropdown" id="layoutDropdown">
       <button class="action-btn" id="layoutTrigger" title="Layouts">
@@ -841,6 +873,7 @@
 <script src="js/derivatives.js"></script>
 <script src="js/gridbot.js"></script>
 <script src="js/patterns.js"></script>
+<script src="js/smc.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

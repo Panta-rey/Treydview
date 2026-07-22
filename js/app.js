@@ -80,6 +80,10 @@ const state = {
   patternOverlayIds: [],
   patternOpts: _ws?.patternOpts || {},   // leer = Engine-Defaults (streng)
 
+  // Smart Money Concepts (FVG / Order Blocks)
+  smcOverlayIds: [],
+  smcOpts: _ws?.smcOpts || {},
+
   // Chart-Darstellung (Kerzen-/Linienfarben)
   chartStyle: _ws?.chartStyle || {
     // Preis-Markierungen: aktueller Preis + lokale Hochs/Tiefs
@@ -548,7 +552,7 @@ function initDropdowns() {
       document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
     }
   });
-  ["assetDropdown", "compareDropdown", "tfDropdown", "typeDropdown", "indDropdown", "layoutDropdown", "patternDropdown"].forEach(id => {
+  ["assetDropdown", "compareDropdown", "tfDropdown", "typeDropdown", "indDropdown", "layoutDropdown", "patternDropdown", "smcDropdown"].forEach(id => {
     const dd = document.getElementById(id);
     if (!dd) return;
     const trigger = dd.querySelector(".dd-trigger, .action-btn");
@@ -2157,17 +2161,48 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
   const el = document.getElementById("mainChart");
   let lastDist = null;
 
+  // Long-Press: Touch-Geräte haben keinen Rechtsklick. Ein langer Druck
+  // (~500ms) an einer Stelle löst ein synthetisches contextmenu-Event aus,
+  // sodass die bestehenden Rechtsklick-Menüs (Preislinien-Stil etc.) auch
+  // auf Handy/Tablet erreichbar sind. Nur wenn gerade nicht gezeichnet wird.
+  let lpTimer = null, lpStart = null;
+  const LP_MS = 500, LP_MOVE = 12;
+
+  const cancelLongPress = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } lpStart = null; };
+
   el.addEventListener("touchstart", (e) => {
     if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       lastDist = Math.sqrt(dx*dx + dy*dy);
+      cancelLongPress();
     } else {
       lastDist = null;
+      // Long-Press nur ausserhalb des Zeichnen-Modus
+      if (!state.activeTool && e.touches.length === 1) {
+        const t = e.touches[0];
+        lpStart = { x: t.clientX, y: t.clientY };
+        lpTimer = setTimeout(() => {
+          lpTimer = null;
+          // Synthetisches contextmenu-Event an der Druckstelle
+          const ev = new MouseEvent("contextmenu", {
+            bubbles: true, cancelable: true,
+            clientX: lpStart.x, clientY: lpStart.y,
+          });
+          el.dispatchEvent(ev);
+        }, LP_MS);
+      }
     }
   }, { passive: true });
 
   el.addEventListener("touchmove", (e) => {
+    // Bei Bewegung Long-Press abbrechen
+    if (lpStart && e.touches.length === 1) {
+      const t = e.touches[0];
+      if (Math.abs(t.clientX - lpStart.x) > LP_MOVE || Math.abs(t.clientY - lpStart.y) > LP_MOVE) {
+        cancelLongPress();
+      }
+    }
     if (e.touches.length === 2 && lastDist != null) {
       e.preventDefault();
       const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -2183,7 +2218,8 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
     }
   }, { passive: false });
 
-  el.addEventListener("touchend", () => { lastDist = null; }, { passive: true });
+  el.addEventListener("touchend", () => { lastDist = null; cancelLongPress(); }, { passive: true });
+  el.addEventListener("touchcancel", () => { lastDist = null; cancelLongPress(); }, { passive: true });
 })();
 
 // ---------- Workspace speichern ----------
@@ -2425,7 +2461,7 @@ function clearAllDrawings() {
   try { chart.removeOverlay(); } catch (e) {}
   state.drawings = [];
   state.patternOverlayIds = [];
-  state.gbBandIds = [];
+  state.smcOverlayIds = [];
   state.gbActiveTier = null;
   state.selectedOverlayId = null;
   state.drawingId = null;
@@ -3158,6 +3194,112 @@ function scanPatterns() {
   setStatus(`${found.length} Muster (${confirmed} bestätigt) · Form% = Formqualität, keine Trefferquote · Rechtsklick löscht`);
 }
 
+// ---------- Smart Money Concepts (FVG / Order Blocks) ----------
+function clearSMC() {
+  (state.smcOverlayIds || []).forEach(id => {
+    try { chart.removeOverlay(id); } catch (e) {}
+  });
+  state.smcOverlayIds = [];
+}
+
+function scanSMC() {
+  if (typeof SMC === "undefined") { setStatus("SMC-Modul nicht geladen"); return; }
+  clearSMC();
+
+  const data = chart.getDataList();
+  if (!data || data.length < 10) { setStatus("Zu wenig Daten"); return; }
+
+  let range;
+  try { range = chart.getVisibleRange(); } catch (e) { range = null; }
+  const from = range ? Math.max(0, range.realFrom ?? range.from) : 0;
+  const to   = range ? Math.min(data.length - 1, (range.realTo ?? range.to)) : data.length - 1;
+
+  // Zonen dürfen links ausserhalb beginnen und bis ins Sichtfeld reichen.
+  const scanFrom = Math.max(1, from - 200);
+
+  // UI-Optionen lesen
+  const opt = (id, def) => { const el = document.getElementById(id); return el ? el.checked : def; };
+  const showFVGbull = opt("smcFvgBull", true);
+  const showFVGbear = opt("smcFvgBear", true);
+  const showOBbull  = opt("smcObBull", true);
+  const showOBbear  = opt("smcObBear", true);
+  const showFilled  = opt("smcShowFilled", false);
+  const extendRight = opt("smcExtendRight", true);
+
+  const zones = [];
+  if (showFVGbull || showFVGbear) {
+    SMC.detectFVG(data, { from: scanFrom, to }, state.smcOpts).forEach(z => {
+      if (z.type === "bullish" && !showFVGbull) return;
+      if (z.type === "bearish" && !showFVGbear) return;
+      zones.push(z);
+    });
+  }
+  if (showOBbull || showOBbear) {
+    SMC.detectOrderBlocks(data, { from: scanFrom, to }, state.smcOpts).forEach(z => {
+      if (z.type === "bullish" && !showOBbull) return;
+      if (z.type === "bearish" && !showOBbear) return;
+      zones.push(z);
+    });
+  }
+
+  // Rechten Rand (Timestamp) fürs Verlängern bestimmen
+  const lastTs = data[data.length - 1].timestamp;
+  const barMs  = data.length >= 2 ? (data[data.length - 1].timestamp - data[data.length - 2].timestamp) : 0;
+  const extendTs = lastTs + barMs * 30;   // etwas über den letzten Bar hinaus
+
+  state.smcOverlayIds = [];
+  let openCount = 0, drawn = 0;
+  zones.forEach(z => {
+    const closedIdx = z.kind === "fvg" ? z.filledIndex : z.mitigatedIndex;
+    const isClosed  = closedIdx != null;
+    if (isClosed && !showFilled) return;   // gefüllte/mitigierte standardmässig aus
+    if (!isClosed) openCount++;
+
+    // rechte Kante: bis zur Füllung, sonst bis (über) den letzten Bar
+    let endTs;
+    if (isClosed && data[closedIdx]) endTs = data[closedIdx].timestamp;
+    else endTs = extendRight ? extendTs : lastTs;
+
+    const startTs = z.timestamp;
+    const dirArrow = z.type === "bullish" ? "▲" : "▼";
+    const label = (z.kind === "fvg" ? "FVG " : "OB ") + dirArrow + (isClosed ? " ✓" : "");
+
+    try {
+      const id = chart.createOverlay({
+        name: "smcZone",
+        points: [
+          { timestamp: startTs, value: z.top },
+          { timestamp: endTs,   value: z.bottom },
+        ],
+        lock: true,
+        extendData: { type: z.type, kind: z.kind, closed: isClosed, label },
+        onMouseEnter: () => { setChartCursor("pointer"); showSMCHint(z); return false; },
+        onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
+        onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
+      });
+      if (id) { state.smcOverlayIds.push(id); drawn++; }
+    } catch (e) {}
+  });
+
+  if (drawn === 0) {
+    setStatus("Keine SMC-Zonen im sichtbaren Bereich");
+    return;
+  }
+  setStatus(`${drawn} SMC-Zonen (${openCount} offen) · Rechtsklick löscht einzelne`);
+}
+
+// Kurz-Info beim Hovern über eine SMC-Zone (nutzt die Statuszeile wie die Muster)
+function showSMCHint(z) {
+  if (_patHintPrev == null) _patHintPrev = document.getElementById("statusline").textContent;
+  const dir = z.type === "bullish" ? "bullish" : "bearish";
+  const kind = z.kind === "fvg" ? "Fair Value Gap" : "Order Block";
+  const rng = `${z.bottom.toLocaleString("de-CH", { maximumFractionDigits: 2 })}–${z.top.toLocaleString("de-CH", { maximumFractionDigits: 2 })}`;
+  const status = (z.kind === "fvg" ? z.filledIndex : z.mitigatedIndex) != null
+    ? (z.kind === "fvg" ? "gefüllt" : "mitigiert") : "offen";
+  const gap = z.gapPct != null ? `  ·  Lücke ${z.gapPct.toFixed(2)}%` : "";
+  setStatus(`${kind}  ·  ${dir}  ·  Zone ${rng}  ·  ${status}${gap}`);
+}
+
 // ---------- Y-Achse entsperren ----------
 // KLineCharts erlaubt vertikales Draggen nur wenn autoCalcTickFlag=false ist.
 // Beim Start ist es true (Achse skaliert automatisch), deshalb blockiert das
@@ -3635,6 +3777,14 @@ document.getElementById("patStrictness").addEventListener("change", (e) => {
   const warn = document.getElementById("patWarn");
   if (warn) warn.classList.toggle("hidden", e.target.value === "streng");
 });
+
+// ---------- SMC-Handler (FVG / Order Blocks) ----------
+(function () {
+  const scanBtn  = document.getElementById("smcScanBtn");
+  const clearBtn = document.getElementById("smcClearBtn");
+  if (scanBtn)  scanBtn.addEventListener("click", scanSMC);
+  if (clearBtn) clearBtn.addEventListener("click", () => { clearSMC(); setStatus("SMC-Zonen entfernt"); });
+})();
 
 // ---------- Layout-Handler ----------
 document.getElementById("layoutSaveBtn").addEventListener("click", () => {
