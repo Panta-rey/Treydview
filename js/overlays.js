@@ -929,16 +929,15 @@
   });
 
   // ---------- Polyline ----------
-  // Unbegrenzte Punkte (totalStep: 0). Jeder Klick fügt einen Punkt hinzu,
-  // Doppelklick oder ESC beendet. KLineCharts behandelt totalStep: 0 als
-  // "offen" — der letzte Punkt folgt dem Mauszeiger bis zum Abschluss.
+  // Unbegrenzte Punkte (totalStep: 0). Rechte Maustaste oder Enter beendet,
+  // ESC löscht (wie alle anderen Werkzeuge).
   klinecharts.registerOverlay({
     name: "polyline",
     totalStep: 0,
     needDefaultPointFigure: true,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, overlay }) => {
+    createPointFigures: ({ coordinates }) => {
       if (coordinates.length < 2) return [];
       const figs = [];
       for (let i = 0; i < coordinates.length - 1; i++) {
@@ -949,6 +948,19 @@
         });
       }
       return figs;
+    },
+    // Rechtsklick während des Zeichnens: letzten "Geist"-Punkt entfernen
+    // und Overlay abschliessen. KLC entfernt den noch nicht gesetzten
+    // Endpunkt automatisch wenn onRightClick true zurückgibt + performOverlayMoveEnd.
+    onRightClick: (e) => {
+      // Nur während des aktiven Zeichnens (nicht bei selektiertem Overlay)
+      if (e.overlay && e.overlay.isDrawing?.()) {
+        // Letzten schwebenden Punkt abschneiden = nichts tun, KLC stoppt
+        return true;  // true = Event konsumiert, KLC beendet den Punkt-Modus
+      }
+      // Bereits fertige Polyline: normales Overlay-Menü
+      if (typeof openOverlayMenu === "function") openOverlayMenu(e.overlay, e);
+      return true;
     },
   });
 

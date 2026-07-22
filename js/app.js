@@ -134,30 +134,38 @@ const chart = klinecharts.init("mainChart");
 window.__tvGetDataList = () => chart.getDataList();
 
 // ---------- Anchored VWAP Bridge ----------
-// Overlay setzt den Anker-Timestamp; hier aktivieren/entfernen wir den
-// AVWAP-Indikator mit diesem Timestamp als calcParam. Mehrere AVWAPs
-// gleichzeitig möglich — jede Overlay-ID bekommt einen eigenen Pane.
-const _avwapPanes = {};   // overlayId -> paneId
+// Overlay setzt den Anker-Timestamp; hier aktivieren wir den AVWAP-Indikator
+// mit diesem Timestamp als calcParam. Mehrere AVWAPs gleichzeitig möglich —
+// jede Instanz bekommt einen eigenen Gruppen-Key über overrideIndicator.
+const _avwapInstances = {};   // overlayId -> calcParams[0] (timestamp)
 
 window.__tvAnchorVwap = (timestamp, overlayId) => {
-  // Indikator direkt im Hauptpane: kein Sub-Pane nötig, da AVWAP eine
-  // Preis-Kurve ist (wie EMA). Er wird mit einem eindeutigen Namen
-  // registriert, damit mehrere gleichzeitig laufen können.
-  const name = "AVWAP";
+  _avwapInstances[overlayId] = timestamp;
+  // Alle aktiven AVWAP-Instanzen: ersten setzen, weitere via overrideIndicator.
+  // KLC erlaubt pro Pane mehrere Instanzen desselben Indikators nicht direkt —
+  // wir steuern deshalb EINE Instanz pro Anker via calcParams-Array mit allen Timestamps.
+  // Einfachste robuste Variante: pro Anker einen separaten Indikator-Aufruf,
+  // KLC erkennt verschiedene calcParams als verschiedene Instanzen.
   try {
-    const paneId = chart.createIndicator(
-      { name, calcParams: [timestamp], extendData: { plots: { avwap: { color: "#c792ea", opacity: 80, width: 2 } } } },
+    chart.createIndicator(
+      { name: "AVWAP", calcParams: [timestamp],
+        extendData: { plots: { avwap: { color: "#c792ea", width: 2 } } } },
       true,
       { id: "candle_pane" }
     );
-    _avwapPanes[overlayId] = paneId || "candle_pane";
-  } catch (e) {}
+  } catch (e) {
+    // Fallback: Indikator existiert bereits, calcParams überschreiben
+    try { chart.overrideIndicator({ name: "AVWAP", calcParams: [timestamp] }, "candle_pane"); } catch (_) {}
+  }
   scheduleTagDraw();
 };
 
 window.__tvRemoveAnchorVwap = (overlayId) => {
-  try { chart.removeIndicator("candle_pane", "AVWAP"); } catch (e) {}
-  delete _avwapPanes[overlayId];
+  delete _avwapInstances[overlayId];
+  // Wenn keine Instanzen mehr: Indikator entfernen
+  if (Object.keys(_avwapInstances).length === 0) {
+    try { chart.removeIndicator("candle_pane", "AVWAP"); } catch (e) {}
+  }
   scheduleTagDraw();
 };
 
@@ -579,8 +587,16 @@ async function loadBinanceSymbols() {
     const usdt = data.symbols
       .filter(s => s.quoteAsset === "USDT" && s.status === "TRADING")
       .map(s => ({ id: s.symbol, label: s.baseAsset + "/USDT", type: "binance" }));
-    const existing = new Set(CONFIG.DEFAULT_SYMBOLS.map(s => s.id));
-    state.allSymbols = [...CONFIG.DEFAULT_SYMBOLS, ...usdt.filter(s => !existing.has(s.id))];
+    // Bestehende IDs: DEFAULT_SYMBOLS (inkl. Kraken/Gold) + neue Binance-Pairs
+    const existing = new Set(state.allSymbols.map(s => s.id));
+    // Nicht-Binance-Symbole (Kraken, Gold) vorne behalten
+    const nonBinance = state.allSymbols.filter(s => s.type !== "binance");
+    const binanceDefault = CONFIG.DEFAULT_SYMBOLS.filter(s => s.type === "binance");
+    state.allSymbols = [
+      ...nonBinance,
+      ...binanceDefault,
+      ...usdt.filter(s => !existing.has(s.id)),
+    ];
     renderAssetList();
     renderCompareList();
   } catch (_) { renderAssetList(); }
@@ -924,6 +940,13 @@ function applyCompareIndicator() {
   } else {
     // Kerzen/Achse wiederherstellen, Canvas leeren
     chart.setStyles(baseStyles());
+    // Indikatoren neu anwenden — setStyles() setzt KLC intern zurück,
+    // dadurch können Linien hängen bleiben oder verschwinden.
+    CONFIG.INDICATORS.forEach(ind => {
+      if (!state.active.has(ind.key)) return;
+      removeIndicator(ind);
+      applyIndicator(ind);
+    });
     if (_compareCanvas) {
       _compareCanvas.getContext("2d").clearRect(0, 0, _compareCanvas.width, _compareCanvas.height);
     }
@@ -1912,6 +1935,14 @@ document.addEventListener("keydown", (e) => {
     state.activeTool = null;
     document.getElementById("posToolTopBtn")?.classList.remove("active");
     renderDrawbar();
+  } else if (e.key === "Enter" && state.activeTool === "polyline" && state.drawingId != null) {
+    // Enter: Polyline abschliessen — letzten schwebenden Punkt löschen und
+    // Overlay als fertig markieren (kein removeOverlay, Linie bleibt erhalten)
+    try { chart.overrideOverlay({ id: state.drawingId, isDrawing: false }); } catch (_) {}
+    captureDrawing(state.drawingId);
+    state.drawingId = null;
+    if (!state.pinTool) { state.activeTool = null; renderDrawbar(); }
+    else setTimeout(() => startTool("polyline"), 0);
   } else if ((e.key === "Delete" || e.key === "Backspace") && state.selectedOverlayId != null) {
     // Nicht löschen wenn der Fokus in einem Eingabefeld liegt
     const tag = document.activeElement?.tagName;
@@ -2205,6 +2236,10 @@ function switchSymbol(sym) {
   document.getElementById("assetLabel").textContent = sym.label;
   document.getElementById("assetPanel").classList.remove("open");
   if (sym.type === "worker") state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
+  // Kraken: Falls aktives TF kein krakenInterval hat (z.B. 1M), auf 1D wechseln
+  if (sym.type === "kraken" && !state.timeframe.krakenInterval) {
+    state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
+  }
   renderTfList();
   renderCompareList();
   renderWatchlist();

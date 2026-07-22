@@ -395,8 +395,8 @@ klinecharts.registerIndicator({
 // ---------- ANCHORED VWAP ----------
 // VWAP ab einem vom Nutzer gewählten Bar (Ankerpunkt = Timestamp in
 // calcParams[0]). Alles vor dem Anker gibt {}, ab dem Anker kumuliert
-// die Berechnung. Farbe/Breite kommen aus extendData.plots (wie bei
-// allen anderen Indikatoren) — der Overlay setzt calcParams beim Platzieren.
+// die Berechnung. Farbe/Breite kommen aus extendData direkt (kein
+// Settings-Eintrag nötig — der Overlay steuert alles).
 klinecharts.registerIndicator({
   name: "AVWAP",
   shortName: "AVWAP",
@@ -407,7 +407,17 @@ klinecharts.registerIndicator({
       key: "avwap",
       title: "AVWAP: ",
       type: "line",
-      styles: (d, ind) => plotStyle(ind, "avwap", "#c792ea", 2),
+      styles: (d, ind) => {
+        const plots = ind?.extendData?.plots;
+        const p = plots?.avwap || {};
+        return {
+          style: "solid",
+          color: p.color || "#c792ea",
+          size:  p.width || 2,
+          smooth: false,
+          dashedValue: [4, 4],
+        };
+      },
     },
   ],
   calc: (dataList, indicator) => {
