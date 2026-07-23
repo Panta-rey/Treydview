@@ -1918,6 +1918,32 @@ function clampMenuToViewport(menu) {
   if (r.right > window.innerWidth - 6) menu.style.left = Math.max(6, window.innerWidth - r.width - 6) + "px";
 }
 
+// Auf Touch-Geräten mit schmalem Screen werden Menüs zu Bottom-Sheets:
+// volle Breite am unteren Rand statt am Finger. Grund: ein fingerpositioniertes
+// Menü öffnet am unteren Bildrand ausserhalb des Sichtfelds, und die Tap-Ziele
+// in einem schmalen Popup sind zu klein. Bottom-Sheet ist die native
+// Mobile-Konvention und löst beides.
+function useSheetLayout() {
+  return window.matchMedia("(pointer: coarse)").matches && window.innerWidth <= 720;
+}
+
+// Einheitliche Platzierung für alle fixed-positionierten Menüs.
+// Desktop: an der übergebenen Position, in den Viewport geklemmt.
+// Touch/schmal: als Bottom-Sheet (Position kommt aus dem CSS).
+function placeMenu(menu, x, y) {
+  if (!menu) return;
+  if (useSheetLayout()) {
+    menu.classList.add("as-sheet");
+    menu.style.left = "";
+    menu.style.top  = "";
+    return;
+  }
+  menu.classList.remove("as-sheet");
+  menu.style.left = x + "px";
+  menu.style.top  = y + "px";
+  clampMenuToViewport(menu);
+}
+
 function menuPosition(event, menuW = 130, menuH = 70) {
   const rect = document.getElementById("mainChart").getBoundingClientRect();
   const cx = event?.pointerCoordinate?.x ?? event?.x;
@@ -1935,8 +1961,7 @@ function openOverlayMenu(overlay, event) {
   const menu = document.getElementById("overlayMenu");
   if (!menu) return;
   const { x, y } = menuPosition(event, 190, 230);
-  menu.style.left = x + "px";
-  menu.style.top  = y + "px";
+  placeMenu(menu, x, y);
 
   // Aktuellen Linien-Stil aus dem Overlay lesen (Fallback auf Akzentfarbe)
   const ls = (overlay.styles && overlay.styles.line) || {};
@@ -2023,10 +2048,8 @@ function openFrvpMenu(overlay, event) {
   document.getElementById("frvpExtendRight").checked = ext.extendRight === true;
 
   const p = menuPosition(event, 260, 380);
-  menu.style.left = p.x + "px";
-  menu.style.top  = p.y + "px";
   menu.classList.remove("hidden");
-  clampMenuToViewport(menu);   // echte Höhe > Schätzung -> nachkorrigieren
+  placeMenu(menu, p.x, p.y);   // klemmt bzw. wird auf Touch zum Bottom-Sheet
 
   document.getElementById("frvpApply").onclick = () => {
     const op = parseInt(document.getElementById("frvpOpacity").value, 10) || 55;
@@ -2094,8 +2117,7 @@ function toggleDrawStylePopover() {
     </div>`;
   document.body.appendChild(pop);
   const bar = document.getElementById("drawbar").getBoundingClientRect();
-  pop.style.left = (bar.right + 6) + "px";
-  pop.style.top = "120px";
+  placeMenu(pop, bar.right + 6, 120);
 
   const opEl = pop.querySelector("#dspOpacity");
   opEl.addEventListener("input", () => { pop.querySelector("#dspOpVal").textContent = opEl.value + "%"; });
@@ -2203,12 +2225,21 @@ function renderDrawbar() {
         // damit das Fly-Out über dem Chart schwebt statt in der Sidebar
         // geclippt zu werden.
         const r = catBtn.getBoundingClientRect();
-        popup.style.left = (r.right + 8) + "px";
         popup.classList.add("open");
-        // Erst nach dem Einblenden ist die Höhe bekannt
         const ph = popup.offsetHeight;
-        const top = Math.min(r.top, window.innerHeight - ph - 12);
-        popup.style.top = Math.max(8, top) + "px";
+        const pw = popup.offsetWidth;
+        if (useSheetLayout()) {
+          // Mobile: Drawbar liegt unten und ist horizontal — das Fly-Out
+          // muss NACH OBEN aufklappen und horizontal in den Screen geklemmt
+          // werden, sonst öffnet es seitlich ins Nichts.
+          const left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8));
+          popup.style.left = left + "px";
+          popup.style.top  = Math.max(8, r.top - ph - 8) + "px";
+        } else {
+          popup.style.left = (r.right + 8) + "px";
+          const top = Math.min(r.top, window.innerHeight - ph - 12);
+          popup.style.top = Math.max(8, top) + "px";
+        }
       }
     });
     group.appendChild(catBtn);
@@ -2335,20 +2366,74 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
 (function initTouch() {
   const el = document.getElementById("mainChart");
 
-  // KLC verwaltet Pinch-Zoom (X-Achse) komplett selbst via _initPinch().
-  // Wir fügen NUR den Y-Achsen-Zoom hinzu (beide Finger auf Preisskala)
-  // und den Long-Press für Rechtsklick-Menüs.
-  // Wichtig: Wir konkurrieren NICHT mit KLC's touchmove-Handler.
+  // KLC verwaltet Pinch-Zoom (X-Achse) selbst via _initPinch() — nicht anfassen.
+  //
+  // Y-ACHSEN-ZOOM: KLineCharts hat dafür auf Touch KEINE Implementierung.
+  // Im Bundle verifiziert: touchMoveEvent behandelt `case we` (yAxis) nur mit
+  // `a.dispatchEvent("pressedMouseMoveEvent", s)` — die eigentliche Zoom-
+  // Rechnung steht ausschliesslich im Desktop-Pfad (pressedMouseMoveEvent des
+  // Controllers). Deshalb bauen wir sie hier für Touch nach, mit exakt der
+  // gleichen Formel wie Desktop, damit sich beides gleich anfühlt.
+  //
+  // Geste: EIN Finger vertikal auf der Preisskala ziehen (wie TradingView).
+  // Kein Pinch — zwei Finger in einem 80px-Streifen sind auf dem Handy nicht
+  // zuverlässig zu treffen.
+
+  const AXIS_W = 80;   // Breite der Preisskala rechts
+
+  const inAxisZone = (touch) => {
+    const rect = el.getBoundingClientRect();
+    return (touch.clientX - rect.left) > (rect.width - AXIS_W);
+  };
 
   // ---------- Long-Press → Rechtsklick-Menü ----------
   let lpTimer = null, lpStart = null;
   const LP_MS = 500, LP_MOVE = 12;
   const cancelLP = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } lpStart = null; };
 
+  // ---------- Y-Achsen-Drag-Zoom ----------
+  let yDrag = null;        // { startY, base, yAxis }
+  let lastAxisTap = 0;     // für Doppeltipp-Erkennung auf der Skala
+
   el.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1) { cancelLP(); return; }
-    if (state.activeTool) return;
+    if (e.touches.length !== 1) { cancelLP(); yDrag = null; return; }
     const t = e.touches[0];
+
+    // Auf der Preisskala: Y-Zoom vorbereiten, kein Long-Press
+    if (inAxisZone(t)) {
+      cancelLP();
+      yDrag = null;
+
+      // Doppeltipp auf die Skala = Auto-Fit (Y-Zoom zurücksetzen).
+      // Gegenstück zum Drag: man kommt immer wieder in den Normalzustand.
+      const now = Date.now();
+      if (now - lastAxisTap < 300) {
+        lastAxisTap = 0;
+        quiet(() => { autoScaleY(); setStatus("Preisachse zurückgesetzt"); }, "axis dbltap");
+        return;
+      }
+      lastAxisTap = now;
+
+      quiet(() => {
+        const pane = chart.getDrawPaneById("candle_pane");
+        if (!pane) return;
+        const yAxis = pane.getAxisComponent();
+        if (!yAxis) return;
+        // Nur abbrechen wenn die Methode existiert UND explizit false liefert.
+        // Fehlt sie (andere KLC-Version), gilt Zoom als erlaubt.
+        if (typeof yAxis.getScrollZoomEnabled === "function" && !yAxis.getScrollZoomEnabled()) return;
+        if (typeof yAxis.convertToRealValue !== "function") return;
+        const r = yAxis.getRange();
+        if (!r || r.range == null) return;
+        // Kopie des Startzustands — alle Folgeschritte rechnen relativ dazu,
+        // sonst driftet der Zoom bei jedem Frame weiter.
+        yDrag = { startY: t.pageY, base: Object.assign({}, r), yAxis };
+      }, "yDrag start");
+      return;
+    }
+
+    // Sonst: normaler Long-Press
+    if (state.activeTool) return;
     lpStart = { x: t.clientX, y: t.clientY };
     lpTimer = setTimeout(() => {
       if (!lpStart) return;
@@ -2361,59 +2446,53 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
   }, { passive: true });
 
   el.addEventListener("touchmove", (e) => {
-    if (e.touches.length !== 1 || !lpStart) return;
+    if (e.touches.length !== 1) return;
     const t = e.touches[0];
-    if (Math.abs(t.clientX - lpStart.x) > LP_MOVE || Math.abs(t.clientY - lpStart.y) > LP_MOVE) cancelLP();
-  }, { passive: true });
 
-  el.addEventListener("touchend",   cancelLP, { passive: true });
-  el.addEventListener("touchcancel", cancelLP, { passive: true });
+    // --- Y-Achsen-Zoom aktiv ---
+    if (yDrag) {
+      quiet(() => {
+        const { startY, base, yAxis } = yDrag;
+        if (!startY) return;
+        // Identische Formel wie KLineCharts Desktop:
+        //   scale    = aktuelleY / startY
+        //   newRange = ursprünglicheRange * scale
+        //   Differenz symmetrisch oben/unten verteilen
+        // Nach unten ziehen -> scale > 1 -> Range grösser -> rauszoomen.
+        const scale = t.pageY / startY;
+        if (!isFinite(scale) || scale <= 0) return;
+        const newRange = base.range * scale;
+        const w = (newRange - base.range) / 2;
+        const from = base.from - w;
+        const to   = base.to   + w;
+        // WICHTIG: setRange braucht ALLE Felder (from/to/range/realFrom/
+        // realTo/realRange). Ein unvollständiges Objekt setzt zwar den State,
+        // führt aber zu falschem bzw. gar keinem Rendering.
+        const realFrom = yAxis.convertToRealValue(from);
+        const realTo   = yAxis.convertToRealValue(to);
+        yAxis.setRange({
+          from, to, range: newRange,
+          realFrom, realTo, realRange: realTo - realFrom,
+        });
+        // Ohne diesen Aufruf passiert sichtbar NICHTS — setRange allein
+        // löst keinen Redraw aus. (Desktop-Pfad macht exakt dasselbe.)
+        chart.adjustPaneViewport(false, true, true, true);
+        scheduleTagDraw();
+      }, "yDrag move");
+      return;
+    }
 
-  // ---------- Y-Achsen-Zoom (Pinch auf Preisskala) ----------
-  // Eigener separater Pinch-Tracker NUR für die Preisskala.
-  // KLC's Pinch läuft weiter ungestört für die X-Achse.
-  let yPinchDist = null;
-
-  el.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 2) { yPinchDist = null; return; }
-    const rect = el.getBoundingClientRect();
-    const axisW = 80;
-    const x0 = e.touches[0].clientX - rect.left;
-    const x1 = e.touches[1].clientX - rect.left;
-    // Nur aktivieren wenn BEIDE Finger auf der Preisskala (rechts)
-    if (x0 > rect.width - axisW && x1 > rect.width - axisW) {
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      yPinchDist = Math.abs(dy);
-    } else {
-      yPinchDist = null;
+    // --- Long-Press abbrechen bei Bewegung ---
+    if (lpStart &&
+        (Math.abs(t.clientX - lpStart.x) > LP_MOVE ||
+         Math.abs(t.clientY - lpStart.y) > LP_MOVE)) {
+      cancelLP();
     }
   }, { passive: true });
 
-  // Separater touchmove NUR für Y-Pinch — passive:false nur wenn nötig
-  el.addEventListener("touchmove", (e) => {
-    if (e.touches.length !== 2 || yPinchDist === null) return;
-    const dy = Math.abs(e.touches[0].clientY - e.touches[1].clientY);
-    if (dy === 0 || yPinchDist === 0) { yPinchDist = dy; return; }
-    const scale = dy / yPinchDist;
-    yPinchDist = dy;
-    // Y-Achse skalieren: scale>1 = Finger auseinander = Range verkleinern (rein)
-    //                    scale<1 = Finger zusammen   = Range vergrössern (raus)
-    try {
-      const pane = chart.getDrawPaneById("candle_pane");
-      if (!pane) return;
-      const yAxis = pane.getAxisComponent();
-      if (!yAxis) return;
-      const r = yAxis.getRange();
-      if (!r || r.from == null || r.to == null) return;
-      const mid     = (r.from + r.to) / 2;
-      const newHalf = ((r.to - r.from) / 2) / scale;
-      yAxis.setAutoCalcTickFlag(false);
-      yAxis.setRange({ from: mid - newHalf, to: mid + newHalf });
-    } catch (_) {}
-  }, { passive: true });
-
-  el.addEventListener("touchend",    () => { yPinchDist = null; }, { passive: true });
-  el.addEventListener("touchcancel", () => { yPinchDist = null; }, { passive: true });
+  const endTouch = () => { cancelLP(); yDrag = null; };
+  el.addEventListener("touchend",    endTouch, { passive: true });
+  el.addEventListener("touchcancel", endTouch, { passive: true });
 })();
 
 // ---------- Workspace speichern ----------
@@ -3237,8 +3316,7 @@ function openFibMenu(event) {
   menu.classList.remove("hidden");
   const x = Math.min(event.pageX ?? event.x ?? 100, window.innerWidth - 252);
   const y = Math.min(event.pageY ?? event.y ?? 100, window.innerHeight - 420);
-  menu.style.left = Math.max(8, x) + "px";
-  menu.style.top  = Math.max(8, y) + "px";
+  placeMenu(menu, Math.max(8, x), Math.max(8, y));
 }
 
 function applyFibMenu() {
@@ -3787,8 +3865,7 @@ function openChartStyleMenu(anchorEl) {
 
   const r = anchorEl.getBoundingClientRect();
   menu.classList.remove("hidden");
-  menu.style.left = Math.min(r.left, window.innerWidth - 250) + "px";
-  menu.style.top  = (r.bottom + 6) + "px";
+  placeMenu(menu, Math.min(r.left, window.innerWidth - 250), r.bottom + 6);
 }
 
 function applyChartStyle() {

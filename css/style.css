@@ -185,6 +185,49 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .plot-color { width: 44px; height: 32px; }
 }
 
+/* ---- Bottom-Sheet: Kontextmenüs auf Touch-Geräten ---- */
+/* Statt am Finger zu erscheinen (öffnet am unteren Bildrand ins Nichts),
+   fahren Menüs auf schmalen Touch-Screens von unten ein: volle Breite,
+   grosse Tap-Ziele, scrollbar. Vergeben wird die Klasse in placeMenu(). */
+@media (max-width: 720px) {
+  .as-sheet {
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: 72vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 14px 14px 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 32px rgba(0,0,0,.6);
+    animation: tvSheetUp .18s ease-out;
+  }
+  /* Greifbarer "Ziehgriff" oben — signalisiert Sheet-Charakter */
+  .as-sheet::before {
+    content: "";
+    display: block;
+    width: 38px;
+    height: 4px;
+    margin: 2px auto 10px;
+    border-radius: 2px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+  /* Einträge im Sheet grösser antippbar */
+  .as-sheet .overlay-menu-item { padding: 14px 18px; font-size: 14px; }
+  .as-sheet .frvp-row { padding: 10px 0; }
+}
+@keyframes tvSheetUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
 /* ---- Mobile Layout: Watchlist als Overlay, Drawbar unten ---- */
 /* Auf schmalen Screens wird die Watchlist (210px) nicht mehr als Spalte
    neben den Chart gequetscht (→ Chart nur 124px), sondern als Overlay
@@ -238,12 +281,8 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
     z-index: -1;
   }
 
-  /* Drawbar fly-outs: nach oben öffnen statt nach rechts */
-  .draw-popup {
-    bottom: calc(100% + 6px);
-    top: auto;
-    left: 0;
-  }
+  /* Drawbar fly-outs klappen auf Mobile nach oben auf — die Positionierung
+     macht renderDrawbar() im JS (Inline-Styles schlagen Stylesheet-Regeln). */
 }
 .topbar-actions{display:flex;gap:4px;margin-left:4px;}
 .action-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:transparent;color:var(--text-dim);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;padding:0;transition:color .12s,border-color .12s,background .12s;}
