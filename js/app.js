@@ -2821,35 +2821,42 @@ function syncLabels() {
 // Eigene Berechnung statt Zugriff auf die Indikator-Instanzen: die
 // sind nur da, wenn der User sie aktiviert hat. Der Grid Bot soll
 // auch ohne aktiven ATR200 funktionieren.
-function gbMarketData() {
+// gbMarketData: berechnet alle Bot-Inputs aus Chart-Daten.
+// dailyD: optionale Tages-Kerzen für ATR/SMA/ER. Wenn vorhanden, basieren
+// diese Metriken immer auf Tagesdaten — unabhängig vom aktiven Chart-Timeframe.
+// Ohne dailyD Fallback auf Chart-Kerzen (wie bisher).
+function gbMarketData(dailyD) {
   const d = chart.getDataList();
-  if (!d || d.length < 200) return null;
+  if (!d || d.length < 10) return null;
 
+  // Preis und Volumen immer aus den aktuellen Chart-Kerzen (aktuellster Tick)
   const closes = d.map(x => x.close);
   const price = closes.at(-1);
+  if (!price) return null;
+
+  // Für ATR/SMA/ER: Tages-Kerzen bevorzugen wenn vorhanden, sonst Chart-Kerzen.
+  // Das stellt sicher dass ATR14/90/200 immer tägliche Volatilität misst —
+  // unabhängig davon ob der Chart auf 15m, 4h oder 1D steht.
+  const base = (dailyD && dailyD.length >= 50) ? dailyD : d;
+  const baseCloses = base.map(x => x.close);
 
   const sma = (n) => {
-    if (closes.length < n) return null;
-    const s = closes.slice(-n);
+    if (baseCloses.length < n) return null;
+    const s = baseCloses.slice(-n);
     return s.reduce((a, b) => a + b, 0) / n;
   };
 
-  // Kaufman Efficiency Ratio, Periode 20 (Dashboard-Spalte "ER", verifiziert
-  // gegen BTC_Marktdaten_1D auf 6 Stellen).
-  //
-  // Netto-Bewegung geteilt durch die Summe aller Einzelschritte:
-  // 1.0 = schnurgerade (reiner Trend), 0 = viel Weg, kein Fortschritt (Range).
-  // Sagt, ob ein Grid überhaupt etwas zu ernten hat.
+  // Kaufman Efficiency Ratio auf Tages-Basis (auf 15m/4h-Kerzen zu rauschig)
   const efficiencyRatio = (period = 20) => {
-    if (closes.length < period + 1) return null;
-    const seg = closes.slice(-(period + 1));
+    if (baseCloses.length < period + 1) return null;
+    const seg = baseCloses.slice(-(period + 1));
     const direction = Math.abs(seg[seg.length - 1] - seg[0]);
     let volatility = 0;
     for (let i = 1; i < seg.length; i++) volatility += Math.abs(seg[i] - seg[i - 1]);
     return volatility > 0 ? direction / volatility : 0;
   };
 
-  // RSI 14 nach Wilder (identisch zur Formel in indicators.js)
+  // RSI 14 nach Wilder aus Chart-Kerzen (Preis-Impuls ist TF-sensitiv, OK so)
   const rsiWilder = (period = 14) => {
     if (closes.length < period + 1) return null;
     let gain = 0, loss = 0;
@@ -2867,15 +2874,15 @@ function gbMarketData() {
     return 100 - 100 / (1 + ag / al);
   };
 
-  // ATR nach Wilder, Rückgabe in % vom Preis (so nutzt es das Cockpit)
+  // ATR nach Wilder auf base (Tages-Kerzen wenn vorhanden), in % vom Preis
   const atrPct = (period) => {
-    if (d.length < period + 1) return null;
+    if (base.length < period + 1) return null;
     const tr = [];
-    for (let i = 1; i < d.length; i++) {
+    for (let i = 1; i < base.length; i++) {
       tr.push(Math.max(
-        d[i].high - d[i].low,
-        Math.abs(d[i].high - d[i - 1].close),
-        Math.abs(d[i].low  - d[i - 1].close)
+        base[i].high - base[i].low,
+        Math.abs(base[i].high - base[i - 1].close),
+        Math.abs(base[i].low  - base[i - 1].close)
       ));
     }
     let a = tr.slice(0, period).reduce((x, y) => x + y, 0) / period;
@@ -2883,7 +2890,7 @@ function gbMarketData() {
     return (a / price) * 100;
   };
 
-  // Volumen-Signal wie im Cockpit
+  // Volumen-Signal aus Chart-Kerzen (aktuellster TF, passt so)
   const vols = d.map(x => x.volume || 0);
   const volMa = vols.slice(-20).reduce((a, b) => a + b, 0) / 20;
   const volSignal = vols.at(-1) > volMa * 2 ? "🔥 Volumen-Spike (Achtung Trendwende/Ausbruch)"
@@ -2900,17 +2907,30 @@ function gbMarketData() {
     price, sma50: sma(50), sma200: sma200v, rsi: rsiWilder(14),
     atr14: a14, atr90: a90, atr200: a200,
     volumeSignal: volSignal, marketContext: context,
-    // Mayer Multiple = Preis / SMA200 (Dashboard F13, exakt verifiziert).
-    // Zentrale Zyklus-Metrik: unter 0.9 traf historisch jeden
-    // Akkumulations-Boden seit 2015, über 2.0 wird es teuer.
     mayer: sma200v ? price / sma200v : null,
     er: efficiencyRatio(20),
+    dailyDataUsed: base !== d,
   };
 }
 
 // ---------- Rechnen und rendern ----------
 async function gbRefresh(force) {
-  const market = gbMarketData();
+  // Tages-Kerzen separat holen — ATR/SMA/ER sollen immer auf Tagesdaten basieren,
+  // unabhängig davon welchen Chart-Timeframe der Nutzer gerade anschaut.
+  // 200 Kerzen reichen für ATR200 + SMA200 + ER20. Nur für Binance-Symbole;
+  // bei anderen Exchanges (Kraken, Coinbase, Bybit) wird mit Chart-Daten gerechnet.
+  let dailyD = null;
+  try {
+    if (state.symbol.type === "binance") {
+      dailyD = await DataLayer.fetchBinanceKlines(state.symbol.id, "1d", 210);
+    } else if (state.symbol.type === "bybit") {
+      dailyD = await DataLayer.fetchBybitKlines(state.symbol.bybitSymbol, "D", 210);
+    } else if (state.symbol.type === "kraken") {
+      dailyD = await DataLayer.fetchKrakenKlines(state.symbol.krakenPair, "1440", 210);
+    }
+  } catch (e) { dailyD = null; }   // Fallback: Chart-Kerzen
+
+  const market = gbMarketData(dailyD);
   if (!market) { setStatus("Grid Bot: zu wenig Chart-Daten (200+ Kerzen nötig)"); return; }
 
   if (force) Derivatives.clearCache();
