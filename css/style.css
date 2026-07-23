@@ -185,6 +185,24 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .plot-color { width: 44px; height: 32px; }
 }
 
+/* ---- Zyklus-Ampel (Topbar) ---- */
+/* Zeigt Mayer / F&G / Funding permanent — unabhängig vom Bot-Panel.
+   Drei farbcodierte Pills: grün = günstig, gelb = neutral, rot = teuer/gierig. */
+.cycle-bar {
+  display: flex; align-items: center; gap: 4px;
+  padding: 0 6px; cursor: pointer;
+}
+.cycle-pill {
+  font-family: var(--font-mono); font-size: 10px;
+  padding: 2px 6px; border-radius: 10px;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  color: var(--text-dim); white-space: nowrap; transition: color .2s, border-color .2s;
+}
+.cycle-pill.good  { color: var(--up);   border-color: var(--up);   }
+.cycle-pill.warn  { color: var(--down); border-color: var(--down); }
+.cycle-pill.neut  { color: var(--accent); border-color: var(--accent); }
+@media (max-width: 480px) { .cycle-bar { display: none; } }
+
 /* ---- Bottom-Sheet: Kontextmenüs auf Touch-Geräten ---- */
 /* Statt am Finger zu erscheinen (öffnet am unteren Bildrand ins Nichts),
    fahren Menüs auf schmalen Touch-Screens von unten ein: volle Breite,

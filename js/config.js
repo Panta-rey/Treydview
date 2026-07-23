@@ -64,7 +64,7 @@ const CONFIG = {
       ],
       plots: [
         { key: "fast",  label: "Fast EMA",   color: "#00c8dc", opacity: 100, width: 1, visible: false },
-        { key: "med",   label: "Medium EMA", color: "#00ff88", opacity: 100, width: 2, visible: true },
+        { key: "med",   label: "Medium EMA (21)", color: "#00ff88", opacity: 100, width: 2, visible: true },
         { key: "main",  label: "Main EMA",   color: "#ffffff", opacity: 100, width: 3, visible: true },
         { key: "upper", label: "Upper Band", color: "#969696", opacity: 50,  width: 1, visible: true },
         { key: "lower", label: "Lower Band", color: "#969696", opacity: 50,  width: 1, visible: true },
@@ -76,7 +76,7 @@ const CONFIG = {
       inputs: [],
       plots: [
         { key: "sma20", label: "20 SMA", color: "#3fb68b", opacity: 100, width: 2, visible: true },
-        { key: "ema21", label: "21 EMA", color: "#d05e5e", opacity: 100, width: 2, visible: true },
+        { key: "ema21", label: "21 EMA (= EMA p1)", color: "#d05e5e", opacity: 100, width: 2, visible: true },
         { key: "fill",  label: "Band-Fill", color: "#3fb68b", opacity: 20,  width: 1, visible: false, noWidth: true },
       ],
     },

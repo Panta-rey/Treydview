@@ -2975,6 +2975,33 @@ function gbRenderStatus() {
       rsi == null ? "" : (rsi >= 75 || rsi <= 25) ? "warn" : "");
 
   document.getElementById("gbUpdated").textContent = state.gbUpdated || "";
+
+  // Zyklus-Ampel in der Topbar synchron aktualisieren
+  updateCycleBar(r);
+}
+
+// Zyklus-Ampel: Mayer / F&G / Funding permanent sichtbar in der Topbar.
+// Wird nach jedem gbRefresh befüllt — greift auf dasselbe gbResult-Objekt.
+function updateCycleBar(r) {
+  if (!r) return;
+  const setPill = (id, text, cls) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.className = "cycle-pill" + (cls ? " " + cls : "");
+  };
+
+  const m = r.mayer;
+  const mayerCls = m == null ? "" : m > GridBot.CYCLE.mayerExpensive ? "warn" : m < GridBot.CYCLE.mayerCheap ? "good" : "neut";
+  setPill("cycleMayer", m != null ? "M " + m.toFixed(2) : "M –", mayerCls);
+
+  const fng = r.derivatives?.fng;
+  const fngCls = fng == null ? "" : fng > GridBot.CYCLE.fngGreed ? "warn" : fng < GridBot.CYCLE.fngFear ? "good" : "neut";
+  setPill("cycleFng", fng != null ? "F&G " + fng : "F&G –", fngCls);
+
+  const fund = r.derivatives?.fundingNow ?? r.market?.fundingNow ?? null;
+  const fundCls = fund == null ? "" : fund > GridBot.DEFAULT_THRESHOLDS.fundingShort ? "warn" : fund < GridBot.DEFAULT_THRESHOLDS.fundingLong ? "good" : "neut";
+  setPill("cycleFund", fund != null ? "Fund " + fund.toFixed(3) + "%" : "Fund –", fundCls);
 }
 
 function gbRenderTiers() {
@@ -3981,6 +4008,13 @@ document.getElementById("posToolTopBtn").addEventListener("click", () => {
   setStatus("Long/Short: 1. Einstieg klicken  →  2. Stop  →  3. Ziel");
 });
 document.getElementById("gridBotBtn").addEventListener("click", () => gbToggleBar());
+(function() {
+  const cb = document.getElementById("cycleBar");
+  if (cb) cb.addEventListener("click", () => {
+    if (!state.gbOpen) gbToggleBar();
+    if (!state.gbResult) gbRefresh(false);
+  });
+})();
 document.getElementById("gbClose").addEventListener("click", (e) => { e.stopPropagation(); gbToggleBar(false); });
 document.getElementById("gbToggle").addEventListener("click", (e) => {
   e.stopPropagation();

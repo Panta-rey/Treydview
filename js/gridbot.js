@@ -242,9 +242,20 @@ const GridBot = (function () {
     // B46: Liegt der Stop vor dem Liquidationspreis?
     // Liquidation grob bei 1/Hebel Abstand — bei 2× also 50%.
     let safety;
-    if (bias === "Short")      safety = stopLoss < price * (1 + 1 / leverage) ? "✅ SL vor Liq" : "❌ Liq vor SL";
-    else if (bias === "Long")  safety = stopLoss > price * (1 - 1 / leverage) ? "✅ SL vor Liq" : "❌ Liq vor SL";
-    else                       safety = "ℹ️ Neutral-Grid";
+    if (bias === "Short")
+      safety = stopLoss < price * (1 + 1 / leverage) ? "✅ SL vor Liq" : "❌ Liq vor SL";
+    else if (bias === "Long")
+      safety = stopLoss > price * (1 - 1 / leverage) ? "✅ SL vor Liq" : "❌ Liq vor SL";
+    else {
+      // Neutral-Grid: kein gerichteter Stop, aber Liq-Abstand trotzdem prüfen.
+      // Bei 1× kein Liq-Risiko; bei > 1× zeigen wir den Abstand.
+      if (leverage <= 1) {
+        safety = "ℹ️ Neutral-Grid (kein Hebel)";
+      } else {
+        const liqDist = Math.round((1 / leverage) * 100);
+        safety = `⚠️ Neutral-Grid · Liq. ~${liqDist}% entfernt (${leverage}×)`;
+      }
+    }
 
     return {
       ...tier,
@@ -346,25 +357,50 @@ const GridBot = (function () {
   // VIABILITÄT (Excel B45–B48)
   // Bringt das Grid mehr ein, als Funding und Gebühren kosten?
   // ============================================================
-  function viability(tier, lev, direction, holdDays, fundingAvg8h) {
+  function viability(tier, lev, direction, holdDays, fundingAvg8h, erScore) {
     // B45: Funding-Kosten % — Neutral zahlt netto nichts
     const sign = direction === "Neutral" ? 0 : (direction.startsWith("Short") ? -1 : 1);
     const fundingCost = sign * lev * (fundingAvg8h || 0) * holdDays * 3;
 
+    // Regime-sensitive Füllrate: Im Trend gehen Grid-Füllungen gegen null.
+    // gridSuitability() erkennt das, aber viability() ignorierte es bisher —
+    // das erzeugte einen grünen Haken trotz «🔴 Trend – Grid riskant».
+    // Faustregel: ER ≥ erTrend → Füllungen halbiert; ER ≥ erRange → -25%.
+    const er = erScore ?? null;
+    let regimeFactor = 1.0;
+    if (er != null) {
+      if (er >= CYCLE.erTrend) regimeFactor = 0.3;       // Trend: stark reduziert
+      else if (er >= CYCLE.erRange) regimeFactor = 0.65;  // Übergang
+    }
+    const effectiveFills = TH.fillsPerGrid * regimeFactor;
+
     // B46: Grid-Ertrag % = Füllungen/Monat × Tage/30 × Netto-Profit × Hebel × Kalibrierung
     const netPerGrid = tier.targetProfit - TH.feeRoundtrip;
-    const gridYield = (TH.fillsPerGrid * holdDays / 30) * netPerGrid * lev * TH.calibration;
+    const gridYield = (effectiveFills * holdDays / 30) * netPerGrid * lev * TH.calibration;
 
     const net = gridYield - fundingCost;
+
+    // Risikoterm: Liquidationsrisiko wächst mit dem Hebel, aber viability()
+    // bildet das nicht ab — Netto wächst sonst linear mit Hebel ohne Gegenkraft.
+    // Grobe Approximation: Liq-Abstand = 1/Hebel. Bei 10× ist der Chart
+    // 10% weg von der Liquidation, was bei Krypto-Volatilität realistisch
+    // innerhalb einer Haltedauer liegt. Wir zeigen das explizit, subrahieren es
+    // aber NICHT vom Netto (es ist ein Risikohinweis, kein Ertragsminderer).
+    const liqDist = lev > 1 ? Math.round((1 / lev) * 100) : null;
+
     return {
-      fundingCost: Math.round(fundingCost * 10) / 10,
-      gridYield:   Math.round(gridYield * 10) / 10,
-      net:         Math.round(net * 10) / 10,
-      ok:          net > 0,
-      label:       net > 0 ? "✅ Ertrag > Kosten" : "⚠️ Funding/Gebühr frisst Ertrag",
-      // Praxis-Schwelle aus der Q&A: darunter fressen Gebühren den Ertrag
-      netPerGrid:  Math.round(netPerGrid * 100) / 100,
-      netPerGridOk: netPerGrid >= CYCLE.minNetPerGrid,
+      fundingCost:    Math.round(fundingCost * 10) / 10,
+      gridYield:      Math.round(gridYield * 10) / 10,
+      net:            Math.round(net * 10) / 10,
+      ok:             net > 0,
+      regimeFactor:   Math.round(regimeFactor * 100),   // % der Nenn-Füllrate
+      effectiveFills: Math.round(effectiveFills * 10) / 10,
+      liqDist,        // % Abstand zur Liquidation (Risikohinweis)
+      label: net > 0
+        ? (regimeFactor < 1 ? `⚠️ Ertrag > Kosten (Regime: ${Math.round(regimeFactor*100)}% Füllrate)` : "✅ Ertrag > Kosten")
+        : "❌ Funding/Gebühr frisst Ertrag",
+      netPerGrid:    Math.round(netPerGrid * 100) / 100,
+      netPerGridOk:  netPerGrid >= CYCLE.minNetPerGrid,
     };
   }
 
@@ -408,7 +444,7 @@ const GridBot = (function () {
       const avg8h = deriv?.funding?.fundingAvg30 != null
         ? deriv.funding.fundingAvg30 / 90
         : funding8h;
-      row.viability = viability(t, row.leverage, bias.final, t.holdDays || 30, avg8h);
+      row.viability = viability(t, row.leverage, bias.final, t.holdDays || 30, avg8h, er);
       return row;
     }).filter(Boolean);
 
