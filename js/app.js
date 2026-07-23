@@ -566,6 +566,14 @@ async function loadData() {
   setStatus(`${candles.length} Candles · ${state.symbol.label} · ${state.timeframe.label}`);
   if (state.active.has("vrvp")) setTimeout(drawVrvp, 120);
 
+  // Zyklus-Ampel im Hintergrund befüllen — ohne den Bot-Panel zu öffnen.
+  // 800ms Verzögerung damit der Chart-Render und die Exchange-Streams
+  // zuerst starten, bevor ein zusätzlicher Derivate-Fetch losgeht.
+  // Bei Symbolwechsel wird nur aktualisiert wenn der Bot eh offen ist.
+  if (!state.gbResult || state.gbOpen) {
+    setTimeout(() => quiet(() => gbRefresh(false), "cycle bar init"), 800);
+  }
+
   if (state.symbol.type === "kraken" || state.symbol.type === "coinbase" || state.symbol.type === "bybit") {
     // Kraken/Coinbase/Bybit: kein WebSocket-Kerzenstream integriert —
     // Anzeige ohne Live-Update.
