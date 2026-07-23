@@ -455,20 +455,26 @@
 
       <section class="faq-sec" data-sec="start">
         <h3>Erste Schritte</h3>
-        <div class="faq-block"><h4>Asset und Zeitrahmen</h4>
-          <p>Oben links wählst du Asset und Intervall. Beim Wechsel wird die Preisachse automatisch neu skaliert und alle Zeichnungen werden entfernt — ein Volumenprofil auf BTC-Preisen wäre auf ETH schlicht falsch.</p></div>
+        <div class="faq-block"><h4>Asset, Exchange und Zeitrahmen</h4>
+          <p>Oben links wählst du Asset und Intervall. Verfügbar sind Paare von <b>Binance, Coinbase, Kraken und Bybit</b> — alle in einem gemeinsamen Dropdown, erkennbar am Suffix in Klammern («BTC/USDT (Binance)», «BTC/USD (Coinbase)»). Beim Wechsel wird die Preisachse automatisch neu skaliert.</p>
+          <p>Kraken und Bybit haben keine Live-Streams — die Statusanzeige zeigt dann «Kraken» statt «Live». Coinbase steht nur bis Daily zur Verfügung (kein Weekly/Monthly).</p></div>
         <div class="faq-block"><h4>Navigieren</h4>
-          <p>Mausrad zoomt, Ziehen verschiebt — auch vertikal, direkt ab Start. Der Auto-Zoom-Knopf oben rechts holt die ganze Datenbreite zurück und skaliert neu. Auf dem Handy: zwei Finger zum Zoomen.</p></div>
+          <p>Mausrad zoomt die Zeit-Achse, Ziehen verschiebt. Der Auto-Zoom-Knopf oben rechts holt die ganze Datenbreite zurück.<br>
+          <b>Preis-Achse:</b> auf dem Desktop mit der Maus auf der rechten Skala ziehen — rein- oder rauszoomen. Auf dem Handy denselben Finger vertikal auf der Preisskala ziehen. Doppeltipp auf die Skala setzt automatisch zurück.</p></div>
+        <div class="faq-block"><h4>Mobile</h4>
+          <p><b>Zwei Finger</b> zoomen horizontal (Zeit-Achse), <b>ein Finger</b> auf der Preisskala zoomt vertikal. <b>Langer Druck</b> (~0.5 s) öffnet das Kontextmenü — auf dem Desktop wäre das ein Rechtsklick. Menüs erscheinen auf kleinen Bildschirmen als Bottom-Sheet von unten.</p>
+          <p>Die Watchlist ist auf Handys standardmässig eingeklappt und öffnet sich als Overlay über den Chart, damit der Chart die volle Breite bekommt.</p></div>
         <div class="faq-block"><h4>Historie</h4>
-          <p>Beim Start werden 5'000 Kerzen geladen. Scrollst du weiter nach links, kommen automatisch ältere dazu, bis Binance keine mehr liefert.</p></div>
+          <p>Beim Start werden 5'000 Kerzen geladen. Scrollst du weiter nach links, kommen automatisch ältere dazu — bei Binance bis zu den Anfängen des jeweiligen Paares, bei Kraken teils bis 2013.</p></div>
       </section>
 
       <section class="faq-sec hidden" data-sec="chart">
         <h3>Chart</h3>
         <div class="faq-block"><h4>Darstellung</h4>
           <p>Kerzen oder Linie, umschaltbar oben. Das Zahnrad daneben öffnet Farben, Hohlkerzen, Linienstärke und Flächenfüllung.</p></div>
-        <div class="faq-block"><h4>Vergleich</h4>
-          <p>Bis zu 15 Assets gleichzeitig. Der Chart schaltet dann auf relative Darstellung: alle Linien starten bei 0 % am linken Rand des sichtbaren Bereichs. Scrollst du, verschiebt sich der Nullpunkt mit — das ist Absicht, sonst wäre der Vergleich an ein willkürliches Datum gebunden.</p>
+        <div class="faq-block"><h4>Vergleich (+Vergleich)</h4>
+          <p>Bis zu 15 Assets gleichzeitig, nur mit <b>gleicher Quote-Währung</b> (USDT mit USDT, USD mit USD — kein Äpfel-Birnen-Vergleich). Der Chart schaltet auf relative Darstellung: alle Linien starten bei 0 % am linken Rand des sichtbaren Bereichs. Scrollst du, verschiebt sich der Nullpunkt mit.</p>
+          <p>Im Vergleichsmodus werden <b>alle Indikatoren, VRVP, FVG/OB-Zonen, Muster und Zeichnungen ausgeblendet</b> — sie laufen auf Preisbasis und wären im Prozent-Chart irreführend. Beim Verlassen des Vergleichs kommen sie zurück.</p>
           <p>Am rechten Rand steht Kürzel und aktueller Prozentwert. Das Auge blendet ein Asset aus, ohne es zu entfernen.</p></div>
         <div class="faq-block"><h4>Hell und Dunkel</h4>
           <p>Der Mond schaltet um, der Chart zieht mit. Die Einstellung bleibt erhalten.</p></div>
@@ -477,15 +483,21 @@
       <section class="faq-sec hidden" data-sec="draw">
         <h3>Zeichnen</h3>
         <div class="faq-block"><h4>Werkzeugleiste</h4>
-          <p>Links, nach Kategorien: Linien, Zonen &amp; Profile, Fibonacci, Messwerkzeuge, Annotationen.</p>
+          <p>Links (Desktop) resp. unten (Handy), nach Kategorien: Linien, Zonen &amp; Profile, Fibonacci, Messwerkzeuge, Annotationen.</p>
           <p><b>Magnet</b> rastet an Kerzenpunkten ein. <b>Pin</b> hält ein Werkzeug aktiv, sonst schaltet es nach einer Zeichnung ab. <b>Papierkorb</b> löscht alles.</p></div>
         <div class="faq-block"><h4>Zeichnung bearbeiten</h4>
-          <p>Fährt der Zeiger über eine Zeichnung, wird aus dem Fadenkreuz ein Finger — dann ist sie anklickbar. Rechtsklick öffnet das Menü, Entf löscht die ausgewählte, Esc bricht ab.</p></div>
+          <p>Fährt der Zeiger über eine Zeichnung, wird aus dem Fadenkreuz ein Finger — dann ist sie anklickbar. Rechtsklick öffnet das Menü, Entf löscht die ausgewählte, Esc bricht ab.</p>
+          <p>Auf dem Handy ersetzt ein <b>langer Druck</b> auf der Zeichnung den Rechtsklick.</p></div>
+        <div class="faq-block"><h4>Polylinie</h4>
+          <p>Mehrpunkt-Linie: jeder Linksklick setzt einen weiteren Punkt. <b>Rechtsklick, Enter oder Doppelklick</b> schliesst ab. Esc bricht ab und verwirft.</p></div>
         <div class="faq-block"><h4>Fibonacci</h4>
           <p>Retracement braucht zwei Punkte (Anfang und Ende der Bewegung), Extension drei (Impuls A→B, dann Korrekturende C).</p>
           <p>Rechtsklick öffnet die Einstellungen: jedes Level einzeln an- und abwählbar, Flächenfüllung mit Deckkraft, Beschriftung mit Level und/oder Preis, Verlängerung nach rechts.</p></div>
-        <div class="faq-block"><h4>Fixed Range Volume Profile</h4>
-          <p>Zeigt, bei welchen Preisen im markierten Bereich tatsächlich gehandelt wurde. Orange durchgezogen sind Value Area High und Low (70 % des Volumens), weiss gestrichelt der Point of Control — der meistgehandelte Preis.</p></div>
+        <div class="faq-block"><h4>Fixed Range Volume Profile (FRVP)</h4>
+          <p>Zwei Punkte aufziehen → zeigt, bei welchen Preisen im markierten Bereich tatsächlich gehandelt wurde. Orange durchgezogen: Value Area High/Low (70 % des Volumens). Weiss gestrichelt: Point of Control.</p>
+          <p>Rechtsklick öffnet Einstellungen. <b>«Nach rechts verlängern»</b> zieht VAH, VAL und POC als durchgehende Linien bis zum Chartrand — so bleiben die Niveaus auch ausserhalb des markierten Bereichs sichtbar.</p></div>
+        <div class="faq-block"><h4>Anchored VWAP</h4>
+          <p>Unter «Zonen &amp; Profile». Ein Klick setzt den Ankerpunkt — ab diesem Bar berechnet sich der volumengewichtete Durchschnittspreis kumulativ bis heute. Nützlich um zu sehen, ob Käufer seit einem wichtigen Ereignis im Gewinn oder Verlust sind.</p></div>
         <div class="faq-block"><h4>Freihand und Notizen</h4>
           <p>Freihand zeichnet bei gedrückter Maus. Das Textfeld fragt nach dem Setzen nach dem Text — brichst du ab, verschwindet es wieder.</p></div>
       </section>
@@ -493,9 +505,10 @@
       <section class="faq-sec hidden" data-sec="ind">
         <h3>Indikatoren</h3>
         <div class="faq-block"><h4>Bedienung</h4>
-          <p>14 Stück, über das Menü oben zuschaltbar. Das Zahnrad je Zeile öffnet Parameter, Farben und Sichtbarkeit einzelner Linien. Alles bleibt pro Indikator gespeichert.</p>
+          <p>14 Indikatoren, über das Menü oben zuschaltbar. Das Zahnrad je Zeile öffnet Parameter, Farben und Sichtbarkeit einzelner Linien. Alles bleibt pro Indikator gespeichert.</p>
           <p><b>Im Hauptchart:</b> Money Noodle, BMSB, SMA, EMA, Bollinger, Gaussian Channel, Hull, RVWAP, VRVP.<br>
-          <b>Eigene Fläche darunter:</b> RSI, Stoch RSI, Volumen, MACD, ATR.</p></div>
+          <b>Eigene Fläche darunter:</b> RSI, Stoch RSI, Volumen, MACD, ATR.</p>
+          <p><b>Hinweis EMA 21:</b> Money Noodle (Medium EMA 21), BMSB (21 EMA) und EMA (Periode 1 = 21) zeigen alle dieselbe Linie. Sie stehen in drei verschiedenen Kontexten — als Band-Mittellinie, als Zyklus-Unterstützung und als Einzellinie — und sind bewusst nicht als drei unabhängige Bestätigungen zu lesen.</p></div>
 
         <div class="faq-block"><h4>Money Noodle</h4>
           <p><b>Aussage:</b> drei verschieden schnelle Durchschnitte plus ein volatilitätsbreites Band. Laufen sie eng und parallel, ist der Trend geordnet; verflechten sie sich („Nudeln"), fehlt die Richtung.</p>
@@ -552,6 +565,16 @@
         <div class="faq-block"><h4>ATR — Average True Range</h4>
           <p><b>Aussage:</b> wie weit sich der Preis pro Bar im Schnitt bewegt — reines Volatilitätsmass, richtungsneutral. Grundlage für Stop-Abstände und die Grid-Breite im Grid Bot.</p>
           <p><b>Berechnung:</b> Durchschnitt der „True Range" (grösster Abstand aus Hoch/Tief/Vorschlusskurs) über 14 Perioden, RMA-geglättet.</p></div>
+
+        <div class="faq-block"><h4>Fair Value Gaps &amp; Order Blocks (SMC)</h4>
+          <p>Der Rechteck-Knopf in der Toolbar öffnet das SMC-Panel. <b>Kontext, kein Signal</b> — kein Stop, kein Ziel, keine Bestätigung.</p>
+          <p><b>Fair Value Gap (FVG):</b> Drei aufeinanderfolgende Kerzen, bei denen das Hoch der ersten unter dem Tief der dritten liegt (bullisch) oder umgekehrt (bärisch). Die Lücke wurde im schnellen Impuls nicht gehandelt — sie wirkt oft als Magnet bei Rückläufen.</p>
+          <p><b>Order Block (OB):</b> Die <em>letzte</em> Gegenkerze vor einem impulsiven Move mit Displacement (&gt; 1.5× ATR). Nur die letzte — mehrere aufeinanderfolgende Gegenkerzen ergeben einen einzigen OB, nicht mehrere.</p>
+          <p><b>Gefüllte Zonen einblenden</b> ist Standard — so siehst du, wie viele Zonen tatsächlich getestet wurden und kannst die Trefferquote selbst beurteilen.</p>
+          <p>Der Lückenschwellenwert ist ATR-relativ: bei ruhigem und bewegtem Markt gleich sensitiv. In der Browser-Konsole (F12): <code>SMC.nullTest(chart.getDataList(), {}).then(r => console.log(r))</code> — zeigt p-Wert und ob die Zonen statistisch über Rauschen liegen.</p></div>
+
+        <div class="faq-block"><h4>Anchored VWAP (AVWAP)</h4>
+          <p>Unter «Zonen &amp; Profile» in der Zeichnungs-Toolbar. Ein Klick auf eine Kerze setzt den Anker — ab dort läuft der volumengewichtete Durchschnittspreis (lila Linie) kumulativ bis heute. Preis über AVWAP: Käufer seit dem Ankerpunkt im Gewinn. Preis darunter: im Verlust.</p></div>
 
         <div class="faq-block"><h4>Einordnung</h4>
           <p>Alle Indikatoren zusammen beantworten eine Frage: Wo stehen wir? Sie beantworten nicht, wie gross deine Position sein darf. Dafür ist das Long/Short-Werkzeug da — und das ist die wichtigere Zahl.</p></div>
@@ -615,6 +638,22 @@
       <section class="faq-sec hidden" data-sec="gridbot">
         <h3>Grid Bot</h3>
         <div class="faq-cols">
+
+        <div class="faq-block">
+          <h4>Zyklus-Ampel (immer sichtbar)</h4>
+          <p>Fünf farbige Kürzel neben dem Roboter-Icon — immer sichtbar, unabhängig davon ob das Bot-Panel offen ist. Klick auf ein Kürzel zeigt die volle Bezeichnung und den aktuellen Wert. Farben: <span style="color:var(--up)">●</span> günstig / <span style="color:var(--accent)">●</span> neutral / <span style="color:var(--down)">●</span> Warnung.</p>
+          <p><b>F&amp;G — Fear &amp; Greed (0–100)</b><br>
+          <span style="color:var(--up)">● &lt; 35 Angst</span> = historische Akkumulationszone · <span style="color:var(--accent)">● 35–80</span> = neutral · <span style="color:var(--down)">● &gt; 80 Gier</span> = defensiv werden</p>
+          <p><b>OI — Open Interest Δ30T (%)</b><br>
+          <span style="color:var(--up)">● &lt; −10 %</span> = Leverage bereinigt, Markt sauberer · <span style="color:var(--accent)">● −10 bis +10 %</span> = aufbauend · <span style="color:var(--down)">● &gt; +10 %</span> = starker Leverage-Aufbau, Liquidationsrisiko steigt</p>
+          <p><b>Fund — Funding Rate 8h (%)</b><br>
+          <span style="color:var(--up)">● &lt; −0.01 %</span> = Shorts zahlen, contrarian bullisch · <span style="color:var(--accent)">● −0.01 bis +0.05 %</span> = normal · <span style="color:var(--down)">● &gt; +0.05 %</span> = Longs zahlen teuer, überfüllte Seite</p>
+          <p><b>M — Mayer Multiple (Preis / SMA200)</b><br>
+          <span style="color:var(--up)">● &lt; 0.9</span> = historisch jeder BTC-Akkumulationsboden seit 2015 · <span style="color:var(--accent)">● 0.9–2.0</span> = normaler Bereich · <span style="color:var(--down)">● &gt; 2.0</span> = teuer, Hebel-Leitplanke aktiv</p>
+          <p><b>ER — Efficiency Ratio (0–1)</b><br>
+          <span style="color:var(--up)">● &lt; 0.3</span> = saubere Range, Grid ideal · <span style="color:var(--accent)">● 0.3–0.5</span> = Übergang · <span style="color:var(--down)">● &gt; 0.5</span> = Trend, Grid riskant</p>
+          <p>Die Werte werden beim Öffnen des Bot-Panels geladen und dann automatisch aktuell gehalten. Klick auf die Ampel öffnet das Bot-Panel.</p>
+        </div>
 
         <div class="faq-block">
           <h4>Was der Bot beantwortet</h4>
