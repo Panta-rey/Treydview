@@ -2999,9 +2999,9 @@ function updateCycleBar(r) {
   const fngCls = fng == null ? "" : fng > GridBot.CYCLE.fngGreed ? "warn" : fng < GridBot.CYCLE.fngFear ? "good" : "neut";
   setPill("cycleFng", fng != null ? "F&G " + fng : "F&G –", fngCls);
 
-  const fund = r.derivatives?.fundingNow ?? r.market?.fundingNow ?? null;
+  const fund = r.derivatives?.funding8h ?? null;
   const fundCls = fund == null ? "" : fund > GridBot.DEFAULT_THRESHOLDS.fundingShort ? "warn" : fund < GridBot.DEFAULT_THRESHOLDS.fundingLong ? "good" : "neut";
-  setPill("cycleFund", fund != null ? "Fund " + fund.toFixed(3) + "%" : "Fund –", fundCls);
+  setPill("cycleFund", fund != null ? "Fund " + fund.toFixed(4) + "%" : "Fund –", fundCls);
 }
 
 function gbRenderTiers() {

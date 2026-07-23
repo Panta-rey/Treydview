@@ -76,6 +76,16 @@
 
   <!-- Aktions-Buttons rechtsbündig -->
   <div class="topbar-actions">
+    <!-- Zyklus-Ampel: immer sichtbar, unabhängig vom Grid-Bot-Panel.
+         Mayer · FNG · Funding auf einen Blick — dieselben Signale, die
+         Akkumulationsphasen anzeigen, sollen nicht nur im Bot-Panel als
+         Hebel-Argument erscheinen, sondern permanent lesbar sein. -->
+    <div id="cycleBar" class="cycle-bar" title="Zyklusindikator: Mayer / Fear&amp;Greed / Funding. Klick öffnet Bot-Panel.">
+      <span id="cycleMayer" class="cycle-pill">M –</span>
+      <span id="cycleFng"   class="cycle-pill">F&amp;G –</span>
+      <span id="cycleFund"  class="cycle-pill">Fund –</span>
+    </div>
+
     <!-- Grid Bot -->
     <button class="action-btn" id="gridBotBtn" title="Futures Grid Bot">
       <svg viewBox="0 0 24 24" class="ab-icon">
@@ -88,19 +98,6 @@
         <path d="M3 11.5v3M21 11.5v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
       </svg>
     </button>
-
-    <!-- Zyklus-Ampel: immer sichtbar, unabhängig vom Grid-Bot-Panel.
-         Mayer · FNG · Funding auf einen Blick — dieselben Signale, die
-         Akkumulationsphasen anzeigen, sollen nicht nur im Bot-Panel als
-         Hebel-Argument erscheinen, sondern permanent lesbar sein. -->
-    <div id="cycleBar" class="cycle-bar" title="Zyklusindikator: Mayer / Fear&amp;Greed / Funding. Klick öffnet Bot-Panel.">
-      <span id="cycleMayer" class="cycle-pill">M –</span>
-      <span id="cycleFng"   class="cycle-pill">F&amp;G –</span>
-      <span id="cycleFund"  class="cycle-pill">Fund –</span>
-    </div>
-
-    <!-- Long/Short Position: direkt nach dem Roboter-Button, weil es
-         dasselbe Kapital- und Risiko-Konzept bedient wie der Grid Bot -->
     <button class="action-btn" id="posToolTopBtn" title="Long / Short Position — Einstieg, Stop, Ziel klicken">
       <svg viewBox="0 0 24 24" class="ab-icon">
         <rect x="2.5" y="3.5" width="19" height="7" rx="1" fill="rgba(63,182,139,.22)" stroke="#3fb68b" stroke-width="1.6"/>
