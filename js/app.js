@@ -107,6 +107,12 @@ const state = {
 
 };
 
+// Auf Touch-Geräten Watchlist standardmässig geschlossen (spart 210px Chartbreite).
+// Nur beim allerersten Besuch (kein gespeicherter Workspace).
+if (!_ws && window.matchMedia("(pointer: coarse)").matches) {
+  state.watchlistOpen = false;
+}
+
 // state.watchlist zeigt immer auf die gerade aktive Liste. So funktioniert
 // der gesamte bestehende Code weiter, ohne dass jeder Zugriff angefasst
 // werden muss.
@@ -123,6 +129,15 @@ Object.defineProperty(state, "watchlist", {
 
 // Debug-Zugriff aus der Browser-Konsole: window.__tvState
 window.__tvState = state;
+
+// Debug-Modus: in der Konsole `__tvDebug = true` setzen, dann zeigen alle
+// verschluckten Fehler ihre Ursache. Beispiel: AVWAP lädt nicht → Konsole
+// zeigt warum statt still leer zu bleiben.
+window.__tvDebug = false;
+function quiet(fn, label) {
+  try { return fn(); }
+  catch (e) { if (window.__tvDebug) console.warn("[TV]", label || "?", e); }
+}
 
 // Bybit-Debug: __tvTestBybit("AEROUSDT","D") in Konsole eingeben
 window.__tvTestBybit = async (symbol, interval) => {
@@ -378,7 +393,13 @@ function computeVrvpMeta() {
   if (data.length < 2) { state.vrvpMeta = null; return; }
 
   const prices = data.flatMap(d => [d.high, d.low]);
-  const pMin = Math.min(...prices), pMax = Math.max(...prices);
+  // Schleife statt Math.min/max(...prices): Spread sprengt den Stack
+  // ab ~130'000 Argumenten (= ~65'000 Kerzen nach Lazy Loading).
+  let pMin = Infinity, pMax = -Infinity;
+  for (const d of data) {
+    if (d.high > pMax) pMax = d.high;
+    if (d.low  < pMin) pMin = d.low;
+  }
   const rowH = (pMax - pMin) / rows;
   if (rowH === 0) { state.vrvpMeta = null; return; }
   const upVol = new Float64Array(rows), downVol = new Float64Array(rows);
@@ -392,10 +413,15 @@ function computeVrvpMeta() {
     }
   }
   const totalVol = upVol.map((u, i) => u + downVol[i]);
-  const pocRow   = totalVol.indexOf(Math.max(...totalVol));
+  // Schleife statt indexOf(Math.max(...)) und filter(...).map(...)
+  let pocRow = 0, maxVol = 0;
+  for (let r = 0; r < rows; r++) {
+    if (totalVol[r] > totalVol[pocRow]) pocRow = r;
+    if (totalVol[r] > maxVol) maxVol = totalVol[r];
+  }
   state.vrvpMeta = {
     rows, pMin, pMax, rowH, upVol, downVol, totalVol,
-    maxVol: Math.max(...totalVol.filter(v => v > 0)),
+    maxVol,
     pocPrice: pMin + (pocRow + 0.5) * rowH,
   };
 }
@@ -922,16 +948,6 @@ function drawCompare() {
 
   // Preis → Y-Pixel innerhalb des Pane
   const pctToY = (pct) => paneTop + ((pMax - pct) / pRange) * paneH;
-
-  // Timestamp → X-Pixel via KLC (konvertiert bar-Index zu Pixel)
-  const tsToX = (ts) => {
-    const idx = dataList.findIndex(d => d.timestamp === ts);
-    if (idx < 0) return null;
-    try {
-      const pt = chart.convertToPixel({ dataIndex: idx }, { paneId: "candle_pane", absolute: true });
-      return pt ? pt.x : null;
-    } catch (e) { return null; }
-  };
 
   // Clip auf Pane
   ctx.save();
@@ -2431,8 +2447,16 @@ function saveWorkspace() {
     gbTiers: state.gbTiers,
     gbThresholds: state.gbThresholds,
       chartStyle: state.chartStyle,
+      drawStyle:  state.drawStyle,
+      smcOpts:    state.smcOpts,
     }));
-  } catch (e) { /* localStorage voll oder blockiert — ignorieren */ }
+  } catch (e) {
+    // QuotaExceededError: localStorage voll (z.B. viele Zeichnungen).
+    // Sichtbar machen statt still schlucken.
+    if (e && (e.name === "QuotaExceededError" || e.code === 22)) {
+      try { setStatus("⚠ Speicher voll: Workspace konnte nicht gespeichert werden. Zeichnungen reduzieren."); } catch (_) {}
+    }
+  }
 }
 
 // ---------- Watchlist ----------
