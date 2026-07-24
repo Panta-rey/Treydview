@@ -38,6 +38,7 @@ const state = {
   selectedOverlayId: null, // zuletzt selektiertes Overlay (für Entf)
   chartType:   _ws?.chartType || "candle_solid", // candle_solid | area
   legendCollapsed: _ws?.legendCollapsed || false,
+  _mobileInit:     _ws?._mobileInit || false,   // Mobile-Voreinstellung schon angewandt?
   drawStyle:   _ws?.drawStyle || { color: "#e8b64c", lineStyle: "solid", opacity: 100, width: 1 },
   compareAssets: [],   // [{ id, label, color, data: [{timestamp, close}] }]
 
@@ -107,10 +108,13 @@ const state = {
 
 };
 
-// Auf Touch-Geräten Watchlist standardmässig geschlossen (spart 210px Chartbreite).
-// Nur beim allerersten Besuch (kein gespeicherter Workspace).
-if (!_ws && window.matchMedia("(pointer: coarse)").matches) {
-  state.watchlistOpen = false;
+// Einmalige Mobile-Voreinstellung. Läuft auch bei bereits gespeichertem
+// Workspace genau einmal — sonst greift sie bei bestehenden Nutzern nie.
+// Danach entscheidet der Nutzer, die Wahl bleibt erhalten.
+if (window.matchMedia("(pointer: coarse)").matches && !_ws?._mobileInit) {
+  state.watchlistOpen  = false;   // spart die volle Chartbreite
+  state.legendCollapsed = true;   // fünf Indikatorzeilen decken sonst den Chart zu
+  state._mobileInit = true;
 }
 
 // state.watchlist zeigt immer auf die gerade aktive Liste. So funktioniert
@@ -129,6 +133,26 @@ Object.defineProperty(state, "watchlist", {
 
 // Debug-Zugriff aus der Browser-Konsole: window.__tvState
 window.__tvState = state;
+
+// ---------- Build-Abgleich ----------
+// Sagt beim Start klar, welche Dateien tatsächlich laufen. Liefert der
+// Browser eine alte style.css aus dem Cache, fällt das hier sofort auf,
+// statt dass wir über nicht wirkende Regeln rätseln.
+const TV_BUILD = "m4";
+window.__tvBuild = TV_BUILD;
+(function checkBuild() {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue("--tv-build").trim().replace(/["']/g, "");
+  window.__tvCssBuild = raw || "(keine)";
+  if (raw === TV_BUILD) {
+    console.log(`%c[TreydView] Build ${TV_BUILD} — CSS und JS aktuell.`,
+                "color:#3fb68b;font-weight:600");
+  } else {
+    console.warn(`[TreydView] VERSIONSKONFLIKT — JS ist "${TV_BUILD}", ` +
+      `geladene CSS ist "${raw || "unbekannt"}". Der Browser liefert eine ` +
+      `alte style.css aus dem Cache. Seite mit geleertem Cache neu laden.`);
+  }
+})();
 
 // Debug-Modus: in der Konsole `__tvDebug = true` setzen, dann zeigen alle
 // verschluckten Fehler ihre Ursache. Beispiel: AVWAP lädt nicht → Konsole
@@ -2674,6 +2698,7 @@ function saveWorkspace() {
       active: [...state.active],
       chartType: state.chartType,
       legendCollapsed: state.legendCollapsed,
+      _mobileInit:     state._mobileInit,
       // ALLE Watchlisten + welche aktiv ist. Vorher wurde nur state.watchlist
       // (Getter auf die aktive) gespeichert — beim Neuladen waren alle
       // anderen Listen weg.
