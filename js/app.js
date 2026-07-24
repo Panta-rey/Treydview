@@ -656,7 +656,7 @@ function initDropdowns() {
   ["assetDropdown", "compareDropdown", "tfDropdown", "typeDropdown", "indDropdown", "layoutDropdown", "patternDropdown", "smcDropdown"].forEach(id => {
     const dd = document.getElementById(id);
     if (!dd) return;
-    const trigger = dd.querySelector(".dd-trigger, .action-btn");
+    const trigger = dd.querySelector(".dd-trigger, .action-btn, .bb-btn");
     const panel = dd.querySelector(".dd-panel");
     trigger.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -4655,20 +4655,3 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
     origStart(name);
   };
 })();
-
-// ── 5. Bottom-Bar Drop-Ups: Abdunkler und syncSheetBackdrop ─────
-// Drop-Up Panels öffnen oberhalb der Bottom Bar.
-// dd-drop-up ist bereits im CSS gesetzt (bottom: 56px, top:auto).
-// Sicherstellen dass syncSheetBackdrop auch beim Bottom-Bar-Open greift.
-document.querySelectorAll(".dropdown").forEach(dd => {
-  const trigger = dd.querySelector("[id$='Trigger']");
-  const panel   = dd.querySelector(".dd-panel");
-  if (!trigger || !panel) return;
-  trigger.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const was = panel.classList.contains("open");
-    document.querySelectorAll(".dd-panel.open").forEach(p => p.classList.remove("open"));
-    if (!was) panel.classList.add("open");
-    if (typeof syncSheetBackdrop === "function") syncSheetBackdrop();
-  });
-});
