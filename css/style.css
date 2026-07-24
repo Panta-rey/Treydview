@@ -238,98 +238,109 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
   .mobile-only { display: flex !important; }
 
-  /* ---- 1f: Screenshot-Button ausblenden ---- */
+  /* ---- 1a: Asset, TF, Compare aus Topbar auf Mobile ausblenden ---- */
+  /* Sind jetzt in der Mobile Info-Bar vertreten */
+  #assetDropdown  { display: none !important; }
+  #tfDropdown     { display: none !important; }
+  #compareDropdown { display: none !important; }
+
+  /* ---- 1b: ph-symbol ausblenden, ph-change nicht overflow ---- */
+  .ph-symbol { display: none; }
+  .price-header { flex-wrap: nowrap; overflow: hidden; padding: 4px 8px 2px; }
+  .ph-price  { font-size: 15px; white-space: nowrap; }
+  .ph-change { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw; }
+
+  /* ---- 1f: Screenshot ausblenden ---- */
   #screenshotBtn { display: none !important; }
 
-  /* ---- 1g: Kerzen-Dropdown ausblenden ---- */
+  /* ---- 1g: Kerzen ausblenden ---- */
   #typeDropdown { display: none !important; }
 
   /* ---- 1c: + statt + Vergleich ---- */
   .compare-label-full { display: none; }
   .compare-label-short { display: inline; }
 
-  /* ---- 1e: Indikatoren als Lupe (Text ausblenden) ---- */
+  /* ---- 1e: Indikatoren als Lupe ---- */
   .ind-label-text { display: none; }
   .ind-mobile-icon { display: block !important; }
   #indTrigger { padding: 5px 8px; }
 
-  /* ---- 1b: Preis-Header ausblenden, Mobile-Info-Bar zeigen ---- */
-  .price-header { display: none; }
+  /* ---- 5: SMC wieder als Icon (nicht mehr in Ind-Panel) ---- */
+  #smcDropdown { display: flex !important; }
+  .smc-in-ind  { display: none !important; }
 
-  /* ---- 1d: SMC-Dropdown auf Desktop, im Ind-Panel auf Mobile ---- */
-  #smcDropdown { display: none !important; }
-  .smc-in-ind { display: block !important; }
+  /* ---- 6: Long/Short aus Topbar (ist jetzt im Draw-Sheet) ---- */
+  #posToolTopBtn { display: none !important; }
 
-  /* ---- Zeichenstift-Button zeigen, Desktop-Drawbar ausblenden ---- */
+  /* ---- Zeichenstift zeigen, Drawbar ausblenden ---- */
   .drawbar { display: none !important; }
   #drawSheetBtn { display: flex !important; }
 
   /* ---- Mobile Info-Bar ---- */
   .mobile-info-bar {
-    display: flex !important; align-items: center; gap: 6px;
+    display: flex !important; align-items: center; gap: 5px;
     padding: 4px 8px; background: var(--bg-raised);
-    border-bottom: 1px solid var(--border); flex-shrink: 0;
+    border-bottom: 1px solid var(--border); flex-shrink: 0; overflow: hidden;
   }
   .mib-asset {
     background: none; border: 1px solid var(--border); border-radius: 6px;
     color: var(--text); font-family: var(--font-mono); font-size: 11px;
-    padding: 2px 7px; cursor: pointer; white-space: nowrap;
-    overflow: hidden; text-overflow: ellipsis; max-width: 44vw;
+    padding: 2px 6px; cursor: pointer; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; max-width: 38vw; flex-shrink: 1;
   }
   .mib-tf {
     background: none; border: 1px solid var(--accent); border-radius: 6px;
     color: var(--accent); font-family: var(--font-mono); font-size: 11px;
-    padding: 2px 7px; cursor: pointer; white-space: nowrap;
+    padding: 2px 6px; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+  }
+  .mib-compare {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text-dim); font-family: var(--font-mono); font-size: 13px;
+    font-weight: 700; padding: 1px 7px; cursor: pointer; flex-shrink: 0;
   }
   .mib-price {
     font-family: var(--font-mono); font-size: 13px; font-weight: 700;
-    color: var(--text); margin-left: auto;
+    color: var(--text); margin-left: auto; white-space: nowrap; flex-shrink: 0;
   }
   .mib-change {
     font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
-    white-space: nowrap;
+    white-space: nowrap; flex-shrink: 0;
   }
 
   /* ---- Topbar komprimieren ---- */
   header { padding: 0 6px; gap: 4px; min-height: 46px; }
-  .dd-trigger { padding: 4px 7px; font-size: 11px; }
-  #assetTrigger { max-width: 38vw; overflow: hidden; }
-  #assetLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30vw; }
-
-  /* Zyklus-Ampel auf Mobile ausblenden (zu wenig Platz in der Topbar) */
   .cycle-bar { display: none !important; }
 
-  /* ---- 2: Grid Bot Panel — kompakt, kein Overflow ---- */
+  /* ---- 2: Grid Bot kompakt ---- */
   #gbBar {
-    max-height: 75vh !important;
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch;
-    width: 100vw !important;
+    max-height: 75vh !important; overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch; width: 100vw !important;
     left: 0 !important; right: 0 !important;
-    border-radius: 14px 14px 0 0;
-    max-width: none !important;
+    border-radius: 14px 14px 0 0; max-width: none !important;
   }
-  .gb-topbar { flex-wrap: wrap; gap: 4px; }
-  .gb-stat { font-size: 10px; }
 
-  /* ---- 3: Alle Dropdowns auf Screenbreite begrenzen ---- */
+  /* ---- 3: Alle Dropdowns auf Screen limitieren ---- */
   .dd-panel, .dd-panel--wide, .dd-panel--right {
     max-width: calc(100vw - 16px) !important;
-    max-height: 60vh !important;
-    overflow-y: auto !important;
+    max-height: 60vh !important; overflow-y: auto !important;
     -webkit-overflow-scrolling: touch;
   }
 
-  /* ---- 4: Watchlist als Bottom-Overlay, volle Breite ---- */
+  /* ---- 4: Watchlist — Close-Button und Höhe ---- */
   .watchlist {
-    width: 100% !important;
-    border-radius: 14px 14px 0 0;
+    width: 100% !important; border-radius: 14px 14px 0 0;
+    max-height: 80vh; overflow-y: auto;
   }
+  .wl-close-btn {
+    background: none; border: none; color: var(--text-dim);
+    font-size: 16px; cursor: pointer; padding: 2px 6px; margin-left: auto;
+    flex-shrink: 0;
+  }
+  .wl-header { display: flex; align-items: center; gap: 6px; }
 
-  /* ---- Chart-Legende komprimieren ---- */
+  /* ---- Chart-Legende ---- */
   .chart-legend { font-size: 10px; }
-  .lg-sym { font-size: 11px; }
-}
+
 
 /* ---- Draw Bottom Sheet ---- */
 .draw-sheet {

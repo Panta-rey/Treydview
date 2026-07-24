@@ -62,19 +62,6 @@
     </button>
     <div class="dd-panel dd-panel--wide" id="indPanel">
       <div class="dd-list" id="indList"></div>
-      <!-- Auf Mobile: SMC direkt hier erreichbar statt über separaten Button -->
-      <div class="smc-in-ind mobile-only">
-        <div class="pat-group" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">Smart Money Concepts</div>
-        <label><input type="checkbox" id="smcFvgBullInd" checked> Bullish FVG</label>
-        <label><input type="checkbox" id="smcFvgBearInd" checked> Bearish FVG</label>
-        <label><input type="checkbox" id="smcObBullInd" checked> Bullish OB</label>
-        <label><input type="checkbox" id="smcObBearInd" checked> Bearish OB</label>
-        <label><input type="checkbox" id="smcShowFilledInd" checked> Gefüllte zeigen</label>
-        <div style="display:flex;gap:6px;margin-top:6px;">
-          <button class="pat-scan" id="smcScanBtnInd">Scannen</button>
-          <button class="pat-clear" id="smcClearBtnInd">Löschen</button>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -299,6 +286,7 @@
     <div class="mobile-info-bar mobile-only">
       <button class="mib-asset" id="mibAsset">BTC/USDT (Binance)</button>
       <button class="mib-tf" id="mibTf">1h</button>
+      <button class="mib-compare" id="mibCompare">+</button>
       <span class="mib-price" id="mibPrice">–</span>
       <span class="mib-change" id="mibChange">–</span>
     </div>
@@ -380,6 +368,8 @@
         <svg viewBox="0 0 24 24" width="13" height="13"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>
       </button>
       <button class="wl-add" id="wlAddBtn" title="Symbol hinzufügen">+</button>
+      <!-- Schliessen-Button: nur auf Mobile sichtbar -->
+      <button class="wl-close-btn mobile-only" id="wlCloseBtn" title="Watchlist schliessen">✕</button>
     </div>
     <div class="wl-manage hidden" id="wlManage">
       <div class="wl-mrow">

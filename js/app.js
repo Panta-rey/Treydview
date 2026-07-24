@@ -2442,30 +2442,27 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
 
 // Mobile Info-Bar
 (function initMobileInfoBar() {
-  const mibAsset  = document.getElementById("mibAsset");
-  const mibTf     = document.getElementById("mibTf");
+  const mibAsset   = document.getElementById("mibAsset");
+  const mibTf      = document.getElementById("mibTf");
+  const mibCompare = document.getElementById("mibCompare");
+  const wlClose    = document.getElementById("wlCloseBtn");
   if (!mibAsset) return;
-  mibAsset.addEventListener("click", () => document.getElementById("assetTrigger")?.click());
-  mibTf.addEventListener("click",   () => document.getElementById("tfTrigger")?.click());
+
+  // Taps öffnen die jeweiligen Dropdowns
+  mibAsset.addEventListener("click",   () => document.getElementById("assetTrigger")?.click());
+  mibTf.addEventListener("click",      () => document.getElementById("tfTrigger")?.click());
+  mibCompare?.addEventListener("click",() => document.getElementById("compareTrigger")?.click());
+
+  // Watchlist-Schliessen-Button auf Mobile
+  wlClose?.addEventListener("click", () => {
+    state.watchlistOpen = false;
+    document.getElementById("watchlist")?.classList.add("hidden");
+    saveWorkspace();
+  });
 })();
 
-// SMC-Checkboxen im Ind-Panel mit Haupt-Panel syncen
-(function initSmcIndSync() {
-  const pairs = [
-    ["smcFvgBullInd","smcFvgBull"],["smcFvgBearInd","smcFvgBear"],
-    ["smcObBullInd","smcObBull"],["smcObBearInd","smcObBear"],
-    ["smcShowFilledInd","smcShowFilled"],
-  ];
-  pairs.forEach(([indId, mainId]) => {
-    const ind = document.getElementById(indId), main = document.getElementById(mainId);
-    if (!ind || !main) return;
-    ind.checked = main.checked;
-    ind.addEventListener("change",  () => { main.checked = ind.checked;  main.dispatchEvent(new Event("change")); });
-    main.addEventListener("change", () => { ind.checked  = main.checked; });
-  });
-  document.getElementById("smcScanBtnInd")?.addEventListener("click",  () => document.getElementById("smcScanBtn")?.click());
-  document.getElementById("smcClearBtnInd")?.addEventListener("click", () => document.getElementById("smcClearBtn")?.click());
-})();
+// ============================================================
+// WORKSPACE SPEICHERN
 
 (function initTouch() {
   const el = document.getElementById("mainChart");
@@ -2594,12 +2591,25 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
     }
   }, { passive: true });
 
-  const endTouch = () => { cancelLP(); yDrag = null; };
-  el.addEventListener("touchend",    endTouch, { passive: true });
-  el.addEventListener("touchcancel", endTouch, { passive: true });
-})();
+  // ---------- Doppeltouch: selektiertes Overlay löschen (Mobile-Ersatz für Rechtsklick+Löschen) ----------
+  let lastTapTime = 0;
+  el.addEventListener("touchend", (e) => {
+    if (e.touches.length !== 0) return;   // nur wenn alle Finger weg
+    const now = Date.now();
+    if (now - lastTapTime < 300 && state.selectedOverlayId) {
+      // Doppeltipp innerhalb 300ms + Overlay selektiert → löschen
+      quiet(() => {
+        chart.removeOverlay(state.selectedOverlayId);
+        state.selectedOverlayId = null;
+      }, "dbl-tap delete");
+    }
+    lastTapTime = now;
+    cancelLP();
+    yDrag = null;
+  }, { passive: true });
 
-// ---------- Workspace speichern ----------
+  el.addEventListener("touchcancel", () => { cancelLP(); yDrag = null; }, { passive: true });
+})();
 function saveWorkspace() {
   try {
     localStorage.setItem("tv_workspace", JSON.stringify({
