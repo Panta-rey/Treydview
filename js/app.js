@@ -138,7 +138,7 @@ window.__tvState = state;
 // Sagt beim Start klar, welche Dateien tatsächlich laufen. Liefert der
 // Browser eine alte style.css aus dem Cache, fällt das hier sofort auf,
 // statt dass wir über nicht wirkende Regeln rätseln.
-const TV_BUILD = "m5";
+const TV_BUILD = "m6";
 window.__tvBuild = TV_BUILD;
 (function checkBuild() {
   const raw = getComputedStyle(document.documentElement)
@@ -2388,17 +2388,24 @@ function updatePriceHeader(last, prev) {
   chEl.textContent = changeStr;
   chEl.className = "ph-change " + (change >= 0 ? "up" : "down");
 
-  // Mobile Info-Bar synchron halten
+  // Mobile Info-Bar + neue Topbar-Zeile 2 synchron halten
   const mibPrice  = document.getElementById("mibPrice");
   const mibChange = document.getElementById("mibChange");
   const mibAsset  = document.getElementById("mibAsset");
   const mibTf     = document.getElementById("mibTf");
+  const tb2Price  = document.getElementById("tb2Price");
+  const tb2Change = document.getElementById("tb2Change");
   if (mibAsset)  mibAsset.textContent  = state.symbol.label;
   if (mibTf)     mibTf.textContent     = state.timeframe?.label || "–";
   if (mibPrice)  mibPrice.textContent  = priceStr;
   if (mibChange) {
     mibChange.textContent = changeStr;
     mibChange.style.color = change >= 0 ? "var(--up)" : "var(--down)";
+  }
+  if (tb2Price)  tb2Price.textContent  = priceStr;
+  if (tb2Change) {
+    tb2Change.textContent = changeStr;
+    tb2Change.className = "tb2-change " + (change >= 0 ? "up" : "down");
   }
 }
 
@@ -4341,6 +4348,25 @@ document.getElementById("posToolTopBtn").addEventListener("click", () => {
   setStatus("Long/Short: 1. Einstieg klicken  →  2. Stop  →  3. Ziel");
 });
 document.getElementById("gridBotBtn").addEventListener("click", () => gbToggleBar());
+
+  // Vollbild
+  const fsBtn = document.getElementById("fullscreenBtn");
+  if (fsBtn) {
+    fsBtn.addEventListener("click", () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.().catch(() => {});
+      } else { document.exitFullscreen?.(); }
+    });
+    document.addEventListener("fullscreenchange", () => {
+      const icon = fsBtn.querySelector("svg");
+      if (!icon) return;
+      if (document.fullscreenElement) {
+        icon.innerHTML = '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>';
+      } else {
+        icon.innerHTML = '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
+      }
+    });
+  }
 document.getElementById("gbClose").addEventListener("click", (e) => { e.stopPropagation(); gbToggleBar(false); });
 document.getElementById("gbToggle").addEventListener("click", (e) => {
   e.stopPropagation();
@@ -4467,3 +4493,182 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Type-Dropdown öffnen/schliessen (zur bestehenden Dropdown-Logik hinzufügen)
 
 })();
+
+// ================================================================
+// MOBILE EXTRAS
+// ================================================================
+
+// ── 1. Stil-Menü Schliessen-Knopf ───────────────────────────────
+(function() {
+  const btn = document.getElementById("omClose");
+  const menu = document.getElementById("overlayMenu");
+  if (btn && menu) btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    menu.classList.add("hidden");
+  });
+})();
+
+// ── 2. Zeichnungs-Lupe ──────────────────────────────────────────
+(function initDrawMagnifier() {
+  const mag   = document.getElementById("drawMagnifier");
+  const magC  = document.getElementById("drawMagnifierCanvas");
+  const chart = document.getElementById("mainChart");
+  if (!mag || !magC || !chart) return;
+  const SIZE = 88, SCALE = 2.5;
+  magC.width = SIZE; magC.height = SIZE;
+  const ctx = magC.getContext("2d");
+  let active = false;
+
+  function show(touch) {
+    if (!state.activeTool) return;
+    active = true;
+    mag.classList.add("active");
+    const rect = chart.getBoundingClientRect();
+    const tx = touch.clientX - rect.left;
+    const ty = touch.clientY - rect.top;
+
+    // Lupe oberhalb des Fingers anzeigen
+    const mx = touch.clientX - SIZE / 2;
+    const my = touch.clientY - SIZE - 30;
+    mag.style.left = Math.max(0, Math.min(window.innerWidth - SIZE, mx)) + "px";
+    mag.style.top  = Math.max(0, my) + "px";
+
+    // Chartbereich um den Finger herum ausschneiden und vergrössert zeichnen
+    try {
+      const src = chart.querySelector("canvas");
+      if (!src) return;
+      ctx.clearRect(0, 0, SIZE, SIZE);
+      const sw = SIZE / SCALE, sh = SIZE / SCALE;
+      ctx.drawImage(src, tx - sw/2, ty - sh/2, sw, sh, 0, 0, SIZE, SIZE);
+      // Fadenkreuz
+      ctx.strokeStyle = "rgba(232,182,76,.8)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(SIZE/2, 0); ctx.lineTo(SIZE/2, SIZE);
+      ctx.moveTo(0, SIZE/2); ctx.lineTo(SIZE, SIZE/2); ctx.stroke();
+    } catch (_) {}
+  }
+
+  function hide() { active = false; mag.classList.remove("active"); }
+
+  chart.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 1) show(e.touches[0]);
+  }, { passive: true });
+  chart.addEventListener("touchmove", (e) => {
+    if (e.touches.length === 1 && state.activeTool) show(e.touches[0]);
+  }, { passive: true });
+  chart.addEventListener("touchend",    hide, { passive: true });
+  chart.addEventListener("touchcancel", hide, { passive: true });
+})();
+
+// ── 3. Y-Achsen-Verschiebung (ein Finger, Nicht-Preisskala) ─────
+// KLC verschiebt bei einerm Finger horizontal (X-Achse) nativ.
+// Wir addieren vertikale Verschiebung des Preisbereichs —
+// der Nutzer kann so den Chart hoch/runter schieben.
+(function initYPan() {
+  const el = document.getElementById("mainChart");
+  const AXIS_W = 80;
+  let panStart = null;
+
+  el.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1 || state.activeTool) return;
+    const t = e.touches[0];
+    const rect = el.getBoundingClientRect();
+    const onAxis = (t.clientX - rect.left) > (rect.width - AXIS_W);
+    if (onAxis) return;  // Preisskala: dort Y-Zoom, nicht Y-Pan
+    panStart = { y: t.pageY };
+  }, { passive: true });
+
+  el.addEventListener("touchmove", (e) => {
+    if (e.touches.length !== 1 || !panStart || state.activeTool) return;
+    const t = e.touches[0];
+    const dy = t.pageY - panStart.y;
+    panStart = { y: t.pageY };
+    if (Math.abs(dy) < 1) return;
+
+    quiet(() => {
+      const pane = chart.getDrawPaneById("candle_pane");
+      if (!pane) return;
+      const yAxis = pane.getAxisComponent();
+      if (!yAxis) return;
+      const r = yAxis.getRange();
+      if (!r || r.range == null) return;
+      // dy > 0 = Finger nach unten = Preisbereich nach unten verschieben
+      const shift = (r.range / el.clientHeight) * dy;
+      const from = r.from - shift, to = r.to - shift;
+      const rf = yAxis.convertToRealValue(from);
+      const rt = yAxis.convertToRealValue(to);
+      yAxis.setAutoCalcTickFlag(false);
+      yAxis.setRange({ from, to, range: r.range, realFrom: rf, realTo: rt, realRange: rt - rf });
+      chart.adjustPaneViewport(false, true, true, true);
+    }, "y-pan");
+  }, { passive: true });
+
+  el.addEventListener("touchend",    () => { panStart = null; }, { passive: true });
+  el.addEventListener("touchcancel", () => { panStart = null; }, { passive: true });
+})();
+
+// ── 4. FRVP Zwei-Tap-Gestik ─────────────────────────────────────
+(function initFrvpTwoTap() {
+  let frvpStart = null;
+  const STATUS_MSG = "FRVP: Erster Tap = Start, zweiter Tap = Ende";
+
+  // Wir horchen auf den Chart — aber nur wenn das FRVP-Tool aktiv ist
+  const el = document.getElementById("mainChart");
+  if (!el) return;
+
+  el.addEventListener("touchend", (e) => {
+    if (state.activeTool !== "frvp") return;
+    if (e.changedTouches.length !== 1) return;
+    const t = e.changedTouches[0];
+    const rect = el.getBoundingClientRect();
+    const coord = { x: t.clientX - rect.left, y: t.clientY - rect.top };
+
+    if (!frvpStart) {
+      // Erster Tap
+      frvpStart = coord;
+      setStatus(STATUS_MSG + " ✓ Start gesetzt — jetzt Ende tippen");
+    } else {
+      // Zweiter Tap: synthetisches mousedown/mouseup Paar senden
+      // damit KLC das FRVP abschliesst
+      const fire = (type, cx, cy) => {
+        const ev = new MouseEvent(type, { bubbles: true, cancelable: true,
+          clientX: rect.left + cx, clientY: rect.top + cy, button: 0 });
+        el.dispatchEvent(ev);
+      };
+      fire("mousedown", frvpStart.x, frvpStart.y);
+      fire("mouseup",   frvpStart.x, frvpStart.y);
+      fire("click",     frvpStart.x, frvpStart.y);
+      setTimeout(() => {
+        fire("mousedown", coord.x, coord.y);
+        fire("mouseup",   coord.x, coord.y);
+        fire("click",     coord.x, coord.y);
+      }, 30);
+      frvpStart = null;
+      setStatus("FRVP gezeichnet");
+    }
+  }, { passive: true });
+
+  // Reset wenn Tool gewechselt wird
+  const origStart = startTool;
+  window.__tvStartTool = (name) => {
+    if (name !== "frvp") frvpStart = null;
+    if (name === "frvp") setStatus(STATUS_MSG);
+    origStart(name);
+  };
+})();
+
+// ── 5. Bottom-Bar Drop-Ups: Abdunkler und syncSheetBackdrop ─────
+// Drop-Up Panels öffnen oberhalb der Bottom Bar.
+// dd-drop-up ist bereits im CSS gesetzt (bottom: 56px, top:auto).
+// Sicherstellen dass syncSheetBackdrop auch beim Bottom-Bar-Open greift.
+document.querySelectorAll(".dropdown").forEach(dd => {
+  const trigger = dd.querySelector("[id$='Trigger']");
+  const panel   = dd.querySelector(".dd-panel");
+  if (!trigger || !panel) return;
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const was = panel.classList.contains("open");
+    document.querySelectorAll(".dd-panel.open").forEach(p => p.classList.remove("open"));
+    if (!was) panel.classList.add("open");
+    if (typeof syncSheetBackdrop === "function") syncSheetBackdrop();
+  });
+});

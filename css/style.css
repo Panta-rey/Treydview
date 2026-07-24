@@ -616,39 +616,22 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .pat-fig { float: right; width: 140px; height: 76px; margin: 0 0 4px 12px;
   background: rgba(143,163,184,0.05); border: 1px solid var(--border); border-radius: 4px; }
 
+/* Build-Kennung: m6 */
+:root { --tv-build: "m6"; }
 
-/* Build-Kennung: wird von app.js ausgelesen. Stimmt sie nicht mit der
-   JS-Kennung überein, läuft eine alte Datei aus dem Cache — dann meldet
-   die Konsole das beim Start deutlich. */
-:root { --tv-build: "m5"; }
-
-/* ═══════════════════════════════════════════════════════════════
-   MOBILE-SCHICHT
-   Eine einzige, zusammenhängende Schicht. Greift bei ≤720px ODER
-   bei Touch-Geräten. Der Desktop bleibt unberührt — alles hier
-   sind Overrides, keine Basis-Definitionen.
-
-   Grundgedanke:
-     Topbar      = nur Icons, horizontal scrollbar
-     Info-Bar    = Asset / Timeframe / Vergleich / Preis
-     Alle Panels = Bottom-Sheets von unten, nie über den Rand
-   ═══════════════════════════════════════════════════════════════ */
-
-/* ---- Basis für Mobile-Komponenten (gilt überall, greift nur wenn sichtbar) ---- */
-.mobile-only { display: none !important; }
-
-/* Gemeinsames Bottom-Sheet-Aussehen. Wird per Media-Query aktiviert. */
-.sheet-handle {
-  width: 38px; height: 4px; border-radius: 2px;
-  background: var(--border); margin: 9px auto 10px; flex-shrink: 0;
+/* ─────────────────────────────────────────────────────────────────
+   BOTTOM BAR (Mobile)
+   ──────────────────────────────────────────────────────────────── */
+.bottom-bar {
+  display: none;   /* Desktop: unsichtbar */
 }
 
-/* Draw-Sheet: Zeichenwerkzeuge als Raster */
+/* Draw-Sheet Basis */
 .draw-sheet {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 620;
   background: var(--bg-raised); border-top: 1px solid var(--border);
   border-radius: 16px 16px 0 0;
-  padding: 0 10px calc(14px + env(safe-area-inset-bottom));
+  padding: 0 10px calc(12px + env(safe-area-inset-bottom));
   max-height: 74vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
   box-shadow: 0 -8px 32px rgba(0,0,0,.55);
 }
@@ -664,271 +647,261 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   padding: 11px 3px; border-radius: 9px; cursor: pointer;
   background: var(--bg); border: 1px solid var(--border);
   font-size: 9.5px; line-height: 1.15; color: var(--text-dim); text-align: center;
-  transition: border-color .12s, color .12s;
 }
 .draw-sheet-item:active { border-color: var(--accent); color: var(--accent); }
-.draw-sheet-item svg { width: 19px; height: 19px; flex-shrink: 0; }
-.ds-glyph {
-  font-size: 17px; line-height: 1; color: var(--text);
-  height: 20px; display: flex; align-items: center; justify-content: center;
-}
-.draw-sheet-item:active .ds-glyph { color: var(--accent); }
-
-/* Gemeinsamer Abdunkler hinter jedem geöffneten Sheet */
-.sheet-backdrop { position: fixed; inset: 0; z-index: 610; background: rgba(0,0,0,.45); }
+.ds-glyph { font-size: 17px; line-height: 1; height: 20px; display: flex; align-items: center; justify-content: center; }
+.sheet-backdrop { position: fixed; inset: 0; z-index: 615; background: rgba(0,0,0,.45); }
 .sheet-backdrop.hidden { display: none; }
 
+/* Zeichnungs-Lupe */
+.draw-magnifier {
+  position: fixed; z-index: 900; pointer-events: none;
+  width: 88px; height: 88px; border-radius: 50%;
+  border: 2px solid var(--accent); overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0,0,0,.6);
+  background: var(--bg); display: none;
+}
+.draw-magnifier.active { display: block; }
+.draw-magnifier canvas { position: absolute; top: 0; left: 0; }
+
+/* Overlay Style-Menü Schliessen-Knopf */
+.om-close {
+  position: absolute; top: 8px; right: 8px;
+  background: none; border: none; color: var(--text-dim);
+  font-size: 18px; cursor: pointer; padding: 4px 8px; line-height: 1;
+}
+.om-close:hover { color: var(--text); }
+.overlay-menu { position: relative; }
+
+/* ─────────────────────────────────────────────────────────────────
+   TOPBAR ZWEI-ZEILEN-LAYOUT (Desktop)
+   ──────────────────────────────────────────────────────────────── */
+.topbar {
+  display: flex; flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+  z-index: 630; position: relative;
+}
+.tb-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px; min-height: 36px;
+}
+.tb-row-2 { border-top: 1px solid rgba(143,163,184,.12); }
+.tb-gap { flex: 1; }
+.tb-pills { display: flex; align-items: center; gap: 4px; }
+.tb-desktop-only { display: flex; }
+.tb2-btn {
+  font-family: var(--font-mono); font-size: 12px;
+  background: none; border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 4px 9px; cursor: pointer; white-space: nowrap;
+}
+.tb2-btn:hover { border-color: var(--accent); }
+.tb2-compare { color: var(--text-dim); font-weight: 700; }
+.tb2-price { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--text); }
+.tb2-change { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); }
+.tb2-change.up { color: var(--up); }
+.tb2-change.down { color: var(--down); }
+
+/* Bottom-Bar Buttons (Desktop: zeige sie nirgends) */
+.bb-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  background: none; border: none; color: var(--text-dim); cursor: pointer;
+  padding: 6px 10px; border-radius: 8px; font-size: 9.5px; white-space: nowrap;
+}
+.bb-btn:hover, .bb-btn.active { color: var(--accent); background: var(--bg-hover); }
+.bb-icon { width: 22px; height: 22px; }
+.bb-label { font-family: var(--font-mono); font-size: 9px; line-height: 1; }
+.dd-drop-up { top: auto !important; bottom: calc(100% + 4px) !important; }
+
+/* ─────────────────────────────────────────────────────────────────
+   MOBILE-SCHICHT  ≤720px / Touch
+   ──────────────────────────────────────────────────────────────── */
+.mobile-only { display: none !important; }
 
 @media (max-width: 720px), (pointer: coarse) {
 
   .mobile-only { display: flex !important; }
+  .tb-desktop-only { display: none !important; }
+  .compare-label-full { display: none; }
+  .compare-label-short { display: inline; }
 
-  /* ────────────────────────────────────────────
-     1 · TOPBAR — alle Icons in einer Zeile
-     ──────────────────────────────────────────── */
-  /* z-index MUSS über dem Abdunkler (610) liegen.
-     .topbar hat z-index:50 + position:relative und erzeugt damit einen
-     Stapelkontext. Die Dropdown-Panels liegen darin — ihr eigenes
-     z-index:620 wird auf Ebene 50 gedeckelt und der Abdunkler auf
-     Body-Ebene (610) legt sich darüber. Genau deshalb wurde der
-     Bildschirm dunkler, ohne dass ein Panel erschien. */
-  .topbar {
-    z-index: 630;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: visible;
-    gap: 3px;
-    padding: 5px 6px;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-  .topbar::-webkit-scrollbar { display: none; }
-  .topbar > * { flex-shrink: 0; }
-
-  /* Die Basis rechnet mit 53px Topbar. Auf Mobile sind es
-     5+34+5+1 = 45px — ohne Korrektur ragt der Chart unten hinaus. */
-  .workspace { height: calc(100% - 45px); }
-
-  .brand { display: none; }
-
-  /* Asset / Timeframe / Vergleich sind in der Info-Bar vertreten.
-     WICHTIG: nur den Auslöser ausblenden, nicht den Container — sonst
-     wäre das zugehörige Panel mit versteckt und liesse sich nie öffnen.
-     Das Panel ist fixed positioniert und braucht den Anker ohnehin nicht. */
-  #assetDropdown, #tfDropdown, #compareDropdown {
-    position: static; width: 0; padding: 0; margin: 0;
-  }
-  #assetDropdown > .dd-trigger,
-  #tfDropdown    > .dd-trigger,
-  #compareDropdown > .dd-trigger { display: none !important; }
-
-  /* Auf dem Handy überflüssig */
-  #typeDropdown, #screenshotBtn { display: none !important; }
-  /* Im Draw-Sheet enthalten */
-  #posToolTopBtn { display: none !important; }
-  /* Kein Platz in der Icon-Reihe — Werte bleiben im Bot-Panel */
-  .cycle-bar, .live-badge { display: none !important; }
-
-  /* Indikatoren nur als Lupe */
-  .ind-label-text { display: none; }
-  .ind-mobile-icon { display: block; }
-
-  /* Zehn Icons müssen auf 390px nebeneinander passen, sonst rutscht das
-     letzte (bisher der Zeichenstift) aus dem Bild:
-     378px nutzbar − 12px Lücken − 34px Lupe − 24px Lücken = 308px / 9 ≈ 34px */
-  .topbar-actions { display: flex; gap: 3px; margin-left: 0; }
-  .action-btn     { width: 34px; height: 34px; }
-  #indTrigger {
-    width: 34px; height: 34px; padding: 0;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .ab-icon, .ind-mobile-icon { width: 18px; height: 18px; }
-
-  /* Zeichenstift nach vorn — er wird am häufigsten gebraucht und stand
-     bisher an letzter Stelle, also ausserhalb des sichtbaren Bereichs. */
-  #drawSheetBtn { display: flex !important; order: -1; }
+  /* Zeichenstift + Drawbar */
   .drawbar { display: none !important; }
 
-  /* ────────────────────────────────────────────
-     2 · INFO-BAR — Asset / TF / Vergleich / Preis
-     ──────────────────────────────────────────── */
-  /* Feste Höhe, damit die Legende darunter verlässlich platziert werden
-     kann. Ohne festen Wert hängt die Höhe an der Schriftgrösse und die
-     Legende landet wieder darüber. */
-  .mobile-info-bar {
-    display: flex !important; align-items: center; gap: 6px;
-    height: 40px; box-sizing: border-box;
-    padding: 0 8px; flex-shrink: 0;
-    background: var(--bg-raised); border-bottom: 1px solid var(--border);
-    overflow: hidden;
+  /* ── Topbar: eine Zeile + Zweite Zeile (Asset/TF/Vergleich/Preis) ── */
+  .topbar { flex-direction: column; z-index: 630; }
+  .tb-row-1 {
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    -webkit-overflow-scrolling: touch; gap: 4px; padding: 5px 8px;
   }
-  .mib-asset, .mib-tf, .mib-compare {
-    font-family: var(--font-mono); border-radius: 6px; cursor: pointer;
-    background: transparent; border: 1px solid var(--border);
-    color: var(--text); padding: 5px 9px; font-size: 12px;
-    white-space: nowrap; flex-shrink: 0;
-  }
-  .mib-asset {
-    overflow: hidden; text-overflow: ellipsis;
-    max-width: 40vw; flex-shrink: 1; min-width: 0;
-  }
-  .mib-tf      { color: var(--accent); border-color: rgba(232,182,76,.45); }
-  .mib-compare { font-weight: 700; padding: 5px 11px; color: var(--text-dim); }
-  .mib-asset:active, .mib-tf:active, .mib-compare:active { border-color: var(--accent); }
+  .tb-row-1::-webkit-scrollbar { display: none; }
+  .tb-row-2 { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 5px; padding: 4px 8px; }
+  .tb-row-2::-webkit-scrollbar { display: none; }
 
-  .mib-price {
-    font-family: var(--font-mono); font-size: 14px; font-weight: 700;
-    color: var(--text); margin-left: auto; white-space: nowrap; flex-shrink: 0;
-  }
-  .mib-change {
-    font-family: var(--font-mono); font-size: 12px;
-    white-space: nowrap; flex-shrink: 0;
-  }
+  .action-btn { width: 34px; height: 34px; flex-shrink: 0; }
+  .ab-icon { width: 17px; height: 17px; }
 
-  /* Doppelte Preiszeile entfällt — die Info-Bar zeigt dasselbe */
+  /* Preis-Header alt ausblenden — Zeile 2 übernimmt */
   .price-header { display: none !important; }
+  .mobile-info-bar { display: none !important; }  /* neue tb-row-2 ersetzt sie */
+  .brand { display: none; }
+  .live-badge { display: none !important; }
+  .cycle-bar { gap: 3px; }
+  .cycle-pill { font-size: 10px; padding: 2px 5px; }
 
-  /* Legende UNTER die Info-Bar. Sie liegt absolut in .chart-col, dessen
-     Nullpunkt die Oberkante der Info-Bar ist — bei top:4px läge sie
-     mitten darauf. 40px Leiste + 6px Abstand = 46px. */
-  .chart-legend {
-    top: 46px; left: 6px;
-    max-width: calc(100% - 92px);
+  /* ── Bottom Bar ── */
+  .bottom-bar {
+    display: flex !important;
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 620;
+    background: var(--bg-raised); border-top: 1px solid var(--border);
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+    justify-content: space-around; align-items: flex-start;
+    gap: 0;
   }
-  .legend-ohlc .lg-sym, .legend-ohlc .lg-tf { display: none; }
-  .legend-line {
-    white-space: normal; flex-wrap: wrap;
-    gap: 0 4px; font-size: 9.5px; line-height: 1.35;
-  }
-  .legend-body { gap: 1px; padding: 1px 3px; }
+  .bb-btn { padding: 5px 4px; flex: 1; max-width: 70px; }
+  .bb-icon { width: 20px; height: 20px; }
+  .bb-label { font-size: 8.5px; }
 
-  /* ────────────────────────────────────────────
-     3 · ALLE DROPDOWNS WERDEN BOTTOM-SHEETS
-     Ein Muster für alles: Indikatoren, Muster,
-     SMC, Layouts, Vergleich, Asset, Timeframe.
-     ──────────────────────────────────────────── */
+  /* Chart-Bereich: Platz für Bottom Bar lassen */
+  .workspace { height: calc(100% - 85px); }   /* 45px topbar + 40px bottom bar */
+
+  /* ── Alle Dropdowns als Bottom-Sheet (nach oben aus Bottom Bar) ── */
   .dd-panel, .dd-panel--wide, .dd-panel--right {
     position: fixed !important;
-    top: auto !important; bottom: 0 !important;
+    top: auto !important; bottom: 56px !important;
     left: 0 !important; right: 0 !important;
-    width: 100% !important; min-width: 0 !important; max-width: none !important;
-    max-height: 72vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    width: 100% !important; max-width: none !important;
+    max-height: 65vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
     border-radius: 16px 16px 0 0;
     border-left: none; border-right: none; border-bottom: none;
     padding-bottom: calc(10px + env(safe-area-inset-bottom));
-    box-shadow: 0 -8px 32px rgba(0,0,0,.55);
-    z-index: 620;
+    box-shadow: 0 -8px 32px rgba(0,0,0,.55); z-index: 621;
   }
-  /* Griff-Andeutung oben in jedem Sheet */
+  /* Griff */
   .dd-panel.open::before {
     content: ""; display: block;
     width: 38px; height: 4px; border-radius: 2px;
     background: var(--border); margin: 9px auto 8px;
   }
-  /* Suchfeld im Sheet oben festhalten */
-  .dd-search {
-    position: sticky; top: 0; z-index: 2;
-    background: var(--bg-raised); font-size: 15px; padding: 11px 13px;
-  }
+  .dd-search { position: sticky; top: 0; z-index: 2; background: var(--bg-raised); font-size: 15px; padding: 11px 13px; }
   .dd-item { padding: 13px 15px; font-size: 13.5px; }
 
-  /* Kontextmenüs (placeMenu → .as-sheet) im gleichen Muster */
-  .as-sheet {
-    left: 0 !important; right: 0 !important;
-    top: auto !important; bottom: 0 !important;
+  /* Kontextmenüs (Overlay-Stil-Menü) */
+  .as-sheet, #overlayMenu {
+    position: fixed !important;
+    bottom: 56px !important; left: 0 !important; right: 0 !important; top: auto !important;
     width: 100% !important; max-width: none !important;
-    max-height: 72vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
-    border-radius: 16px 16px 0 0;
-    border-left: none; border-right: none; border-bottom: none;
+    border-radius: 16px 16px 0 0; border-left: none; border-right: none; border-bottom: none;
+    max-height: 65vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    box-shadow: 0 -8px 32px rgba(0,0,0,.55); z-index: 621;
     padding-bottom: calc(14px + env(safe-area-inset-bottom));
-    box-shadow: 0 -8px 32px rgba(0,0,0,.55);
   }
-  .as-sheet::before {
-    content: ""; display: block;
-    width: 38px; height: 4px; border-radius: 2px;
-    background: var(--border); margin: 2px auto 10px; flex-shrink: 0;
-  }
-  .as-sheet .om-row,
-  .as-sheet .om-check      { padding: 12px 16px; font-size: 14px; }
-  .as-sheet .overlay-menu-del { padding: 14px 16px; font-size: 14px; }
+  .om-row { padding: 12px 16px; font-size: 14px; }
+  .overlay-menu-del { padding: 14px 16px; font-size: 14px; }
 
-  /* ────────────────────────────────────────────
-     4 · WATCHLIST als Bottom-Sheet mit Schliessen
-     ──────────────────────────────────────────── */
+  /* Draw Sheet über Bottom Bar */
+  .draw-sheet { bottom: 56px; }
+
+  /* Watchlist */
   .watchlist {
-    position: fixed; bottom: 0; left: 0; right: 0;
+    position: fixed; bottom: 56px; left: 0; right: 0;
     width: 100% !important; max-width: none;
     max-height: 70vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
     border-left: none; border-top: 1px solid var(--border);
     border-radius: 16px 16px 0 0;
     padding-bottom: env(safe-area-inset-bottom);
-    box-shadow: 0 -8px 32px rgba(0,0,0,.55);
-    z-index: 620;
+    box-shadow: 0 -8px 32px rgba(0,0,0,.55); z-index: 620;
   }
-  .wl-header {
-    position: sticky; top: 0; z-index: 2;
-    background: var(--bg-raised); gap: 8px;
-  }
+  .wl-header { position: sticky; top: 0; z-index: 2; background: var(--bg-raised); }
   .wl-close-btn {
     display: flex !important; align-items: center; justify-content: center;
     width: 30px; height: 30px; flex-shrink: 0;
     background: transparent; border: 1px solid var(--border); border-radius: 6px;
-    color: var(--text-dim); font-size: 15px; line-height: 1; cursor: pointer;
+    color: var(--text-dim); font-size: 15px; cursor: pointer;
   }
-  .wl-close-btn:active { border-color: var(--accent); color: var(--accent); }
   .wl-item { padding: 12px 12px; }
 
-  /* ────────────────────────────────────────────
-     5 · GRID-BOT als Bottom-Sheet
-     ──────────────────────────────────────────── */
+  /* Grid Bot */
   .gb-bar {
-    position: fixed; bottom: 0; left: 0; right: 0;
+    position: fixed; bottom: 56px; left: 0; right: 0;
     width: 100% !important; max-width: none !important;
     max-height: 78vh !important; height: auto !important;
     overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
     border-radius: 16px 16px 0 0; border-top: 1px solid var(--border);
     padding-bottom: env(safe-area-inset-bottom);
-    box-shadow: 0 -8px 32px rgba(0,0,0,.55);
-    z-index: 620;
+    box-shadow: 0 -8px 32px rgba(0,0,0,.55); z-index: 620;
   }
-  /* Kopfzeile: umbrechen statt rechts hinauslaufen.
-     Nur so bleiben Auf-/Zuklappen und Schliessen erreichbar. */
   .gb-status {
-    position: sticky; top: 0; z-index: 2;
-    background: var(--bg-raised);
+    position: sticky; top: 0; z-index: 2; background: var(--bg-raised);
     flex-wrap: wrap; gap: 5px 10px; padding: 8px 10px; font-size: 11px;
   }
-  .gb-stat   { font-size: 10px; }
-  .gb-sep-v  { display: none; }
-  .gb-spacer { flex-basis: 100%; height: 0; }   /* erzwingt Umbruch vor den Icons */
-
-  /* Reiter (Strategie / Daten / Einstellungen) sind direkte Kinder von
-     .gb-status — der Umbruch dort greift bereits, hier nur die Grösse */
-  .gb-tab  { font-size: 11px; padding: 6px 9px; }
-
-  /* Inhalt: breite Tabellen horizontal scrollen statt überlaufen */
+  .gb-stat { font-size: 10px; }
+  .gb-sep-v { display: none; }
+  .gb-tab { font-size: 11px; padding: 6px 9px; }
   .gb-pane, .gb-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .gb-strat-row { flex-direction: column; }
-  .gb-strat-row .gb-reco { max-width: none; }
-  /* Zieh-Griff zum Höhenverstellen ist im Sheet sinnlos */
   .gb-resize { display: none; }
 
-  /* ────────────────────────────────────────────
-     6 · Einstellungs-Dialoge im Rahmen halten
-     ──────────────────────────────────────────── */
+  /* Legende */
+  .chart-legend { top: 46px; left: 6px; max-width: calc(100% - 92px); }
+  .legend-ohlc .lg-sym, .legend-ohlc .lg-tf { display: none; }
+  .legend-line { white-space: normal; flex-wrap: wrap; gap: 0 4px; font-size: 9.5px; line-height: 1.35; }
+  .legend-body { gap: 1px; padding: 1px 3px; }
+
+  /* Settings */
   .settings-panel, .frvp-menu, .fib-menu {
     max-width: calc(100vw - 16px) !important;
-    max-height: 80vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    max-height: 80vh; overflow-y: auto;
   }
 }
 
-/* Sehr schmale Geräte: Icons und Info-Bar nochmals enger */
+/* ─────────────────────────────────────────────────────────────────
+   QUERFORMAT (landscape) auf kleinen Screens
+   Bottom Bar → rechte Seite  |  Top Bar → linke Seite (kompakt)
+   ──────────────────────────────────────────────────────────────── */
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  /* Gesamtlayout: Links-Spalte (Topbar) | Chart | Rechts-Spalte (Bottom) */
+  html, body { height: 100%; overflow: hidden; }
+  body { display: flex; flex-direction: row; }
+  .topbar {
+    flex-direction: column !important; width: 100px; height: 100%;
+    overflow-y: auto; border-right: 1px solid var(--border); border-bottom: none;
+    flex-shrink: 0;
+  }
+  .tb-row-1 { flex-direction: column; overflow-x: unset; overflow-y: auto; padding: 6px 4px; gap: 5px; }
+  .tb-row-2 { flex-direction: column; overflow-x: unset; overflow-y: auto; padding: 6px 4px; gap: 5px; border-top: 1px solid rgba(143,163,184,.12); }
+  .tb-gap { display: none; }
+  /* Zykluslus-Pills vertikal */
+  .tb-pills { flex-direction: column; }
+  .tb-row-2 .tb2-price, .tb-row-2 .tb2-change { display: none; }  /* kein Platz */
+
+  /* Bottom Bar wird zur rechten vertikalen Leiste */
+  .bottom-bar {
+    flex-direction: column !important; width: 72px; height: 100%;
+    left: auto; right: 0; top: 0; bottom: auto;
+    border-top: none; border-left: 1px solid var(--border);
+    padding: 6px 4px; justify-content: flex-start; gap: 4px;
+    overflow-y: auto;
+  }
+  .bb-btn { max-width: none; width: 100%; }
+
+  /* Workspace bekommt die ganze Breite minus die beiden Seitenleisten */
+  .workspace { height: 100%; width: calc(100% - 172px); }
+
+  /* Panels öffnen nach links (rechte Bar) oder nach rechts (linke Bar) */
+  .dd-panel, .dd-panel--wide, .dd-panel--right {
+    bottom: auto !important; top: 0 !important;
+    left: auto !important; right: 72px !important;
+    width: auto !important; max-width: 65vw !important;
+    height: 100%; max-height: 100%; border-radius: 0;
+  }
+  .draw-sheet { bottom: 0; left: 100px; right: 72px; border-radius: 0; }
+}
+
+/* Schmale Geräte */
 @media (max-width: 380px) {
-  .action-btn, #indTrigger { width: 30px; height: 30px; }
-  .ab-icon, .ind-mobile-icon { width: 16px; height: 16px; }
-  .topbar { gap: 2px; padding: 4px 4px; }
-  .workspace { height: calc(100% - 39px); }   /* 4+30+4+1 */
-  .mib-asset { max-width: 34vw; font-size: 10px; }
-  .mib-price { font-size: 12px; }
-  .draw-sheet-grid { grid-template-columns: repeat(3, 1fr); }
+  .action-btn { width: 30px; height: 30px; }
+  .ab-icon { width: 16px; height: 16px; }
+  .topbar { gap: 2px; }
+  .bb-btn { font-size: 8px; }
 }
