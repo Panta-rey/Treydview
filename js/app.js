@@ -1833,6 +1833,7 @@ function currentOverlayStyles() {
 }
 
 function startTool(overlayName) {
+  window.__tvStartTool = startTool;   // Draw-Sheet-Zugriff
   // Freihand und Polyline laufen über eigene Maus-Handler, nicht über KLineCharts
   if (overlayName === "freehand") { stopPolyline(); startFreehand(); return; }
   if (overlayName === "polyline") { stopFreehand(); startPolyline(); return; }
@@ -2338,11 +2339,27 @@ function updatePriceHeader(last, prev) {
   const ref = prev || last;
   const change = ref.close ? ((last.close - ref.close) / ref.close) * 100 : 0;
   const d = last.close >= 100 ? 2 : 4;
+  const priceStr = last.close.toLocaleString("de-CH", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const changeStr = `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`;
+
   document.getElementById("phSymbol").textContent = state.symbol.label;
-  document.getElementById("phPrice").textContent = last.close.toLocaleString("de-CH", { minimumFractionDigits: d, maximumFractionDigits: d });
+  document.getElementById("phPrice").textContent  = priceStr;
   const chEl = document.getElementById("phChange");
-  chEl.textContent = `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`;
+  chEl.textContent = changeStr;
   chEl.className = "ph-change " + (change >= 0 ? "up" : "down");
+
+  // Mobile Info-Bar synchron halten
+  const mibPrice  = document.getElementById("mibPrice");
+  const mibChange = document.getElementById("mibChange");
+  const mibAsset  = document.getElementById("mibAsset");
+  const mibTf     = document.getElementById("mibTf");
+  if (mibAsset)  mibAsset.textContent  = state.symbol.label;
+  if (mibTf)     mibTf.textContent     = state.timeframe?.label || "–";
+  if (mibPrice)  mibPrice.textContent  = priceStr;
+  if (mibChange) {
+    mibChange.textContent = changeStr;
+    mibChange.style.color = change >= 0 ? "var(--up)" : "var(--down)";
+  }
 }
 
 function setLive(mode, text) {
@@ -2371,6 +2388,85 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
 // KLineCharts hat eingeschränkten Touch-Support. Wir ergänzen:
 // - Pinch-to-Zoom (zwei Finger) via touchstart/touchmove
 // - Einzel-Finger-Pan ist bereits in KLC eingebaut
+// ============================================================
+// MOBILE DRAW BOTTOM SHEET
+// ============================================================
+(function initDrawSheet() {
+  const btn      = document.getElementById("drawSheetBtn");
+  const sheet    = document.getElementById("drawSheet");
+  const backdrop = document.getElementById("drawSheetBackdrop");
+  const grid     = document.getElementById("drawSheetGrid");
+  if (!btn || !sheet || !grid) return;
+
+  const TOOL_ICONS = {
+    segment:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="20" x2="20" y2="4"/></svg>`,
+    horizontalLine:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="2" y1="12" x2="22" y2="12"/></svg>`,
+    verticalLine:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="2" x2="12" y2="22"/></svg>`,
+    priceLine:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="2" y1="8" x2="20" y2="8"/><rect x="20" y="5" width="2" height="6" rx="1"/></svg>`,
+    ray:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="20" x2="22" y2="4"/><circle cx="4" cy="20" r="2" fill="currentColor"/></svg>`,
+    rectangle:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="1"/></svg>`,
+    parallelChannel:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="2" y1="16" x2="22" y2="8"/><line x1="2" y1="20" x2="22" y2="12"/></svg>`,
+    polyline:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3,20 8,10 14,15 20,5"/></svg>`,
+    fibRetracement:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="2" y1="6" x2="22" y2="6"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="18" x2="22" y2="18"/></svg>`,
+    frvp:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="14" height="2"/><rect x="3" y="9" width="10" height="2"/><rect x="3" y="14" width="18" height="2"/><rect x="3" y="19" width="7" height="2"/></svg>`,
+    avwap:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 18 Q12 6 20 10"/><circle cx="4" cy="18" r="2" fill="currentColor"/></svg>`,
+    priceRange:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="4" x2="12" y2="20"/><line x1="6" y1="4" x2="18" y2="4"/><line x1="6" y1="20" x2="18" y2="20"/></svg>`,
+    simpleAnnotation:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
+    positionTool:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="2" x2="12" y2="22"/><polyline points="7,7 12,2 17,7"/><polyline points="7,17 12,22 17,17"/></svg>`,
+  };
+  const TOOL_LABELS = {
+    segment:"Linie", horizontalLine:"Horizontal", verticalLine:"Vertikal",
+    priceLine:"Preislinie", ray:"Ray", rectangle:"Rechteck",
+    parallelChannel:"Kanal", polyline:"Polylinie", fibRetracement:"Fibonacci",
+    frvp:"FRVP", avwap:"AVWAP", priceRange:"Preisbereich",
+    simpleAnnotation:"Notiz", positionTool:"L/S Position",
+  };
+
+  Object.entries(TOOL_LABELS).forEach(([key, label]) => {
+    const item = document.createElement("div");
+    item.className = "draw-sheet-item";
+    item.dataset.tool = key;
+    item.innerHTML = (TOOL_ICONS[key] || "") + `<span>${label}</span>`;
+    item.addEventListener("click", () => {
+      quiet(() => startTool(key), "draw-sheet tool");
+      closeSheet();
+    });
+    grid.appendChild(item);
+  });
+
+  const openSheet  = () => { sheet.classList.remove("hidden"); backdrop.classList.remove("hidden"); };
+  const closeSheet = () => { sheet.classList.add("hidden");    backdrop.classList.add("hidden");    };
+  btn.addEventListener("click", () => sheet.classList.contains("hidden") ? openSheet() : closeSheet());
+  backdrop.addEventListener("click", closeSheet);
+})();
+
+// Mobile Info-Bar
+(function initMobileInfoBar() {
+  const mibAsset  = document.getElementById("mibAsset");
+  const mibTf     = document.getElementById("mibTf");
+  if (!mibAsset) return;
+  mibAsset.addEventListener("click", () => document.getElementById("assetTrigger")?.click());
+  mibTf.addEventListener("click",   () => document.getElementById("tfTrigger")?.click());
+})();
+
+// SMC-Checkboxen im Ind-Panel mit Haupt-Panel syncen
+(function initSmcIndSync() {
+  const pairs = [
+    ["smcFvgBullInd","smcFvgBull"],["smcFvgBearInd","smcFvgBear"],
+    ["smcObBullInd","smcObBull"],["smcObBearInd","smcObBear"],
+    ["smcShowFilledInd","smcShowFilled"],
+  ];
+  pairs.forEach(([indId, mainId]) => {
+    const ind = document.getElementById(indId), main = document.getElementById(mainId);
+    if (!ind || !main) return;
+    ind.checked = main.checked;
+    ind.addEventListener("change",  () => { main.checked = ind.checked;  main.dispatchEvent(new Event("change")); });
+    main.addEventListener("change", () => { ind.checked  = main.checked; });
+  });
+  document.getElementById("smcScanBtnInd")?.addEventListener("click",  () => document.getElementById("smcScanBtn")?.click());
+  document.getElementById("smcClearBtnInd")?.addEventListener("click", () => document.getElementById("smcClearBtn")?.click());
+})();
+
 (function initTouch() {
   const el = document.getElementById("mainChart");
 

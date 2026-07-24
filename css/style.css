@@ -226,7 +226,158 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
 @media (max-width: 480px) { .cycle-pill { font-size: 10px; padding: 2px 5px; } }
 
-/* ---- Bottom-Sheet: Kontextmenüs auf Touch-Geräten ---- */
+/* ============================================================
+   MOBILE REDESIGN (≤720px / pointer:coarse)
+   Desktop bleibt unverändert.
+   ============================================================ */
+
+/* Hilfklasse: nur auf Mobile sichtbar */
+.mobile-only { display: none !important; }
+
+@media (max-width: 720px), (pointer: coarse) {
+
+  .mobile-only { display: flex !important; }
+
+  /* ---- 1f: Screenshot-Button ausblenden ---- */
+  #screenshotBtn { display: none !important; }
+
+  /* ---- 1g: Kerzen-Dropdown ausblenden ---- */
+  #typeDropdown { display: none !important; }
+
+  /* ---- 1c: + statt + Vergleich ---- */
+  .compare-label-full { display: none; }
+  .compare-label-short { display: inline; }
+
+  /* ---- 1e: Indikatoren als Lupe (Text ausblenden) ---- */
+  .ind-label-text { display: none; }
+  .ind-mobile-icon { display: block !important; }
+  #indTrigger { padding: 5px 8px; }
+
+  /* ---- 1b: Preis-Header ausblenden, Mobile-Info-Bar zeigen ---- */
+  .price-header { display: none; }
+
+  /* ---- 1d: SMC-Dropdown auf Desktop, im Ind-Panel auf Mobile ---- */
+  #smcDropdown { display: none !important; }
+  .smc-in-ind { display: block !important; }
+
+  /* ---- Zeichenstift-Button zeigen, Desktop-Drawbar ausblenden ---- */
+  .drawbar { display: none !important; }
+  #drawSheetBtn { display: flex !important; }
+
+  /* ---- Mobile Info-Bar ---- */
+  .mobile-info-bar {
+    display: flex !important; align-items: center; gap: 6px;
+    padding: 4px 8px; background: var(--bg-raised);
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .mib-asset {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-family: var(--font-mono); font-size: 11px;
+    padding: 2px 7px; cursor: pointer; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; max-width: 44vw;
+  }
+  .mib-tf {
+    background: none; border: 1px solid var(--accent); border-radius: 6px;
+    color: var(--accent); font-family: var(--font-mono); font-size: 11px;
+    padding: 2px 7px; cursor: pointer; white-space: nowrap;
+  }
+  .mib-price {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+    color: var(--text); margin-left: auto;
+  }
+  .mib-change {
+    font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+    white-space: nowrap;
+  }
+
+  /* ---- Topbar komprimieren ---- */
+  header { padding: 0 6px; gap: 4px; min-height: 46px; }
+  .dd-trigger { padding: 4px 7px; font-size: 11px; }
+  #assetTrigger { max-width: 38vw; overflow: hidden; }
+  #assetLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30vw; }
+
+  /* Zyklus-Ampel auf Mobile ausblenden (zu wenig Platz in der Topbar) */
+  .cycle-bar { display: none !important; }
+
+  /* ---- 2: Grid Bot Panel — kompakt, kein Overflow ---- */
+  #gbBar {
+    max-height: 75vh !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    width: 100vw !important;
+    left: 0 !important; right: 0 !important;
+    border-radius: 14px 14px 0 0;
+    max-width: none !important;
+  }
+  .gb-topbar { flex-wrap: wrap; gap: 4px; }
+  .gb-stat { font-size: 10px; }
+
+  /* ---- 3: Alle Dropdowns auf Screenbreite begrenzen ---- */
+  .dd-panel, .dd-panel--wide, .dd-panel--right {
+    max-width: calc(100vw - 16px) !important;
+    max-height: 60vh !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ---- 4: Watchlist als Bottom-Overlay, volle Breite ---- */
+  .watchlist {
+    width: 100% !important;
+    border-radius: 14px 14px 0 0;
+  }
+
+  /* ---- Chart-Legende komprimieren ---- */
+  .chart-legend { font-size: 10px; }
+  .lg-sym { font-size: 11px; }
+}
+
+/* ---- Draw Bottom Sheet ---- */
+.draw-sheet {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 500;
+  background: var(--bg-panel); border-top: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  padding: 0 12px max(16px, env(safe-area-inset-bottom));
+  max-height: 80vh; overflow-y: auto;
+  box-shadow: 0 -8px 32px rgba(0,0,0,.6);
+  transform: translateY(100%);
+  transition: transform .22s cubic-bezier(.4,0,.2,1);
+}
+.draw-sheet:not(.hidden) { transform: translateY(0); }
+.draw-sheet.hidden { display: none; }
+.draw-sheet-handle {
+  width: 38px; height: 4px; border-radius: 2px;
+  background: var(--border); margin: 10px auto 12px;
+}
+.draw-sheet-title {
+  font-family: var(--font-mono); font-size: 12px;
+  color: var(--text-dim); margin-bottom: 12px; text-align: center;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.draw-sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px; padding-bottom: 8px;
+}
+.draw-sheet-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 4px; border-radius: 8px; cursor: pointer;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  transition: background .1s, border-color .1s;
+  font-size: 10px; color: var(--text-dim); text-align: center;
+  line-height: 1.2;
+}
+.draw-sheet-item:hover, .draw-sheet-item.active {
+  background: var(--bg-hover); border-color: var(--accent); color: var(--accent);
+}
+.draw-sheet-item svg { width: 20px; height: 20px; }
+
+.draw-sheet-backdrop {
+  position: fixed; inset: 0; z-index: 499;
+  background: rgba(0,0,0,.4);
+}
+.draw-sheet-backdrop.hidden { display: none; }
+
+
 /* Statt am Finger zu erscheinen (öffnet am unteren Bildrand ins Nichts),
    fahren Menüs auf schmalen Touch-Screens von unten ein: volle Breite,
    grosse Tap-Ziele, scrollbar. Vergeben wird die Klasse in placeMenu(). */

@@ -32,7 +32,8 @@
   <!-- Vergleichs-Assets hinzufügen -->
   <div class="dropdown" id="compareDropdown">
     <button class="dd-trigger dd-compare" id="compareTrigger" title="Asset zum Vergleich hinzufügen">
-      <span>+ Vergleich</span>
+      <span class="compare-label-full">+ Vergleich</span>
+      <span class="compare-label-short">+</span>
     </button>
     <div class="dd-panel" id="comparePanel">
       <input class="dd-search" id="compareSearch" placeholder="Asset hinzufügen…" autocomplete="off">
@@ -55,11 +56,25 @@
   <!-- Indikatoren-Dropdown -->
   <div class="dropdown" id="indDropdown">
     <button class="dd-trigger" id="indTrigger">
-      <span>Indikatoren</span>
-      <span class="dd-arrow">▾</span>
+      <svg class="ab-icon ind-mobile-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>
+      <span class="ind-label-text">Indikatoren</span>
+      <span class="dd-arrow ind-label-text">▾</span>
     </button>
     <div class="dd-panel dd-panel--wide" id="indPanel">
       <div class="dd-list" id="indList"></div>
+      <!-- Auf Mobile: SMC direkt hier erreichbar statt über separaten Button -->
+      <div class="smc-in-ind mobile-only">
+        <div class="pat-group" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">Smart Money Concepts</div>
+        <label><input type="checkbox" id="smcFvgBullInd" checked> Bullish FVG</label>
+        <label><input type="checkbox" id="smcFvgBearInd" checked> Bearish FVG</label>
+        <label><input type="checkbox" id="smcObBullInd" checked> Bullish OB</label>
+        <label><input type="checkbox" id="smcObBearInd" checked> Bearish OB</label>
+        <label><input type="checkbox" id="smcShowFilledInd" checked> Gefüllte zeigen</label>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <button class="pat-scan" id="smcScanBtnInd">Scannen</button>
+          <button class="pat-clear" id="smcClearBtnInd">Löschen</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -253,17 +268,41 @@
       </svg>
     </button>
 
+    <!-- Zeichenstift-Icon (nur Mobile): öffnet Draw-Bottom-Sheet -->
+    <button class="action-btn mobile-only" id="drawSheetBtn" title="Zeichenwerkzeuge">
+      <svg viewBox="0 0 24 24" class="ab-icon" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+      </svg>
+    </button>
+
     <div class="live-badge" id="liveBadge">
       <span class="dot"></span><span id="liveText">–</span>
     </div>
   </div>
 </header>
 
+<!-- Draw-Bottom-Sheet (nur Mobile) -->
+<div id="drawSheet" class="draw-sheet hidden">
+  <div class="draw-sheet-handle"></div>
+  <div class="draw-sheet-title">Zeichenwerkzeuge</div>
+  <div class="draw-sheet-grid" id="drawSheetGrid"></div>
+</div>
+<div id="drawSheetBackdrop" class="draw-sheet-backdrop hidden"></div>
+
 <div class="workspace">
   <!-- Zeichenwerkzeuge -->
   <aside class="drawbar" id="drawbar"></aside>
 
   <div class="chart-col">
+    <!-- Mobile Info-Bar: Asset, TF, Preis, Änderung als Tappable-Zeile -->
+    <div class="mobile-info-bar mobile-only">
+      <button class="mib-asset" id="mibAsset">BTC/USDT (Binance)</button>
+      <button class="mib-tf" id="mibTf">1h</button>
+      <span class="mib-price" id="mibPrice">–</span>
+      <span class="mib-change" id="mibChange">–</span>
+    </div>
+
     <!-- Preis-Header -->
     <div class="price-header">
       <span class="ph-symbol" id="phSymbol">–</span>
