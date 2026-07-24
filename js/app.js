@@ -138,7 +138,7 @@ window.__tvState = state;
 // Sagt beim Start klar, welche Dateien tatsächlich laufen. Liefert der
 // Browser eine alte style.css aus dem Cache, fällt das hier sofort auf,
 // statt dass wir über nicht wirkende Regeln rätseln.
-const TV_BUILD = "m4";
+const TV_BUILD = "m5";
 window.__tvBuild = TV_BUILD;
 (function checkBuild() {
   const raw = getComputedStyle(document.documentElement)
@@ -2503,10 +2503,17 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
   const wlClose    = document.getElementById("wlCloseBtn");
   if (!mibAsset) return;
 
-  // Taps öffnen die jeweiligen Dropdowns
-  mibAsset.addEventListener("click",   () => document.getElementById("assetTrigger")?.click());
-  mibTf.addEventListener("click",      () => document.getElementById("tfTrigger")?.click());
-  mibCompare?.addEventListener("click",() => document.getElementById("compareTrigger")?.click());
+  // stopPropagation ist hier zwingend: ohne es öffnet der weitergeleitete
+  // Klick das Panel und steigt danach bis zum document weiter, wo der
+  // Schliesser für Klicks ausserhalb greift — das Panel ginge im selben
+  // Moment wieder zu, in dem es aufgeht.
+  const forward = (targetId) => (e) => {
+    e.stopPropagation();
+    document.getElementById(targetId)?.click();
+  };
+  mibAsset.addEventListener("click",    forward("assetTrigger"));
+  mibTf.addEventListener("click",       forward("tfTrigger"));
+  mibCompare?.addEventListener("click", forward("compareTrigger"));
 
   // Watchlist-Schliessen-Button auf Mobile
   // Watchlist schliessen — gleicher Weg wie der Toggle-Button,

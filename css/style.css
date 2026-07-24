@@ -620,7 +620,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 /* Build-Kennung: wird von app.js ausgelesen. Stimmt sie nicht mit der
    JS-Kennung überein, läuft eine alte Datei aus dem Cache — dann meldet
    die Konsole das beim Start deutlich. */
-:root { --tv-build: "m4"; }
+:root { --tv-build: "m5"; }
 
 /* ═══════════════════════════════════════════════════════════════
    MOBILE-SCHICHT
@@ -684,19 +684,30 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .mobile-only { display: flex !important; }
 
   /* ────────────────────────────────────────────
-     1 · TOPBAR — nur Icons, horizontal scrollbar
+     1 · TOPBAR — alle Icons in einer Zeile
      ──────────────────────────────────────────── */
+  /* z-index MUSS über dem Abdunkler (610) liegen.
+     .topbar hat z-index:50 + position:relative und erzeugt damit einen
+     Stapelkontext. Die Dropdown-Panels liegen darin — ihr eigenes
+     z-index:620 wird auf Ebene 50 gedeckelt und der Abdunkler auf
+     Body-Ebene (610) legt sich darüber. Genau deshalb wurde der
+     Bildschirm dunkler, ohne dass ein Panel erschien. */
   .topbar {
+    z-index: 630;
     flex-wrap: nowrap;
     overflow-x: auto;
     overflow-y: visible;
-    gap: 4px;
-    padding: 5px 8px;
+    gap: 3px;
+    padding: 5px 6px;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
   }
   .topbar::-webkit-scrollbar { display: none; }
   .topbar > * { flex-shrink: 0; }
+
+  /* Die Basis rechnet mit 53px Topbar. Auf Mobile sind es
+     5+34+5+1 = 45px — ohne Korrektur ragt der Chart unten hinaus. */
+  .workspace { height: calc(100% - 45px); }
 
   .brand { display: none; }
 
@@ -721,32 +732,40 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   /* Indikatoren nur als Lupe */
   .ind-label-text { display: none; }
   .ind-mobile-icon { display: block; }
+
+  /* Zehn Icons müssen auf 390px nebeneinander passen, sonst rutscht das
+     letzte (bisher der Zeichenstift) aus dem Bild:
+     378px nutzbar − 12px Lücken − 34px Lupe − 24px Lücken = 308px / 9 ≈ 34px */
+  .topbar-actions { display: flex; gap: 3px; margin-left: 0; }
+  .action-btn     { width: 34px; height: 34px; }
   #indTrigger {
-    width: 40px; height: 40px; padding: 0;
+    width: 34px; height: 34px; padding: 0;
     display: flex; align-items: center; justify-content: center;
   }
+  .ab-icon, .ind-mobile-icon { width: 18px; height: 18px; }
 
-  /* Alle Aktions-Icons gleich gross und gut treffbar */
-  .topbar-actions { display: flex; gap: 4px; margin-left: 0; }
-  .action-btn { width: 40px; height: 40px; }
-
-  /* Zeichenstift ein, Desktop-Werkzeugleiste aus */
-  #drawSheetBtn { display: flex !important; }
+  /* Zeichenstift nach vorn — er wird am häufigsten gebraucht und stand
+     bisher an letzter Stelle, also ausserhalb des sichtbaren Bereichs. */
+  #drawSheetBtn { display: flex !important; order: -1; }
   .drawbar { display: none !important; }
 
   /* ────────────────────────────────────────────
      2 · INFO-BAR — Asset / TF / Vergleich / Preis
      ──────────────────────────────────────────── */
+  /* Feste Höhe, damit die Legende darunter verlässlich platziert werden
+     kann. Ohne festen Wert hängt die Höhe an der Schriftgrösse und die
+     Legende landet wieder darüber. */
   .mobile-info-bar {
-    display: flex !important; align-items: center; gap: 5px;
-    padding: 5px 8px; flex-shrink: 0;
+    display: flex !important; align-items: center; gap: 6px;
+    height: 40px; box-sizing: border-box;
+    padding: 0 8px; flex-shrink: 0;
     background: var(--bg-raised); border-bottom: 1px solid var(--border);
     overflow: hidden;
   }
   .mib-asset, .mib-tf, .mib-compare {
     font-family: var(--font-mono); border-radius: 6px; cursor: pointer;
     background: transparent; border: 1px solid var(--border);
-    color: var(--text); padding: 4px 8px; font-size: 11px;
+    color: var(--text); padding: 5px 9px; font-size: 12px;
     white-space: nowrap; flex-shrink: 0;
   }
   .mib-asset {
@@ -754,26 +773,26 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
     max-width: 40vw; flex-shrink: 1; min-width: 0;
   }
   .mib-tf      { color: var(--accent); border-color: rgba(232,182,76,.45); }
-  .mib-compare { font-weight: 700; padding: 4px 9px; color: var(--text-dim); }
+  .mib-compare { font-weight: 700; padding: 5px 11px; color: var(--text-dim); }
   .mib-asset:active, .mib-tf:active, .mib-compare:active { border-color: var(--accent); }
 
   .mib-price {
-    font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+    font-family: var(--font-mono); font-size: 14px; font-weight: 700;
     color: var(--text); margin-left: auto; white-space: nowrap; flex-shrink: 0;
   }
   .mib-change {
-    font-family: var(--font-mono); font-size: 11px;
+    font-family: var(--font-mono); font-size: 12px;
     white-space: nowrap; flex-shrink: 0;
   }
 
   /* Doppelte Preiszeile entfällt — die Info-Bar zeigt dasselbe */
   .price-header { display: none !important; }
 
-  /* Legende: Symbol und Timeframe stehen bereits in der Info-Bar.
-     Hier bleibt nur O/H/L/C. Ohne nowrap, sonst läuft die Zeile
-     rechts aus dem Bild. Rechts bleibt Platz für die Preisskala. */
+  /* Legende UNTER die Info-Bar. Sie liegt absolut in .chart-col, dessen
+     Nullpunkt die Oberkante der Info-Bar ist — bei top:4px läge sie
+     mitten darauf. 40px Leiste + 6px Abstand = 46px. */
   .chart-legend {
-    top: 4px; left: 6px;
+    top: 46px; left: 6px;
     max-width: calc(100% - 92px);
   }
   .legend-ohlc .lg-sym, .legend-ohlc .lg-tf { display: none; }
@@ -905,7 +924,10 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
 /* Sehr schmale Geräte: Icons und Info-Bar nochmals enger */
 @media (max-width: 380px) {
-  .action-btn, #indTrigger { width: 36px; height: 36px; }
+  .action-btn, #indTrigger { width: 30px; height: 30px; }
+  .ab-icon, .ind-mobile-icon { width: 16px; height: 16px; }
+  .topbar { gap: 2px; padding: 4px 4px; }
+  .workspace { height: calc(100% - 39px); }   /* 4+30+4+1 */
   .mib-asset { max-width: 34vw; font-size: 10px; }
   .mib-price { font-size: 12px; }
   .draw-sheet-grid { grid-template-columns: repeat(3, 1fr); }
