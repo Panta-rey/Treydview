@@ -234,259 +234,6 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 /* Hilfklasse: nur auf Mobile sichtbar */
 .mobile-only { display: none !important; }
 
-@media (max-width: 720px), (pointer: coarse) {
-
-  .mobile-only { display: flex !important; }
-
-  /* ---- 1a: Asset, TF, Compare aus Topbar auf Mobile ausblenden ---- */
-  /* Sind jetzt in der Mobile Info-Bar vertreten */
-  #assetDropdown  { display: none !important; }
-  #tfDropdown     { display: none !important; }
-  #compareDropdown { display: none !important; }
-
-  /* ---- 1b: ph-symbol ausblenden, ph-change nicht overflow ---- */
-  .ph-symbol { display: none; }
-  .price-header { flex-wrap: nowrap; overflow: hidden; padding: 4px 8px 2px; }
-  .ph-price  { font-size: 15px; white-space: nowrap; }
-  .ph-change { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw; }
-
-  /* ---- 1f: Screenshot ausblenden ---- */
-  #screenshotBtn { display: none !important; }
-
-  /* ---- 1g: Kerzen ausblenden ---- */
-  #typeDropdown { display: none !important; }
-
-  /* ---- 1c: + statt + Vergleich ---- */
-  .compare-label-full { display: none; }
-  .compare-label-short { display: inline; }
-
-  /* ---- 1e: Indikatoren als Lupe ---- */
-  .ind-label-text { display: none; }
-  .ind-mobile-icon { display: block !important; }
-  #indTrigger { padding: 5px 8px; }
-
-  /* ---- 5: SMC wieder als Icon (nicht mehr in Ind-Panel) ---- */
-  #smcDropdown { display: flex !important; }
-  .smc-in-ind  { display: none !important; }
-
-  /* ---- 6: Long/Short aus Topbar (ist jetzt im Draw-Sheet) ---- */
-  #posToolTopBtn { display: none !important; }
-
-  /* ---- Zeichenstift zeigen, Drawbar ausblenden ---- */
-  .drawbar { display: none !important; }
-  #drawSheetBtn { display: flex !important; }
-
-  /* ---- Mobile Info-Bar ---- */
-  .mobile-info-bar {
-    display: flex !important; align-items: center; gap: 5px;
-    padding: 4px 8px; background: var(--bg-raised);
-    border-bottom: 1px solid var(--border); flex-shrink: 0; overflow: hidden;
-  }
-  .mib-asset {
-    background: none; border: 1px solid var(--border); border-radius: 6px;
-    color: var(--text); font-family: var(--font-mono); font-size: 11px;
-    padding: 2px 6px; cursor: pointer; white-space: nowrap;
-    overflow: hidden; text-overflow: ellipsis; max-width: 38vw; flex-shrink: 1;
-  }
-  .mib-tf {
-    background: none; border: 1px solid var(--accent); border-radius: 6px;
-    color: var(--accent); font-family: var(--font-mono); font-size: 11px;
-    padding: 2px 6px; cursor: pointer; white-space: nowrap; flex-shrink: 0;
-  }
-  .mib-compare {
-    background: none; border: 1px solid var(--border); border-radius: 6px;
-    color: var(--text-dim); font-family: var(--font-mono); font-size: 13px;
-    font-weight: 700; padding: 1px 7px; cursor: pointer; flex-shrink: 0;
-  }
-  .mib-price {
-    font-family: var(--font-mono); font-size: 13px; font-weight: 700;
-    color: var(--text); margin-left: auto; white-space: nowrap; flex-shrink: 0;
-  }
-  .mib-change {
-    font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
-    white-space: nowrap; flex-shrink: 0;
-  }
-
-  /* ---- Topbar komprimieren ---- */
-  header { padding: 0 6px; gap: 4px; min-height: 46px; }
-  .cycle-bar { display: none !important; }
-
-  /* ---- 2: Grid Bot kompakt ---- */
-  #gbBar {
-    max-height: 75vh !important; overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch; width: 100vw !important;
-    left: 0 !important; right: 0 !important;
-    border-radius: 14px 14px 0 0; max-width: none !important;
-  }
-
-  /* ---- 3: Alle Dropdowns auf Screen limitieren ---- */
-  .dd-panel, .dd-panel--wide, .dd-panel--right {
-    max-width: calc(100vw - 16px) !important;
-    max-height: 60vh !important; overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  /* ---- 4: Watchlist — Close-Button und Höhe ---- */
-  .watchlist {
-    width: 100% !important; border-radius: 14px 14px 0 0;
-    max-height: 80vh; overflow-y: auto;
-  }
-  .wl-close-btn {
-    background: none; border: none; color: var(--text-dim);
-    font-size: 16px; cursor: pointer; padding: 2px 6px; margin-left: auto;
-    flex-shrink: 0;
-  }
-  .wl-header { display: flex; align-items: center; gap: 6px; }
-
-  /* ---- Chart-Legende ---- */
-  .chart-legend { font-size: 10px; }
-
-
-/* ---- Draw Bottom Sheet ---- */
-.draw-sheet {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 500;
-  background: var(--bg-panel); border-top: 1px solid var(--border);
-  border-radius: 16px 16px 0 0;
-  padding: 0 12px max(16px, env(safe-area-inset-bottom));
-  max-height: 80vh; overflow-y: auto;
-  box-shadow: 0 -8px 32px rgba(0,0,0,.6);
-  transform: translateY(100%);
-  transition: transform .22s cubic-bezier(.4,0,.2,1);
-}
-.draw-sheet:not(.hidden) { transform: translateY(0); }
-.draw-sheet.hidden { display: none; }
-.draw-sheet-handle {
-  width: 38px; height: 4px; border-radius: 2px;
-  background: var(--border); margin: 10px auto 12px;
-}
-.draw-sheet-title {
-  font-family: var(--font-mono); font-size: 12px;
-  color: var(--text-dim); margin-bottom: 12px; text-align: center;
-  text-transform: uppercase; letter-spacing: .06em;
-}
-.draw-sheet-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px; padding-bottom: 8px;
-}
-.draw-sheet-item {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 10px 4px; border-radius: 8px; cursor: pointer;
-  background: var(--bg-raised); border: 1px solid var(--border);
-  transition: background .1s, border-color .1s;
-  font-size: 10px; color: var(--text-dim); text-align: center;
-  line-height: 1.2;
-}
-.draw-sheet-item:hover, .draw-sheet-item.active {
-  background: var(--bg-hover); border-color: var(--accent); color: var(--accent);
-}
-.draw-sheet-item svg { width: 20px; height: 20px; }
-
-.draw-sheet-backdrop {
-  position: fixed; inset: 0; z-index: 499;
-  background: rgba(0,0,0,.4);
-}
-.draw-sheet-backdrop.hidden { display: none; }
-
-
-/* Statt am Finger zu erscheinen (öffnet am unteren Bildrand ins Nichts),
-   fahren Menüs auf schmalen Touch-Screens von unten ein: volle Breite,
-   grosse Tap-Ziele, scrollbar. Vergeben wird die Klasse in placeMenu(). */
-@media (max-width: 720px) {
-  .as-sheet {
-    left: 0 !important;
-    right: 0 !important;
-    top: auto !important;
-    bottom: 0 !important;
-    width: 100% !important;
-    max-width: none !important;
-    max-height: 72vh;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    border-radius: 14px 14px 0 0;
-    border-left: none;
-    border-right: none;
-    border-bottom: none;
-    padding-bottom: max(16px, env(safe-area-inset-bottom));
-    box-shadow: 0 -8px 32px rgba(0,0,0,.6);
-    animation: tvSheetUp .18s ease-out;
-  }
-  /* Greifbarer "Ziehgriff" oben — signalisiert Sheet-Charakter */
-  .as-sheet::before {
-    content: "";
-    display: block;
-    width: 38px;
-    height: 4px;
-    margin: 2px auto 10px;
-    border-radius: 2px;
-    background: var(--border);
-    flex-shrink: 0;
-  }
-  /* Einträge im Sheet grösser antippbar */
-  .as-sheet .overlay-menu-item { padding: 14px 18px; font-size: 14px; }
-  .as-sheet .frvp-row { padding: 10px 0; }
-}
-@keyframes tvSheetUp {
-  from { transform: translateY(100%); }
-  to   { transform: translateY(0); }
-}
-
-/* ---- Mobile Layout: Watchlist als Overlay, Drawbar unten ---- */
-/* Auf schmalen Screens wird die Watchlist (210px) nicht mehr als Spalte
-   neben den Chart gequetscht (→ Chart nur 124px), sondern als Overlay
-   das sich von rechts über den Chart schiebt. Drawbar wandert nach unten
-   (horizontal), damit der Chart die volle Breite bekommt. */
-@media (max-width: 720px) {
-  /* Workspace: nur chart-col füllt die ganze Breite */
-  .workspace { flex-direction: column; }
-
-  /* Drawbar: horizontal am unteren Rand */
-  .drawbar {
-    flex-direction: row;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    width: 100%;
-    height: auto;
-    border-right: none;
-    border-top: 1px solid var(--border);
-    padding: 6px 8px;
-    gap: 4px;
-    order: 2;   /* chart-col zuerst, drawbar danach */
-  }
-
-  /* chart-col nimmt vollen Platz */
-  .chart-col { order: 1; flex: 1; min-height: 0; }
-
-  /* Watchlist: festes Overlay von rechts, schliesst sich über den Chart */
-  .watchlist {
-    position: fixed;
-    top: 0;
-    right: 0;
-    height: 100%;
-    width: min(280px, 85vw);
-    z-index: 300;
-    transform: translateX(100%);
-    transition: transform 0.22s ease;
-    border-left: 1px solid var(--border);
-    box-shadow: -4px 0 24px rgba(0,0,0,0.5);
-  }
-  /* Sichtbar wenn watchlistOpen */
-  .watchlist:not(.hidden) {
-    transform: translateX(0);
-  }
-  /* Backdrop hinter der Watchlist */
-  .watchlist:not(.hidden)::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.45);
-    z-index: -1;
-  }
-
-  /* Drawbar fly-outs klappen auf Mobile nach oben auf — die Positionierung
-     macht renderDrawbar() im JS (Inline-Styles schlagen Stylesheet-Regeln). */
-}
 .topbar-actions{display:flex;gap:4px;margin-left:4px;}
 .action-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:transparent;color:var(--text-dim);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;padding:0;transition:color .12s,border-color .12s,background .12s;}
 .action-btn:hover{color:var(--text);border-color:rgba(232,182,76,.5);background:var(--bg-hover);}
@@ -868,3 +615,298 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .pat-b { overflow: hidden; }
 .pat-fig { float: right; width: 140px; height: 76px; margin: 0 0 4px 12px;
   background: rgba(143,163,184,0.05); border: 1px solid var(--border); border-radius: 4px; }
+
+
+/* Build-Kennung: wird von app.js ausgelesen. Stimmt sie nicht mit der
+   JS-Kennung überein, läuft eine alte Datei aus dem Cache — dann meldet
+   die Konsole das beim Start deutlich. */
+:root { --tv-build: "m4"; }
+
+/* ═══════════════════════════════════════════════════════════════
+   MOBILE-SCHICHT
+   Eine einzige, zusammenhängende Schicht. Greift bei ≤720px ODER
+   bei Touch-Geräten. Der Desktop bleibt unberührt — alles hier
+   sind Overrides, keine Basis-Definitionen.
+
+   Grundgedanke:
+     Topbar      = nur Icons, horizontal scrollbar
+     Info-Bar    = Asset / Timeframe / Vergleich / Preis
+     Alle Panels = Bottom-Sheets von unten, nie über den Rand
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ---- Basis für Mobile-Komponenten (gilt überall, greift nur wenn sichtbar) ---- */
+.mobile-only { display: none !important; }
+
+/* Gemeinsames Bottom-Sheet-Aussehen. Wird per Media-Query aktiviert. */
+.sheet-handle {
+  width: 38px; height: 4px; border-radius: 2px;
+  background: var(--border); margin: 9px auto 10px; flex-shrink: 0;
+}
+
+/* Draw-Sheet: Zeichenwerkzeuge als Raster */
+.draw-sheet {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 620;
+  background: var(--bg-raised); border-top: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  padding: 0 10px calc(14px + env(safe-area-inset-bottom));
+  max-height: 74vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  box-shadow: 0 -8px 32px rgba(0,0,0,.55);
+}
+.draw-sheet.hidden { display: none; }
+.draw-sheet-title {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  text-align: center; text-transform: uppercase; letter-spacing: .07em;
+  margin-bottom: 10px;
+}
+.draw-sheet-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.draw-sheet-item {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 11px 3px; border-radius: 9px; cursor: pointer;
+  background: var(--bg); border: 1px solid var(--border);
+  font-size: 9.5px; line-height: 1.15; color: var(--text-dim); text-align: center;
+  transition: border-color .12s, color .12s;
+}
+.draw-sheet-item:active { border-color: var(--accent); color: var(--accent); }
+.draw-sheet-item svg { width: 19px; height: 19px; flex-shrink: 0; }
+.ds-glyph {
+  font-size: 17px; line-height: 1; color: var(--text);
+  height: 20px; display: flex; align-items: center; justify-content: center;
+}
+.draw-sheet-item:active .ds-glyph { color: var(--accent); }
+
+/* Gemeinsamer Abdunkler hinter jedem geöffneten Sheet */
+.sheet-backdrop { position: fixed; inset: 0; z-index: 610; background: rgba(0,0,0,.45); }
+.sheet-backdrop.hidden { display: none; }
+
+
+@media (max-width: 720px), (pointer: coarse) {
+
+  .mobile-only { display: flex !important; }
+
+  /* ────────────────────────────────────────────
+     1 · TOPBAR — nur Icons, horizontal scrollbar
+     ──────────────────────────────────────────── */
+  .topbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: visible;
+    gap: 4px;
+    padding: 5px 8px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .topbar::-webkit-scrollbar { display: none; }
+  .topbar > * { flex-shrink: 0; }
+
+  .brand { display: none; }
+
+  /* Asset / Timeframe / Vergleich sind in der Info-Bar vertreten.
+     WICHTIG: nur den Auslöser ausblenden, nicht den Container — sonst
+     wäre das zugehörige Panel mit versteckt und liesse sich nie öffnen.
+     Das Panel ist fixed positioniert und braucht den Anker ohnehin nicht. */
+  #assetDropdown, #tfDropdown, #compareDropdown {
+    position: static; width: 0; padding: 0; margin: 0;
+  }
+  #assetDropdown > .dd-trigger,
+  #tfDropdown    > .dd-trigger,
+  #compareDropdown > .dd-trigger { display: none !important; }
+
+  /* Auf dem Handy überflüssig */
+  #typeDropdown, #screenshotBtn { display: none !important; }
+  /* Im Draw-Sheet enthalten */
+  #posToolTopBtn { display: none !important; }
+  /* Kein Platz in der Icon-Reihe — Werte bleiben im Bot-Panel */
+  .cycle-bar, .live-badge { display: none !important; }
+
+  /* Indikatoren nur als Lupe */
+  .ind-label-text { display: none; }
+  .ind-mobile-icon { display: block; }
+  #indTrigger {
+    width: 40px; height: 40px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Alle Aktions-Icons gleich gross und gut treffbar */
+  .topbar-actions { display: flex; gap: 4px; margin-left: 0; }
+  .action-btn { width: 40px; height: 40px; }
+
+  /* Zeichenstift ein, Desktop-Werkzeugleiste aus */
+  #drawSheetBtn { display: flex !important; }
+  .drawbar { display: none !important; }
+
+  /* ────────────────────────────────────────────
+     2 · INFO-BAR — Asset / TF / Vergleich / Preis
+     ──────────────────────────────────────────── */
+  .mobile-info-bar {
+    display: flex !important; align-items: center; gap: 5px;
+    padding: 5px 8px; flex-shrink: 0;
+    background: var(--bg-raised); border-bottom: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .mib-asset, .mib-tf, .mib-compare {
+    font-family: var(--font-mono); border-radius: 6px; cursor: pointer;
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text); padding: 4px 8px; font-size: 11px;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .mib-asset {
+    overflow: hidden; text-overflow: ellipsis;
+    max-width: 40vw; flex-shrink: 1; min-width: 0;
+  }
+  .mib-tf      { color: var(--accent); border-color: rgba(232,182,76,.45); }
+  .mib-compare { font-weight: 700; padding: 4px 9px; color: var(--text-dim); }
+  .mib-asset:active, .mib-tf:active, .mib-compare:active { border-color: var(--accent); }
+
+  .mib-price {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+    color: var(--text); margin-left: auto; white-space: nowrap; flex-shrink: 0;
+  }
+  .mib-change {
+    font-family: var(--font-mono); font-size: 11px;
+    white-space: nowrap; flex-shrink: 0;
+  }
+
+  /* Doppelte Preiszeile entfällt — die Info-Bar zeigt dasselbe */
+  .price-header { display: none !important; }
+
+  /* Legende: Symbol und Timeframe stehen bereits in der Info-Bar.
+     Hier bleibt nur O/H/L/C. Ohne nowrap, sonst läuft die Zeile
+     rechts aus dem Bild. Rechts bleibt Platz für die Preisskala. */
+  .chart-legend {
+    top: 4px; left: 6px;
+    max-width: calc(100% - 92px);
+  }
+  .legend-ohlc .lg-sym, .legend-ohlc .lg-tf { display: none; }
+  .legend-line {
+    white-space: normal; flex-wrap: wrap;
+    gap: 0 4px; font-size: 9.5px; line-height: 1.35;
+  }
+  .legend-body { gap: 1px; padding: 1px 3px; }
+
+  /* ────────────────────────────────────────────
+     3 · ALLE DROPDOWNS WERDEN BOTTOM-SHEETS
+     Ein Muster für alles: Indikatoren, Muster,
+     SMC, Layouts, Vergleich, Asset, Timeframe.
+     ──────────────────────────────────────────── */
+  .dd-panel, .dd-panel--wide, .dd-panel--right {
+    position: fixed !important;
+    top: auto !important; bottom: 0 !important;
+    left: 0 !important; right: 0 !important;
+    width: 100% !important; min-width: 0 !important; max-width: none !important;
+    max-height: 72vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    border-radius: 16px 16px 0 0;
+    border-left: none; border-right: none; border-bottom: none;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 32px rgba(0,0,0,.55);
+    z-index: 620;
+  }
+  /* Griff-Andeutung oben in jedem Sheet */
+  .dd-panel.open::before {
+    content: ""; display: block;
+    width: 38px; height: 4px; border-radius: 2px;
+    background: var(--border); margin: 9px auto 8px;
+  }
+  /* Suchfeld im Sheet oben festhalten */
+  .dd-search {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--bg-raised); font-size: 15px; padding: 11px 13px;
+  }
+  .dd-item { padding: 13px 15px; font-size: 13.5px; }
+
+  /* Kontextmenüs (placeMenu → .as-sheet) im gleichen Muster */
+  .as-sheet {
+    left: 0 !important; right: 0 !important;
+    top: auto !important; bottom: 0 !important;
+    width: 100% !important; max-width: none !important;
+    max-height: 72vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    border-radius: 16px 16px 0 0;
+    border-left: none; border-right: none; border-bottom: none;
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 32px rgba(0,0,0,.55);
+  }
+  .as-sheet::before {
+    content: ""; display: block;
+    width: 38px; height: 4px; border-radius: 2px;
+    background: var(--border); margin: 2px auto 10px; flex-shrink: 0;
+  }
+  .as-sheet .om-row,
+  .as-sheet .om-check      { padding: 12px 16px; font-size: 14px; }
+  .as-sheet .overlay-menu-del { padding: 14px 16px; font-size: 14px; }
+
+  /* ────────────────────────────────────────────
+     4 · WATCHLIST als Bottom-Sheet mit Schliessen
+     ──────────────────────────────────────────── */
+  .watchlist {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    width: 100% !important; max-width: none;
+    max-height: 70vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    border-left: none; border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: 0 -8px 32px rgba(0,0,0,.55);
+    z-index: 620;
+  }
+  .wl-header {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--bg-raised); gap: 8px;
+  }
+  .wl-close-btn {
+    display: flex !important; align-items: center; justify-content: center;
+    width: 30px; height: 30px; flex-shrink: 0;
+    background: transparent; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text-dim); font-size: 15px; line-height: 1; cursor: pointer;
+  }
+  .wl-close-btn:active { border-color: var(--accent); color: var(--accent); }
+  .wl-item { padding: 12px 12px; }
+
+  /* ────────────────────────────────────────────
+     5 · GRID-BOT als Bottom-Sheet
+     ──────────────────────────────────────────── */
+  .gb-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    width: 100% !important; max-width: none !important;
+    max-height: 78vh !important; height: auto !important;
+    overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
+    border-radius: 16px 16px 0 0; border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: 0 -8px 32px rgba(0,0,0,.55);
+    z-index: 620;
+  }
+  /* Kopfzeile: umbrechen statt rechts hinauslaufen.
+     Nur so bleiben Auf-/Zuklappen und Schliessen erreichbar. */
+  .gb-status {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--bg-raised);
+    flex-wrap: wrap; gap: 5px 10px; padding: 8px 10px; font-size: 11px;
+  }
+  .gb-stat   { font-size: 10px; }
+  .gb-sep-v  { display: none; }
+  .gb-spacer { flex-basis: 100%; height: 0; }   /* erzwingt Umbruch vor den Icons */
+
+  /* Reiter (Strategie / Daten / Einstellungen) sind direkte Kinder von
+     .gb-status — der Umbruch dort greift bereits, hier nur die Grösse */
+  .gb-tab  { font-size: 11px; padding: 6px 9px; }
+
+  /* Inhalt: breite Tabellen horizontal scrollen statt überlaufen */
+  .gb-pane, .gb-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .gb-strat-row { flex-direction: column; }
+  .gb-strat-row .gb-reco { max-width: none; }
+  /* Zieh-Griff zum Höhenverstellen ist im Sheet sinnlos */
+  .gb-resize { display: none; }
+
+  /* ────────────────────────────────────────────
+     6 · Einstellungs-Dialoge im Rahmen halten
+     ──────────────────────────────────────────── */
+  .settings-panel, .frvp-menu, .fib-menu {
+    max-width: calc(100vw - 16px) !important;
+    max-height: 80vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Sehr schmale Geräte: Icons und Info-Bar nochmals enger */
+@media (max-width: 380px) {
+  .action-btn, #indTrigger { width: 36px; height: 36px; }
+  .mib-asset { max-width: 34vw; font-size: 10px; }
+  .mib-price { font-size: 12px; }
+  .draw-sheet-grid { grid-template-columns: repeat(3, 1fr); }
+}
