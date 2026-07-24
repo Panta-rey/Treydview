@@ -608,10 +608,25 @@ async function loadData() {
 }
 
 // ---------- Dropdowns ----------
+// Auf Mobile werden alle .dd-panel per CSS zu Bottom-Sheets. Damit klar ist,
+// dass ein Sheet offen ist, blenden wir denselben Abdunkler ein, den auch
+// das Zeichen-Sheet nutzt.
+function syncSheetBackdrop() {
+  const bd = document.getElementById("drawSheetBackdrop");
+  if (!bd) return;
+  const isMobile = window.matchMedia("(max-width: 720px), (pointer: coarse)").matches;
+  const anyOpen  = isMobile && (
+       document.querySelector(".dd-panel.open")
+    || !document.getElementById("drawSheet")?.classList.contains("hidden")
+  );
+  bd.classList.toggle("hidden", !anyOpen);
+}
+
 function initDropdowns() {
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".dropdown")) {
       document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
+      syncSheetBackdrop();
     }
   });
   ["assetDropdown", "compareDropdown", "tfDropdown", "typeDropdown", "indDropdown", "layoutDropdown", "patternDropdown", "smcDropdown"].forEach(id => {
@@ -624,6 +639,7 @@ function initDropdowns() {
       const wasOpen = panel.classList.contains("open");
       document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
       if (!wasOpen) panel.classList.add("open");
+      syncSheetBackdrop();
       if (id === "assetDropdown" && !wasOpen) {
         setTimeout(() => document.getElementById("assetSearch").focus(), 30);
       }
@@ -2398,46 +2414,61 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
   const grid     = document.getElementById("drawSheetGrid");
   if (!btn || !sheet || !grid) return;
 
-  const TOOL_ICONS = {
-    segment:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="20" x2="20" y2="4"/></svg>`,
-    horizontalLine:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="2" y1="12" x2="22" y2="12"/></svg>`,
-    verticalLine:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="2" x2="12" y2="22"/></svg>`,
-    priceLine:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="2" y1="8" x2="20" y2="8"/><rect x="20" y="5" width="2" height="6" rx="1"/></svg>`,
-    ray:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="20" x2="22" y2="4"/><circle cx="4" cy="20" r="2" fill="currentColor"/></svg>`,
-    rectangle:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="1"/></svg>`,
-    parallelChannel:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="2" y1="16" x2="22" y2="8"/><line x1="2" y1="20" x2="22" y2="12"/></svg>`,
-    polyline:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3,20 8,10 14,15 20,5"/></svg>`,
-    fibRetracement:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="2" y1="6" x2="22" y2="6"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="18" x2="22" y2="18"/></svg>`,
-    frvp:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="14" height="2"/><rect x="3" y="9" width="10" height="2"/><rect x="3" y="14" width="18" height="2"/><rect x="3" y="19" width="7" height="2"/></svg>`,
-    avwap:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 18 Q12 6 20 10"/><circle cx="4" cy="18" r="2" fill="currentColor"/></svg>`,
-    priceRange:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="4" x2="12" y2="20"/><line x1="6" y1="4" x2="18" y2="4"/><line x1="6" y1="20" x2="18" y2="20"/></svg>`,
-    simpleAnnotation:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
-    positionTool:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="2" x2="12" y2="22"/><polyline points="7,7 12,2 17,7"/><polyline points="7,17 12,22 17,17"/></svg>`,
-  };
-  const TOOL_LABELS = {
-    segment:"Linie", horizontalLine:"Horizontal", verticalLine:"Vertikal",
-    priceLine:"Preislinie", ray:"Ray", rectangle:"Rechteck",
-    parallelChannel:"Kanal", polyline:"Polylinie", fibRetracement:"Fibonacci",
-    frvp:"FRVP", avwap:"AVWAP", priceRange:"Preisbereich",
-    simpleAnnotation:"Notiz", positionTool:"L/S Position",
-  };
+  // Symbole: erst aus CONFIG.DRAW_TOOLS, Rest hier ergaenzt.
+  // Die Werkzeugliste selbst kommt aus DRAW_CATEGORIES — damit koennen
+  // Sheet und Desktop-Drawbar nie auseinanderlaufen.
+  const GLYPH = {};
+  (CONFIG.DRAW_TOOLS || []).forEach(t => { GLYPH[t.overlay] = t.icon; });
+  Object.assign(GLYPH, {
+    polyline: "⋀", avwap: "⌁", simpleAnnotation: "✎",
+    freehand: "✐", positionTool: "⇅",
+  });
 
-  Object.entries(TOOL_LABELS).forEach(([key, label]) => {
+  // Flache Liste aller Werkzeuge + Positions-Tool
+  const tools = [];
+  DRAW_CATEGORIES.forEach(cat => cat.tools.forEach(t => tools.push(t)));
+  tools.push({ overlay: "positionTool", label: "Long / Short" });
+
+  tools.forEach(t => {
     const item = document.createElement("div");
     item.className = "draw-sheet-item";
-    item.dataset.tool = key;
-    item.innerHTML = (TOOL_ICONS[key] || "") + `<span>${label}</span>`;
-    item.addEventListener("click", () => {
-      quiet(() => startTool(key), "draw-sheet tool");
+    item.dataset.tool = t.overlay;
+    item.innerHTML = `<span class="ds-glyph">${GLYPH[t.overlay] || "•"}</span><span>${t.label}</span>`;
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      quiet(() => startTool(t.overlay), "draw-sheet " + t.overlay);
       closeSheet();
     });
     grid.appendChild(item);
   });
 
-  const openSheet  = () => { sheet.classList.remove("hidden"); backdrop.classList.remove("hidden"); };
-  const closeSheet = () => { sheet.classList.add("hidden");    backdrop.classList.add("hidden");    };
-  btn.addEventListener("click", () => sheet.classList.contains("hidden") ? openSheet() : closeSheet());
-  backdrop.addEventListener("click", closeSheet);
+  // Zeichenstil ist auf dem Handy sonst nicht erreichbar (Drawbar ist aus)
+  const styleItem = document.createElement("div");
+  styleItem.className = "draw-sheet-item";
+  styleItem.innerHTML = `<span class="ds-glyph">◑</span><span>Stil</span>`;
+  styleItem.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeSheet();
+    quiet(() => toggleDrawStylePopover(), "draw-sheet stil");
+  });
+  grid.appendChild(styleItem);
+
+  const openSheet = () => {
+    document.querySelectorAll(".dd-panel.open").forEach(p => p.classList.remove("open"));
+    sheet.classList.remove("hidden");
+    syncSheetBackdrop();
+  };
+  const closeSheet = () => { sheet.classList.add("hidden"); syncSheetBackdrop(); };
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    sheet.classList.contains("hidden") ? openSheet() : closeSheet();
+  });
+  backdrop.addEventListener("click", () => {
+    closeSheet();
+    document.querySelectorAll(".dd-panel.open").forEach(p => p.classList.remove("open"));
+    syncSheetBackdrop();
+  });
 })();
 
 // Mobile Info-Bar
@@ -2454,10 +2485,14 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
   mibCompare?.addEventListener("click",() => document.getElementById("compareTrigger")?.click());
 
   // Watchlist-Schliessen-Button auf Mobile
-  wlClose?.addEventListener("click", () => {
+  // Watchlist schliessen — gleicher Weg wie der Toggle-Button,
+  // damit Zustand, Persistenz und Chart-Resize konsistent bleiben.
+  wlClose?.addEventListener("click", (e) => {
+    e.stopPropagation();
     state.watchlistOpen = false;
-    document.getElementById("watchlist")?.classList.add("hidden");
     saveWorkspace();
+    renderWatchlist();
+    setTimeout(resize, 50);
   });
 })();
 
@@ -2538,11 +2573,24 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
     lpStart = { x: t.clientX, y: t.clientY };
     lpTimer = setTimeout(() => {
       if (!lpStart) return;
+      const pos = { x: lpStart.x, y: lpStart.y };
+      cancelLP();
+      // Ist eine Zeichnung ausgewählt, öffnen wir deren Menü direkt.
+      // Ein synthetisches contextmenu-Event bringt nichts: KLineCharts
+      // führt dabei keine Treffer-Prüfung auf Overlays durch, das Menü
+      // käme also nie zustande.
+      if (state.selectedOverlayId) {
+        quiet(() => {
+          const ov = chart.getOverlayById(state.selectedOverlayId);
+          if (ov) openOverlayMenu(ov, { clientX: pos.x, clientY: pos.y, pageX: pos.x, pageY: pos.y });
+        }, "long-press overlay menu");
+        return;
+      }
+      // Sonst: normales Kontextmenü des Charts
       el.dispatchEvent(new MouseEvent("contextmenu", {
         bubbles: true, cancelable: true,
-        clientX: lpStart.x, clientY: lpStart.y,
+        clientX: pos.x, clientY: pos.y,
       }));
-      cancelLP();
     }, LP_MS);
   }, { passive: true });
 
@@ -2591,21 +2639,29 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
     }
   }, { passive: true });
 
-  // ---------- Doppeltouch: selektiertes Overlay löschen (Mobile-Ersatz für Rechtsklick+Löschen) ----------
+  // ---------- Doppeltipp löscht die ausgewählte Zeichnung ----------
+  // Ersatz für «Rechtsklick → Löschen» auf dem Desktop. Greift nur, wenn
+  // wirklich eine Zeichnung ausgewählt ist, und nicht auf der Preisskala
+  // (dort ist der Doppeltipp bereits mit Auto-Fit belegt).
   let lastTapTime = 0;
   el.addEventListener("touchend", (e) => {
-    if (e.touches.length !== 0) return;   // nur wenn alle Finger weg
+    const finished = e.touches.length === 0;
+    const t = e.changedTouches && e.changedTouches[0];
+    const onAxis = t ? inAxisZone(t) : false;
     const now = Date.now();
-    if (now - lastTapTime < 300 && state.selectedOverlayId) {
-      // Doppeltipp innerhalb 300ms + Overlay selektiert → löschen
+
+    if (finished && !onAxis && now - lastTapTime < 320 && state.selectedOverlayId) {
       quiet(() => {
         chart.removeOverlay(state.selectedOverlayId);
         state.selectedOverlayId = null;
+        setStatus("Zeichnung gelöscht");
       }, "dbl-tap delete");
+      lastTapTime = 0;   // verhindert Dreifach-Auslösung
+    } else if (finished) {
+      lastTapTime = now;
     }
-    lastTapTime = now;
-    cancelLP();
-    yDrag = null;
+
+    if (finished) { cancelLP(); yDrag = null; }
   }, { passive: true });
 
   el.addEventListener("touchcancel", () => { cancelLP(); yDrag = null; }, { passive: true });
