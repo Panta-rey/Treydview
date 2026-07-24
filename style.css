@@ -617,6 +617,11 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   background: rgba(143,163,184,0.05); border: 1px solid var(--border); border-radius: 4px; }
 
 
+/* Build-Kennung: wird von app.js ausgelesen. Stimmt sie nicht mit der
+   JS-Kennung überein, läuft eine alte Datei aus dem Cache — dann meldet
+   die Konsole das beim Start deutlich. */
+:root { --tv-build: "m4"; }
+
 /* ═══════════════════════════════════════════════════════════════
    MOBILE-SCHICHT
    Eine einzige, zusammenhängende Schicht. Greift bei ≤720px ODER
