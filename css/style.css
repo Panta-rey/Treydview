@@ -186,22 +186,45 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 }
 
 /* ---- Zyklus-Ampel (Topbar) ---- */
-/* Zeigt Mayer / F&G / Funding permanent — unabhängig vom Bot-Panel.
-   Drei farbcodierte Pills: grün = günstig, gelb = neutral, rot = teuer/gierig. */
 .cycle-bar {
-  display: flex; align-items: center; gap: 4px;
-  padding: 0 6px; cursor: pointer;
+  display: flex; align-items: center; gap: 4px; padding: 0 4px;
 }
 .cycle-pill {
-  font-family: var(--font-mono); font-size: 10px;
-  padding: 2px 6px; border-radius: 10px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  padding: 3px 7px; border-radius: 10px; cursor: pointer;
   background: var(--bg-raised); border: 1px solid var(--border);
-  color: var(--text-dim); white-space: nowrap; transition: color .2s, border-color .2s;
+  color: var(--text-dim); white-space: nowrap;
+  transition: color .15s, border-color .15s, background .15s;
+  user-select: none;
 }
-.cycle-pill.good  { color: var(--up);   border-color: var(--up);   }
-.cycle-pill.warn  { color: var(--down); border-color: var(--down); }
-.cycle-pill.neut  { color: var(--accent); border-color: var(--accent); }
-@media (max-width: 480px) { .cycle-bar { display: none; } }
+.cycle-pill:hover  { background: var(--bg-hover); }
+.cycle-pill.good   { color: var(--up);     border-color: var(--up);     background: rgba(var(--up-rgb, 59,179,108), .12); }
+.cycle-pill.warn   { color: var(--down);   border-color: var(--down);   background: rgba(var(--down-rgb, 214,77,77), .12); }
+.cycle-pill.neut   { color: var(--accent); border-color: var(--accent); background: rgba(var(--accent-rgb, 232,182,76), .12); }
+
+/* Popover */
+.cycle-popover {
+  position: fixed; z-index: 9000;
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px; min-width: 180px; max-width: 260px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.5);
+  animation: cpFadeIn .12s ease;
+}
+.cycle-popover.hidden { display: none; }
+@keyframes cpFadeIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+.cp-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+.cp-value { font-family: var(--font-mono); font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+.cp-desc  { font-size: 11px; color: var(--text-dim); line-height: 1.5; }
+.cp-value.good { color: var(--up);     }
+.cp-value.warn { color: var(--down);   }
+.cp-value.neut { color: var(--accent); }
+
+/* Zyklus-Tabelle im FAQ */
+.faq-table { width:100%; border-collapse:collapse; margin-top:8px; }
+.faq-table td { padding: 5px 8px; font-size:12px; vertical-align:top; }
+.faq-table td:first-child { white-space:nowrap; padding-right:12px; }
+
+@media (max-width: 480px) { .cycle-pill { font-size: 10px; padding: 2px 5px; } }
 
 /* ---- Bottom-Sheet: Kontextmenüs auf Touch-Geräten ---- */
 /* Statt am Finger zu erscheinen (öffnet am unteren Bildrand ins Nichts),

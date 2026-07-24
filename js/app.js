@@ -3008,29 +3008,140 @@ function gbRenderStatus() {
   updateCycleBar(r);
 }
 
-// Zyklus-Ampel: Mayer / F&G / Funding permanent sichtbar in der Topbar.
-// Wird nach jedem gbRefresh befüllt — greift auf dasselbe gbResult-Objekt.
+// Zyklus-Ampel: 5 farbige Kürzel-Pills, Klick öffnet Popover mit Details.
+// Reihenfolge: F&G → OI → Fund → M → ER
 function updateCycleBar(r) {
   if (!r) return;
-  const setPill = (id, text, cls) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.textContent = text;
-    el.className = "cycle-pill" + (cls ? " " + cls : "");
+
+  // Daten aus gbResult
+  const fng   = r.derivatives?.fng ?? null;
+  const oi30  = r.derivatives?.oiChange30 ?? null;
+  const fund  = r.derivatives?.funding8h ?? null;
+  const m     = r.mayer ?? r.market?.mayer ?? null;
+  const er    = r.market?.er ?? r.er ?? null;
+
+  const TH = GridBot.DEFAULT_THRESHOLDS;
+  const CY = GridBot.CYCLE;
+
+  // Farbklasse je Indikator
+  const cls = {
+    fng:  fng  == null ? "" : fng  < CY.fngFear    ? "good" : fng  > CY.fngGreed        ? "warn" : "neut",
+    oi:   oi30 == null ? "" : oi30 < TH.oiChangeLow ? "good" : oi30 > TH.oiChangeHigh   ? "warn" : "neut",
+    fund: fund == null ? "" : fund < TH.fundingLong  ? "good" : fund > TH.fundingShort   ? "warn" : "neut",
+    m:    m    == null ? "" : m    < CY.mayerCheap   ? "good" : m    > CY.mayerExpensive ? "warn" : "neut",
+    er:   er   == null ? "" : er   < CY.erRange      ? "good" : er   > CY.erTrend        ? "warn" : "neut",
   };
 
-  const m = r.mayer;
-  const mayerCls = m == null ? "" : m > GridBot.CYCLE.mayerExpensive ? "warn" : m < GridBot.CYCLE.mayerCheap ? "good" : "neut";
-  setPill("cycleMayer", m != null ? "M " + m.toFixed(2) : "M –", mayerCls);
+  // Popover-Inhalte je Pill
+  const PILLS = {
+    fng: {
+      label: "Fear & Greed (0–100)",
+      value: fng != null ? String(fng) : "–",
+      desc: fng == null ? "Keine Daten"
+        : fng < CY.fngFear   ? "Angst — historische Akkumulationszone"
+        : fng > CY.fngGreed  ? "Gier — defensiv werden, Hebel-Leitplanke aktiv"
+        : "Neutral",
+    },
+    oi: {
+      label: "Open Interest Δ30T",
+      value: oi30 != null ? (oi30 > 0 ? "+" : "") + oi30.toFixed(1) + "%" : "–",
+      desc: oi30 == null ? "Keine Daten"
+        : oi30 < TH.oiChangeLow ? "Leverage bereinigt — Markt sauberer, Grid ruhiger"
+        : oi30 > TH.oiChangeHigh ? "Starker Leverage-Aufbau — Liquidationsrisiko steigt"
+        : "Neutral / aufbauend",
+    },
+    fund: {
+      label: "Funding Rate 8h",
+      value: fund != null ? fund.toFixed(4) + "%" : "–",
+      desc: fund == null ? "Keine Daten"
+        : fund < TH.fundingLong  ? "Shorts zahlen — contrarian bullisch"
+        : fund > TH.fundingShort ? "Longs zahlen teuer — überfüllte Seite"
+        : "Normal",
+    },
+    mayer: {
+      label: "Mayer Multiple (P/SMA200)",
+      value: m != null ? m.toFixed(2) : "–",
+      desc: m == null ? "Keine Daten"
+        : m < CY.mayerCheap     ? "Unter SMA200 — historisch jeder BTC-Akkumulationsboden"
+        : m > CY.mayerExpensive ? "Teuer — Hebel-Leitplanke aktiv (max. 1×)"
+        : "Normaler Bereich",
+    },
+    er: {
+      label: "Efficiency Ratio (0–1)",
+      value: er != null ? er.toFixed(2) : "–",
+      desc: er == null ? "Keine Daten"
+        : er < CY.erRange ? "Range — Grid ideal"
+        : er > CY.erTrend ? "Trend — Grid riskant, reduzierte Füllrate"
+        : "Übergang",
+    },
+  };
 
-  const fng = r.derivatives?.fng;
-  const fngCls = fng == null ? "" : fng > GridBot.CYCLE.fngGreed ? "warn" : fng < GridBot.CYCLE.fngFear ? "good" : "neut";
-  setPill("cycleFng", fng != null ? "F&G " + fng : "F&G –", fngCls);
+  // Pills setzen (nur Kürzel + Farbe)
+  const pills = [
+    ["cycleFng",   cls.fng],
+    ["cycleOi",    cls.oi],
+    ["cycleFund",  cls.fund],
+    ["cycleMayer", cls.m],
+    ["cycleEr",    cls.er],
+  ];
+  pills.forEach(([id, c]) => {
+    const el = document.getElementById(id);
+    if (el) el.className = "cycle-pill" + (c ? " " + c : "");
+  });
 
-  const fund = r.derivatives?.funding8h ?? null;
-  const fundCls = fund == null ? "" : fund > GridBot.DEFAULT_THRESHOLDS.fundingShort ? "warn" : fund < GridBot.DEFAULT_THRESHOLDS.fundingLong ? "good" : "neut";
-  setPill("cycleFund", fund != null ? "Fund " + fund.toFixed(4) + "%" : "Fund –", fundCls);
+  // Popover-Daten auf Pills schreiben (für Klick-Handler)
+  document.querySelectorAll(".cycle-pill").forEach(pill => {
+    const key = pill.dataset.pill === "mayer" ? "mayer" : pill.dataset.pill;
+    const data = PILLS[key];
+    if (data) {
+      pill._cycleData  = data;
+      pill._cycleColor = cls[pill.dataset.pill === "mayer" ? "m" : pill.dataset.pill] || "";
+    }
+  });
 }
+
+// Popover-Logik: einmalig beim Start verdrahten
+(function initCyclePopover() {
+  const popover = document.getElementById("cyclePopover");
+  if (!popover) return;
+  let closeTimer = null;
+
+  const closePopover = () => {
+    popover.classList.add("hidden");
+    if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+  };
+
+  document.querySelectorAll(".cycle-pill").forEach(pill => {
+    pill.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const data = pill._cycleData;
+      if (!data) return;
+
+      // Popover befüllen
+      document.getElementById("cyclePopoverLabel").textContent = data.label;
+      const valEl = document.getElementById("cyclePopoverValue");
+      valEl.textContent = data.value;
+      valEl.className = "cp-value" + (pill._cycleColor ? " " + pill._cycleColor : "");
+      document.getElementById("cyclePopoverDesc").textContent = data.desc;
+
+      // Position: unter der geklickten Pill
+      popover.classList.remove("hidden");
+      const pr = pill.getBoundingClientRect();
+      const pw = popover.offsetWidth || 200;
+      let left = pr.left;
+      if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+      popover.style.left = Math.max(8, left) + "px";
+      popover.style.top  = (pr.bottom + 6) + "px";
+
+      // Auto-close nach 5 Sekunden
+      if (closeTimer) clearTimeout(closeTimer);
+      closeTimer = setTimeout(closePopover, 5000);
+    });
+  });
+
+  // Klick ausserhalb schliesst Popover
+  document.addEventListener("click", closePopover);
+})();
 
 function gbRenderTiers() {
   const r = state.gbResult;
@@ -4036,13 +4147,6 @@ document.getElementById("posToolTopBtn").addEventListener("click", () => {
   setStatus("Long/Short: 1. Einstieg klicken  →  2. Stop  →  3. Ziel");
 });
 document.getElementById("gridBotBtn").addEventListener("click", () => gbToggleBar());
-(function() {
-  const cb = document.getElementById("cycleBar");
-  if (cb) cb.addEventListener("click", () => {
-    if (!state.gbOpen) gbToggleBar();
-    if (!state.gbResult) gbRefresh(false);
-  });
-})();
 document.getElementById("gbClose").addEventListener("click", (e) => { e.stopPropagation(); gbToggleBar(false); });
 document.getElementById("gbToggle").addEventListener("click", (e) => {
   e.stopPropagation();

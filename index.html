@@ -76,14 +76,19 @@
 
   <!-- Aktions-Buttons rechtsbündig -->
   <div class="topbar-actions">
-    <!-- Zyklus-Ampel: immer sichtbar, unabhängig vom Grid-Bot-Panel.
-         Mayer · FNG · Funding auf einen Blick — dieselben Signale, die
-         Akkumulationsphasen anzeigen, sollen nicht nur im Bot-Panel als
-         Hebel-Argument erscheinen, sondern permanent lesbar sein. -->
-    <div id="cycleBar" class="cycle-bar" title="Zyklusindikator: Mayer / Fear&amp;Greed / Funding. Klick öffnet Bot-Panel.">
-      <span id="cycleMayer" class="cycle-pill">M –</span>
-      <span id="cycleFng"   class="cycle-pill">F&amp;G –</span>
-      <span id="cycleFund"  class="cycle-pill">Fund –</span>
+    <!-- Zyklus-Ampel: 5 farbige Kürzel, Klick öffnet Popover mit Details -->
+    <div id="cycleBar" class="cycle-bar">
+      <span id="cycleFng"   class="cycle-pill" data-pill="fng">F&amp;G</span>
+      <span id="cycleOi"    class="cycle-pill" data-pill="oi">OI</span>
+      <span id="cycleFund"  class="cycle-pill" data-pill="fund">Fund</span>
+      <span id="cycleMayer" class="cycle-pill" data-pill="mayer">M</span>
+      <span id="cycleEr"    class="cycle-pill" data-pill="er">ER</span>
+    </div>
+    <!-- Zyklus-Popover: erscheint bei Pill-Klick, schliesst sich automatisch -->
+    <div id="cyclePopover" class="cycle-popover hidden">
+      <div id="cyclePopoverLabel" class="cp-label"></div>
+      <div id="cyclePopoverValue" class="cp-value"></div>
+      <div id="cyclePopoverDesc"  class="cp-desc"></div>
     </div>
 
     <!-- Grid Bot -->
@@ -448,6 +453,7 @@
       <button class="faq-navbtn" data-sec="pat">Muster</button>
       <button class="faq-navbtn" data-sec="pos">Position</button>
       <button class="faq-navbtn" data-sec="gridbot">Grid Bot</button>
+      <button class="faq-navbtn" data-sec="zyklus">Zyklus</button>
       <button class="faq-navbtn" data-sec="ws">Watchlist &amp; Layouts</button>
       <button class="faq-navbtn" data-sec="limits">Grenzen</button>
     </div>
@@ -640,22 +646,6 @@
         <div class="faq-cols">
 
         <div class="faq-block">
-          <h4>Zyklus-Ampel (immer sichtbar)</h4>
-          <p>Fünf farbige Kürzel neben dem Roboter-Icon — immer sichtbar, unabhängig davon ob das Bot-Panel offen ist. Klick auf ein Kürzel zeigt die volle Bezeichnung und den aktuellen Wert. Farben: <span style="color:var(--up)">●</span> günstig / <span style="color:var(--accent)">●</span> neutral / <span style="color:var(--down)">●</span> Warnung.</p>
-          <p><b>F&amp;G — Fear &amp; Greed (0–100)</b><br>
-          <span style="color:var(--up)">● &lt; 35 Angst</span> = historische Akkumulationszone · <span style="color:var(--accent)">● 35–80</span> = neutral · <span style="color:var(--down)">● &gt; 80 Gier</span> = defensiv werden</p>
-          <p><b>OI — Open Interest Δ30T (%)</b><br>
-          <span style="color:var(--up)">● &lt; −10 %</span> = Leverage bereinigt, Markt sauberer · <span style="color:var(--accent)">● −10 bis +10 %</span> = aufbauend · <span style="color:var(--down)">● &gt; +10 %</span> = starker Leverage-Aufbau, Liquidationsrisiko steigt</p>
-          <p><b>Fund — Funding Rate 8h (%)</b><br>
-          <span style="color:var(--up)">● &lt; −0.01 %</span> = Shorts zahlen, contrarian bullisch · <span style="color:var(--accent)">● −0.01 bis +0.05 %</span> = normal · <span style="color:var(--down)">● &gt; +0.05 %</span> = Longs zahlen teuer, überfüllte Seite</p>
-          <p><b>M — Mayer Multiple (Preis / SMA200)</b><br>
-          <span style="color:var(--up)">● &lt; 0.9</span> = historisch jeder BTC-Akkumulationsboden seit 2015 · <span style="color:var(--accent)">● 0.9–2.0</span> = normaler Bereich · <span style="color:var(--down)">● &gt; 2.0</span> = teuer, Hebel-Leitplanke aktiv</p>
-          <p><b>ER — Efficiency Ratio (0–1)</b><br>
-          <span style="color:var(--up)">● &lt; 0.3</span> = saubere Range, Grid ideal · <span style="color:var(--accent)">● 0.3–0.5</span> = Übergang · <span style="color:var(--down)">● &gt; 0.5</span> = Trend, Grid riskant</p>
-          <p>Die Werte werden beim Öffnen des Bot-Panels geladen und dann automatisch aktuell gehalten. Klick auf die Ampel öffnet das Bot-Panel.</p>
-        </div>
-
-        <div class="faq-block">
           <h4>Was der Bot beantwortet</h4>
           <p>Nicht „Long oder Short", sondern: <b>Wo stehen wir im Zyklus, und ist ein Grid überhaupt das richtige Werkzeug?</b></p>
           <p>Zwei Zahlen entscheiden das. Alles andere rechnet im Hintergrund.</p>
@@ -764,6 +754,67 @@
           <p>Die Empfehlung „🟡 Beobachten" ist kein Fehler, sondern das wichtigste Ergebnis: ein übersprungener Trade ohne Vorteil ist kein verpasster Gewinn.</p>
         </div>
 
+        </div>
+      </section>
+
+      </section>
+
+      <section class="faq-sec hidden" data-sec="zyklus">
+        <h3>Zyklus-Ampel</h3>
+        <div class="faq-block">
+          <p>Fünf farbige Kürzel oben in der Toolbar — immer sichtbar, unabhängig davon ob das Bot-Panel offen ist. <b>Klick auf ein Kürzel</b> zeigt die volle Bezeichnung, den aktuellen Wert und eine Kurzinterpretation. Das Popover schliesst sich automatisch nach 5 Sekunden oder beim Klick irgendwo anders.</p>
+          <p>Farben: <span style="color:var(--up)">●</span> günstig &nbsp;·&nbsp; <span style="color:var(--accent)">●</span> neutral &nbsp;·&nbsp; <span style="color:var(--down)">●</span> Warnung</p>
+          <p>Die Werte laden automatisch beim Start und aktualisieren sich wenn der Bot-Panel geöffnet wird.</p>
+        </div>
+
+        <div class="faq-block">
+          <h4><span style="color:var(--up)">F&amp;G</span> — Fear &amp; Greed (0–100)</h4>
+          <p>Composite-Sentiment-Index: misst die Marktpsychologie aus Volatilität, Momentum, Social Media, Dominanz und Volumen.</p>
+          <table class="faq-table">
+            <tr><td><span style="color:var(--up)">● &lt; 35</span></td><td><b>Angst</b> — historische Akkumulationszone. Wenn alle Angst haben, ist oft der günstigste Einstieg.</td></tr>
+            <tr><td><span style="color:var(--accent)">● 35–80</span></td><td><b>Neutral</b> — kein klares Signal, Grid läuft normal.</td></tr>
+            <tr><td><span style="color:var(--down)">● &gt; 80</span></td><td><b>Gier</b> — Hebel-Leitplanke aktiv, defensiv werden.</td></tr>
+          </table>
+        </div>
+
+        <div class="faq-block">
+          <h4><span style="color:var(--accent)">OI</span> — Open Interest Δ30T (%)</h4>
+          <p>Veränderung des gesamten offenen Interesses an Perpetual-Futures über 30 Tage. Steigt OI, baut sich Leverage im System auf — fällt OI, wird es bereinigt.</p>
+          <table class="faq-table">
+            <tr><td><span style="color:var(--up)">● &lt; −10 %</span></td><td><b>Leverage bereinigt</b> — Markt sauberer, Grid ruhiger, Liquidationskaskaden weniger wahrscheinlich.</td></tr>
+            <tr><td><span style="color:var(--accent)">● −10 bis +10 %</span></td><td><b>Neutral / aufbauend</b> — normales Umfeld.</td></tr>
+            <tr><td><span style="color:var(--down)">● &gt; +10 %</span></td><td><b>Starker Leverage-Aufbau</b> — Liquidationsrisiko steigt, breite Grids bevorzugen.</td></tr>
+          </table>
+        </div>
+
+        <div class="faq-block">
+          <h4><span style="color:var(--accent)">Fund</span> — Funding Rate 8h (%)</h4>
+          <p>Ausgleichszahlung zwischen Long- und Short-Seite bei Perpetual-Futures. Positive Rate: Longs zahlen Shorts. Negative Rate: Shorts zahlen Longs.</p>
+          <table class="faq-table">
+            <tr><td><span style="color:var(--up)">● &lt; −0.01 %</span></td><td><b>Shorts zahlen</b> — contrarian bullisch. Markt ist zu short positioniert.</td></tr>
+            <tr><td><span style="color:var(--accent)">● −0.01 bis +0.05 %</span></td><td><b>Normal</b> — kein Funding-Stress.</td></tr>
+            <tr><td><span style="color:var(--down)">● &gt; +0.05 %</span></td><td><b>Longs zahlen teuer</b> — überfüllte Seite, Vorsicht bei Long-Grids.</td></tr>
+          </table>
+        </div>
+
+        <div class="faq-block">
+          <h4><span style="color:var(--accent)">M</span> — Mayer Multiple (Preis / SMA200)</h4>
+          <p>Verhältnis des aktuellen Preises zum 200-Tage-Durchschnitt. Eine der zuverlässigsten Makro-Metriken für BTC-Zyklen seit 2015.</p>
+          <table class="faq-table">
+            <tr><td><span style="color:var(--up)">● &lt; 0.9</span></td><td><b>Unter SMA200</b> — historisch jeder BTC-Akkumulationsboden seit 2015. Sparkapital aufbauen.</td></tr>
+            <tr><td><span style="color:var(--accent)">● 0.9–2.0</span></td><td><b>Normaler Bereich</b> — Grid läuft, kein Extremsignal.</td></tr>
+            <tr><td><span style="color:var(--down)">● &gt; 2.0</span></td><td><b>Teuer</b> — Hebel-Leitplanke aktiv, Bot wird auf max. 1× beschränkt.</td></tr>
+          </table>
+        </div>
+
+        <div class="faq-block">
+          <h4><span style="color:var(--up)">ER</span> — Efficiency Ratio (0–1)</h4>
+          <p>Kaufman Efficiency Ratio: misst ob der Markt gerichtet läuft (Trend) oder hin und her pendelt (Range). Netto-Bewegung geteilt durch die Summe aller Einzelschritte über 20 Tage.</p>
+          <table class="faq-table">
+            <tr><td><span style="color:var(--up)">● &lt; 0.3</span></td><td><b>Range</b> — Grid ideal. Viel Bewegung ohne Richtung = viele Füllungen.</td></tr>
+            <tr><td><span style="color:var(--accent)">● 0.3–0.5</span></td><td><b>Übergang</b> — Grid mit Vorsicht, engere Ranges bevorzugen.</td></tr>
+            <tr><td><span style="color:var(--down)">● &gt; 0.5</span></td><td><b>Trend</b> — Grid riskant. Der Bot zeigt reduzierte Füllrate im Ertragsmodell.</td></tr>
+          </table>
         </div>
       </section>
 
