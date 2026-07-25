@@ -2,15 +2,23 @@
 <html lang="de-CH">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>TreydView</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Archivo:wght@700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=m7">
+  <!-- Auf dem iPhone kennt der Browser keine Vollbild-Schnittstelle. Über
+       «Teilen → Zum Home-Bildschirm» startet TreydView dank dieser Angaben
+       ohne Adressleiste und Reiter. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="TreydView">
+  <meta name="theme-color" content="#0d1117">
+  <link rel="manifest" href="manifest.webmanifest?v=m8">
+  <link rel="stylesheet" href="css/style.css?v=m8">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m7"></script>
+  <script src="js/lib/klinecharts.min.js?v=m8"></script>
 </head>
 <body>
 
@@ -56,12 +64,10 @@
   <!-- Indikatoren-Dropdown -->
   <div class="dropdown" id="indDropdown">
     <button class="dd-trigger" id="indTrigger">
-      <svg class="ab-icon bino-icon mobile-only" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M8.6 3.4h2.1c.5 0 .9.4.9.9v4.3H7.7V4.3c0-.5.4-.9.9-.9zM13.3 3.4h2.1c.5 0 .9.4.9.9v4.6h-3.9V4.3c0-.5.4-.9.9-.9z"/>
-        <path d="M7.6 8.9 6 12.1a4.6 4.6 0 1 0 5.6-1.6V8.9H7.6zM16.4 8.9h-4v1.6a4.6 4.6 0 1 0 5.6 1.6l-1.6-3.2z"/>
-        <circle cx="12" cy="12.6" r="1.5"/>
-        <circle cx="7.4" cy="14.6" r="2.6" fill="var(--bg-raised)"/>
-        <circle cx="16.6" cy="14.6" r="2.6" fill="var(--bg-raised)"/>
+      <svg class="ab-icon ind-i-icon mobile-only" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+        <circle cx="12" cy="12" r="9.2"/>
+        <circle cx="12" cy="7.4" r="1.25" fill="currentColor" stroke="none"/>
+        <path d="M12 10.9v6.6" stroke-linecap="round" stroke-width="2.1"/>
       </svg>
       <svg class="ab-icon ind-mobile-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>
       <span class="ind-label-text">Indikatoren</span>
@@ -324,7 +330,9 @@
     </div>
 
     <!-- Haupt-Chart (RSI/VOL laufen als synchronisierte Panes darin) -->
-    <div class="draw-magnifier" id="drawMagnifier"><canvas id="drawMagnifierCanvas" width="88" height="88"></canvas></div>
+    <div class="frvp-guide" id="frvpGuideA"></div>
+      <div class="frvp-guide" id="frvpGuideB"></div>
+      <div class="draw-magnifier" id="drawMagnifier"><canvas id="drawMagnifierCanvas" width="88" height="88"></canvas></div>
       <div id="mainChart" class="main-chart"></div>
 
 
@@ -1014,15 +1022,15 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m7"></script>
-<script src="js/indicators.js?v=m7"></script>
-<script src="js/overlays.js?v=m7"></script>
-<script src="js/data.js?v=m7"></script>
-<script src="js/settings.js?v=m7"></script>
-<script src="js/derivatives.js?v=m7"></script>
-<script src="js/gridbot.js?v=m7"></script>
-<script src="js/patterns.js?v=m7"></script>
-<script src="js/smc.js?v=m7"></script>
-<script src="js/app.js?v=m7"></script>
+<script src="js/config.js?v=m8"></script>
+<script src="js/indicators.js?v=m8"></script>
+<script src="js/overlays.js?v=m8"></script>
+<script src="js/data.js?v=m8"></script>
+<script src="js/settings.js?v=m8"></script>
+<script src="js/derivatives.js?v=m8"></script>
+<script src="js/gridbot.js?v=m8"></script>
+<script src="js/patterns.js?v=m8"></script>
+<script src="js/smc.js?v=m8"></script>
+<script src="js/app.js?v=m8"></script>
 </body>
 </html>

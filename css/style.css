@@ -778,12 +778,13 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
    Desktop läuft dieser Code nie, das DOM bleibt dort unverändert.
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root { --tv-build: "m7"; }
+:root { --tv-build: "m8"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
 .draw-magnifier { display: none; }
 .om-close       { display: none; }
+.frvp-guide     { display: none; }
 
 @media (max-width: 720px), (pointer: coarse) {
 
@@ -800,7 +801,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   }
   .tb-row {
     display: flex !important; align-items: center; gap: 5px;
-    padding: 5px 8px; min-height: 34px;
+    padding: 5px 8px; min-height: 38px;
     overflow-x: auto; overflow-y: visible;
     scrollbar-width: none; -webkit-overflow-scrolling: touch;
   }
@@ -830,8 +831,8 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   #cycleMayer, #cycleEr { display: none !important; }
   .cycle-pill { font-size: 10px; padding: 3px 6px; }
 
-  .action-btn { width: 34px; height: 34px; }
-  .ab-icon    { width: 17px; height: 17px; }
+  .action-btn { width: 38px; height: 38px; }
+  .ab-icon    { width: 19px; height: 19px; }
 
   /* Zeile 2: Asset · Intervall · Vergleich · Preis · Änderung */
   .tb-row .dd-trigger { padding: 4px 8px; font-size: 11px; }
@@ -880,7 +881,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
     color: inherit; white-space: nowrap;
   }
   .bottom-bar .ab-icon,
-  .bottom-bar .bino-icon { width: 20px; height: 20px; }
+  .bottom-bar .ind-i-icon { width: 21px; height: 21px; }
   .bottom-bar .action-btn.active,
   .bottom-bar .dd-trigger.active { color: var(--accent); background: var(--bg-hover); }
 
@@ -891,21 +892,21 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   #smcTrigger::after     { content: "FVG / OB"; }
   #posToolTopBtn::after  { content: "L / S"; }
 
-  /* Handfernglas statt Lupe */
-  .bino-icon       { display: block !important; }
+  /* «i» statt Lupe auf dem Indikator-Knopf */
+  .ind-i-icon      { display: block !important; }
   .ind-mobile-icon { display: none !important; }
   .ind-label-text  { display: none !important; }
   .bottom-bar .dd-arrow { display: none; }
 
   /* ── Chartfläche zwischen den beiden Leisten ─────────────────────── */
   .workspace {
-    height: calc(100% - 81px - 54px - env(safe-area-inset-bottom));
+    height: calc(100% - 97px - 58px - env(safe-area-inset-bottom));
   }
 
   /* ── Alle Panels öffnen als Blatt über der Bottom Bar ────────────── */
   .dd-panel, .dd-panel--wide, .dd-panel--right {
     position: fixed !important;
-    top: auto !important; bottom: 54px !important;
+    top: auto !important; bottom: 58px !important;
     left: 0 !important; right: 0 !important;
     width: 100% !important; min-width: 0 !important; max-width: none !important;
     max-height: 62vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
@@ -921,6 +922,16 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .dd-search { position: sticky; top: 0; z-index: 2; background: var(--bg-raised);
                font-size: 15px; padding: 11px 13px; }
   .dd-item   { padding: 13px 15px; font-size: 13.5px; }
+
+  /* Führungslinien für das Volumenprofil: senkrecht, gestrichelt.
+     Sie folgen dem Finger und markieren nach dem Anheben die Grenze. */
+  .frvp-guide {
+    position: absolute; top: 0; bottom: 0; width: 0;
+    border-left: 2px dashed var(--accent);
+    pointer-events: none; z-index: 30; display: none;
+  }
+  .frvp-guide.active { display: block; }
+  .frvp-guide.set    { border-left-style: solid; opacity: .75; }
 
   /* Zeichnungs-Lupe: schwebt über dem Finger, zeigt den Ausschnitt 2.5× */
   .draw-magnifier {
@@ -946,12 +957,12 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   }
 
   /* Zeichenblatt */
-  .draw-sheet { bottom: 54px; z-index: 640; }
+  .draw-sheet { bottom: 58px; z-index: 640; }
   .draw-sheet-backdrop { z-index: 615; }
 
   /* Watchlist */
   .watchlist {
-    position: fixed; left: 0; right: 0; bottom: 54px; top: auto;
+    position: fixed; left: 0; right: 0; bottom: 58px; top: auto;
     width: 100% !important; max-width: none;
     max-height: 62vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
     border-left: none; border-top: 1px solid var(--border);
@@ -969,7 +980,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
   /* Grid Bot */
   .gb-bar {
-    position: fixed; left: 0; right: 0; bottom: 54px; top: auto;
+    position: fixed; left: 0; right: 0; bottom: 58px; top: auto;
     width: 100% !important; max-width: none !important;
     height: auto !important; max-height: 70vh !important;
     overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
@@ -988,7 +999,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .gb-resize { display: none; }
 
   /* Kontextmenü als Blatt */
-  .as-sheet, #overlayMenu.as-sheet { bottom: 54px !important; }
+  .as-sheet, #overlayMenu.as-sheet { bottom: 58px !important; }
 
   /* Legende: Symbol und Intervall stehen bereits in Zeile 2 */
   .chart-legend { top: 6px; left: 6px; max-width: calc(100% - 92px); }
@@ -1005,49 +1016,97 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
 /* ── Sehr schmale Geräte ─────────────────────────────────────────────── */
 @media (max-width: 380px) {
-  .action-btn { width: 30px; height: 30px; }
-  .ab-icon    { width: 16px; height: 16px; }
+  .action-btn { width: 34px; height: 34px; }
+  .ab-icon    { width: 17px; height: 17px; }
   .tb-row     { gap: 3px; padding: 4px 6px; }
   .bottom-bar .action-btn::after,
   .bottom-bar .dd-trigger::after { font-size: 8px; }
 }
 
-/* ── Querformat: Bottom Bar → rechts, Topbar → links ─────────────────── */
+/* ── Querformat ────────────────────────────────────────────────────────
+   Nur Zeile 1 wandert an den linken Rand. Zeile 2 mit Asset, Intervall
+   und Preis bleibt oben — dort ist sie breit genug lesbar.
+
+     ┌────┬──────────────────────────┬────┐
+     │    │ Asset · Intervall · Preis│    │
+     │ Z1 ├──────────────────────────┤ BB │
+     │    │          Chart           │    │
+     └────┴──────────────────────────┴────┘
+
+   Die seitlichen Leisten halten Abstand zu Dynamic Island und
+   abgerundeten Ecken (env(safe-area-inset-*)). Dafür steht
+   viewport-fit=cover in der Kopfzeile von index.html.
+   ──────────────────────────────────────────────────────────────────── */
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  body { display: flex; flex-direction: row; height: 100%; overflow: hidden; }
+  :root {
+    --tv-lbar: calc(54px + env(safe-area-inset-left));
+    --tv-rbar: calc(60px + env(safe-area-inset-right));
+    --tv-row2: 38px;
+  }
 
+  /* Die Kopfzeile selbst beansprucht keinen Platz mehr — ihre beiden
+     Reihen sind fest am Bildschirm verankert. */
   .topbar {
-    order: 1; width: 96px; height: 100%; flex-shrink: 0;
-    flex-direction: column; overflow-y: auto;
-    border-bottom: none; border-right: 1px solid var(--border);
+    height: 0; min-height: 0; padding: 0;
+    border: none; overflow: visible;
   }
-  .tb-row {
-    flex-direction: column; align-items: stretch;
-    overflow-x: visible; padding: 5px 4px; gap: 4px;
+
+  /* Zeile 1 → linke Leiste */
+  #tbRow1 {
+    position: fixed; left: 0; top: 0; bottom: 0;
+    width: var(--tv-lbar);
+    padding: 6px 4px 6px calc(4px + env(safe-area-inset-left));
+    flex-direction: column; align-items: center; gap: 5px;
+    overflow-y: auto; overflow-x: hidden;
+    background: var(--bg-raised);
+    border-right: 1px solid var(--border);
+    z-index: 630;
   }
-  #tbRow2 { border-top: 1px solid rgba(143,163,184,.12); }
-  .tb-gap { display: none; }
-  .cycle-bar { flex-direction: column; }
-  .tb-row .dropdown, .tb-row .dd-trigger { width: 100%; }
-  #assetLabel { max-width: 76px; }
+  #tbRow1 .tb-gap { display: none; }
+  #tbRow1 .cycle-bar { flex-direction: column; gap: 4px; }
+  #tbRow1 .cycle-pill { font-size: 9px; padding: 3px 4px; }
 
-  .workspace { order: 2; width: calc(100% - 96px - 66px); height: 100%; }
+  /* Zeile 2 bleibt oben, zwischen den Leisten */
+  #tbRow2 {
+    position: fixed; top: 0;
+    left: var(--tv-lbar); right: var(--tv-rbar);
+    height: var(--tv-row2);
+    padding: 0 8px; border-top: none;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-raised);
+    z-index: 630;
+  }
 
+  /* Bottom Bar → rechte Leiste */
   .bottom-bar {
-    order: 3; position: fixed; right: 0; left: auto; top: 0; bottom: 0;
-    width: 66px; height: 100%;
+    top: 0; bottom: 0; right: 0; left: auto;
+    width: var(--tv-rbar); height: 100%;
     flex-direction: column; justify-content: flex-start; gap: 3px;
-    padding: 6px 4px; overflow-y: auto;
+    padding: 6px 4px 6px 4px;
+    padding-right: calc(4px + env(safe-area-inset-right));
+    overflow-y: auto;
     border-top: none; border-left: 1px solid var(--border);
   }
   .bottom-bar > * { flex: 0 0 auto; }
+  .bottom-bar .action-btn,
+  .bottom-bar .dd-trigger { min-height: 40px; }
 
-  /* Blätter öffnen zur Chartmitte hin, nicht von unten */
+  /* Chart füllt den Rest */
+  .workspace {
+    position: fixed;
+    left: var(--tv-lbar); right: var(--tv-rbar);
+    top: var(--tv-row2); bottom: 0;
+    width: auto; height: auto;
+  }
+
+  /* Blätter öffnen von der rechten Leiste zur Mitte hin */
   .dd-panel, .dd-panel--wide, .dd-panel--right,
   .watchlist, .gb-bar, .draw-sheet {
     top: 0 !important; bottom: 0 !important;
-    left: auto !important; right: 66px !important;
-    width: min(62vw, 420px) !important; max-width: none !important;
+    left: auto !important; right: var(--tv-rbar) !important;
+    width: min(58vw, 400px) !important; max-width: none !important;
     height: 100%; max-height: 100% !important; border-radius: 0;
+    padding-bottom: 8px;
   }
+  .draw-sheet-grid { grid-template-columns: repeat(3, 1fr); }
 }

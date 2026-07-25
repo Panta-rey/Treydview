@@ -4389,7 +4389,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m7";
+const TV_BUILD = "m8";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -4443,27 +4443,44 @@ quiet(() => {
 }, "mobile layout");
 
 // ── 2. Vollbild ───────────────────────────────────────────────────────
+// Auf dem iPhone gibt es im Browser keine Vollbild-Schnittstelle — weder
+// in Safari noch in Brave. Statt eines Knopfes, der nichts tut, sagen wir
+// klar, wie es geht: über «Teilen → Zum Home-Bildschirm» startet die App
+// dank der Angaben in index.html ohne Adressleiste und Reiter.
 quiet(() => {
   const btn = document.getElementById("fullscreenBtn");
   if (!btn) return;
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (!document.fullscreenElement) {
-      (document.documentElement.requestFullscreen
-        || document.documentElement.webkitRequestFullscreen
-        || (() => {})).call(document.documentElement);
-    } else {
-      (document.exitFullscreen || document.webkitExitFullscreen
-        || (() => {})).call(document);
-    }
-  });
-  document.addEventListener("fullscreenchange", () => {
+
+  const root      = document.documentElement;
+  const canNative = !!(root.requestFullscreen || root.webkitRequestFullscreen);
+  const standalone = window.navigator.standalone === true
+    || window.matchMedia("(display-mode: standalone)").matches;
+
+  if (standalone) btn.style.display = "none";   // läuft bereits ohne Browserrahmen
+
+  const paint = () => {
     const svg = btn.querySelector("svg");
     if (!svg) return;
     svg.innerHTML = document.fullscreenElement
       ? '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>'
       : '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
+  };
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (canNative) {
+      if (!document.fullscreenElement) {
+        (root.requestFullscreen || root.webkitRequestFullscreen).call(root);
+      } else {
+        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      }
+      return;
+    }
+    setStatus("Vollbild geht im iPhone-Browser nicht. Teilen-Symbol antippen, "
+            + "«Zum Home-Bildschirm» wählen — von dort startet TreydView ohne "
+            + "Adressleiste und Reiter.");
   });
+  document.addEventListener("fullscreenchange", paint);
 }, "fullscreen");
 
 // ── 3. Stil-Menü schliessen ───────────────────────────────────────────
@@ -4487,7 +4504,9 @@ quiet(() => {
   const ctx = cv.getContext("2d");
 
   const draw = (touch) => {
-    if (!state.activeTool) { hide(); return; }
+    // Beim Volumenprofil stört die Lupe — dort führen gestrichelte
+    // Linien durch die Geste.
+    if (!state.activeTool || state.activeTool === "frvp") { hide(); return; }
     const rect = host.getBoundingClientRect();
     const px = touch.clientX - rect.left;
     const py = touch.clientY - rect.top;
@@ -4558,8 +4577,10 @@ quiet(() => {
       const r = axis.getRange();
       if (!r || r.range == null) return;
 
+      // Der Chart folgt dem Finger: nach unten ziehen schiebt den
+      // Preisbereich nach oben, es kommen höhere Kurse ins Bild.
       const shift = (r.range / host.clientHeight) * dy;
-      const from = r.from - shift, to = r.to - shift;
+      const from = r.from + shift, to = r.to + shift;
       const rf = axis.convertToRealValue(from);
       const rt = axis.convertToRealValue(to);
       axis.setAutoCalcTickFlag(false);
@@ -4574,49 +4595,106 @@ quiet(() => {
   host.addEventListener("touchcancel", stop, { passive: true });
 }, "y-pan init");
 
-// ── 6. Volumenprofil mit zwei Tippern ─────────────────────────────────
+// ── 6. Volumenprofil: zwei gestrichelte Grenzlinien ───────────────────
 // Aufziehen scheitert auf dem Handy, weil dieselbe Geste den Chart
-// verschiebt. Erster Tipper setzt den Anfang, zweiter das Ende.
+// verschiebt. Stattdessen: Finger aufsetzen, eine senkrechte gestrichelte
+// Linie folgt ihm; beim Anheben steht die erste Grenze. Dasselbe noch
+// einmal für die zweite — danach wird das Profil gezeichnet.
 quiet(() => {
   const host = document.getElementById("mainChart");
-  if (!host || !tvIsMobile()) return;
-  let first = null;
+  const gA   = document.getElementById("frvpGuideA");
+  const gB   = document.getElementById("frvpGuideB");
+  if (!host || !gA || !gB || !tvIsMobile()) return;
 
-  const send = (type, x, y) => {
-    const rect = host.getBoundingClientRect();
-    host.dispatchEvent(new MouseEvent(type, {
-      bubbles: true, cancelable: true, button: 0,
-      clientX: rect.left + x, clientY: rect.top + y,
-    }));
+  let step = 0;          // 0 = keine Grenze, 1 = erste steht
+  let drag = null;       // Linie, die gerade am Finger hängt
+  let xA = null;
+
+  const active = () => state.activeTool === "frvp";
+  const xOf = (t) => t.clientX - host.getBoundingClientRect().left;
+
+  const reset = () => {
+    step = 0; drag = null; xA = null;
+    [gA, gB].forEach(g => g.classList.remove("active", "set"));
   };
-  const place = (x, y) => { send("mousemove", x, y); send("mousedown", x, y); send("mouseup", x, y); };
+  window.__tvFrvpReset = reset;
+
+  const put = (g, x) => { g.style.left = x + "px"; g.classList.add("active"); };
+
+  // stopPropagation hält KLineCharts von der Geste fern — sonst würde der
+  // Chart unter dem Finger mitwandern, während die Linie gezogen wird.
+  host.addEventListener("touchstart", (e) => {
+    if (!active() || e.touches.length !== 1) return;
+    e.stopPropagation();
+    drag = (step === 0) ? gA : gB;
+    drag.classList.remove("set");
+    put(drag, xOf(e.touches[0]));
+  }, { passive: false });
+
+  host.addEventListener("touchmove", (e) => {
+    if (!active() || !drag || e.touches.length !== 1) return;
+    e.stopPropagation();
+    if (e.cancelable) e.preventDefault();
+    put(drag, xOf(e.touches[0]));
+  }, { passive: false });
 
   host.addEventListener("touchend", (e) => {
-    if (state.activeTool !== "frvp") { first = null; return; }
-    if (e.changedTouches.length !== 1) return;
-    const t = e.changedTouches[0];
-    const rect = host.getBoundingClientRect();
-    const p = { x: t.clientX - rect.left, y: t.clientY - rect.top };
+    if (!active() || !drag) return;
+    e.stopPropagation();
+    const x = parseFloat(drag.style.left) || 0;
+    drag.classList.add("set");
+    drag = null;
 
-    if (!first) {
-      first = p;
-      setStatus("Volumenprofil: Anfang gesetzt — jetzt das Ende antippen");
-    } else {
-      const a = first; first = null;
-      place(a.x, a.y);
-      setTimeout(() => { place(p.x, p.y); setStatus("Volumenprofil gezeichnet"); }, 40);
+    if (step === 0) {
+      xA = x; step = 1;
+      setStatus("Volumenprofil: zweite Grenze ziehen und loslassen");
+      return;
     }
-  }, { passive: true });
+    build(xA, x);
+  }, { passive: false });
 
-  // Werkzeugwechsel setzt die Geste zurück
+  function build(x1, x2) {
+    if (Math.abs(x1 - x2) < 8) {
+      setStatus("Volumenprofil: Bereich zu schmal — nochmals versuchen");
+      reset();
+      return;
+    }
+    quiet(() => {
+      const y = Math.round(host.clientHeight / 2);
+      const one = (p) => Array.isArray(p) ? p[0] : p;
+      const a = one(chart.convertFromPixel({ x: Math.min(x1, x2), y }, { paneId: "candle_pane" }));
+      const b = one(chart.convertFromPixel({ x: Math.max(x1, x2), y }, { paneId: "candle_pane" }));
+      if (!a || !b || a.timestamp == null || b.timestamp == null) {
+        setStatus("Volumenprofil: Bereich liegt ausserhalb der Daten");
+        return;
+      }
+      let id = chart.createOverlay({
+        name: "frvp",
+        points: [{ timestamp: a.timestamp, value: a.value },
+                 { timestamp: b.timestamp, value: b.value }],
+        styles: currentOverlayStyles(),
+      });
+      if (Array.isArray(id)) id = id[0];
+      if (id) captureDrawing(id);
+      setStatus("Volumenprofil gezeichnet");
+    }, "frvp build");
+
+    reset();
+    if (!state.pinTool) {
+      state.activeTool = null;
+      renderDrawbar();
+    }
+  }
+
+  // Werkzeugwechsel räumt die Linien weg
   const orig = startTool;
   startTool = function (name) {
-    first = null;
-    if (name === "frvp") setStatus("Volumenprofil: Anfang antippen, dann das Ende");
+    reset();
+    if (name === "frvp") setStatus("Volumenprofil: erste Grenze ziehen und loslassen");
     return orig.apply(this, arguments);
   };
   window.__tvStartTool = startTool;
-}, "frvp two-tap");
+}, "frvp gesture");
 
 // ── 7. Abdunkler hinter offenen Blättern ──────────────────────────────
 quiet(() => {
