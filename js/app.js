@@ -4411,7 +4411,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m8";
+const TV_BUILD = "m10";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -4456,7 +4456,7 @@ quiet(() => {
 
   // Bottom Bar
   ["indDropdown", "drawSheetBtn", "gridBotBtn",
-   "patternDropdown", "smcDropdown", "posToolTopBtn"]
+   "patternDropdown", "smcDropdown", "magnetBbBtn", "posToolTopBtn"]
     .forEach(id => { const el = $(id); if (el) bb.appendChild(el); });
 
   // Das Popover liegt fest am Bildschirm — ausserhalb des Stapelkontexts
@@ -4464,48 +4464,17 @@ quiet(() => {
   if ($("cyclePopover")) document.body.appendChild($("cyclePopover"));
 }, "mobile layout");
 
-// ── 2. Vollbild ───────────────────────────────────────────────────────
-// Auf dem iPhone gibt es im Browser keine Vollbild-Schnittstelle — weder
-// in Safari noch in Brave. Statt eines Knopfes, der nichts tut, sagen wir
-// klar, wie es geht: über «Teilen → Zum Home-Bildschirm» startet die App
-// dank der Angaben in index.html ohne Adressleiste und Reiter.
+// ── 2. Knopf mit Aufziehen-Symbol → Auto-Zoom ─────────────────────────
+// Vollbild ist auf dem iPhone nicht erreichbar: Safari und Brave stellen
+// die Schnittstelle nicht bereit. Im Home-Bildschirm-Modus gibt es ohnehin
+// keine Browserleiste mehr. Der Knopf leistet jetzt Auto-Zoom — das Symbol
+// passt weiterhin, es zieht den Chart auf den Datenbereich auf.
 quiet(() => {
   const btn = document.getElementById("fullscreenBtn");
   if (!btn) return;
-
-  const root      = document.documentElement;
-  // Brave/Safari auf iPhone: API existiert, lehnt aber ab (sandboxed).
-  const inSafariOrBrave = /iP(hone|od|ad)/.test(navigator.userAgent);
-  const canNative = !inSafariOrBrave && !!(root.requestFullscreen || root.webkitRequestFullscreen);
-  const standalone = window.navigator.standalone === true
-    || window.matchMedia("(display-mode: standalone)").matches;
-
-  if (standalone) btn.style.display = "none";   // läuft bereits ohne Browserrahmen
-
-  const paint = () => {
-    const svg = btn.querySelector("svg");
-    if (!svg) return;
-    svg.innerHTML = document.fullscreenElement
-      ? '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>'
-      : '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
-  };
-
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (canNative) {
-      if (!document.fullscreenElement) {
-        (root.requestFullscreen || root.webkitRequestFullscreen).call(root);
-      } else {
-        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-      }
-      return;
-    }
-    setStatus("Vollbild geht im iPhone-Browser nicht. Teilen-Symbol antippen, "
-            + "«Zum Home-Bildschirm» wählen — von dort startet TreydView ohne "
-            + "Adressleiste und Reiter.");
-  });
-  document.addEventListener("fullscreenchange", paint);
-}, "fullscreen");
+  btn.title = "Auto-Zoom auf sichtbaren Bereich";
+  btn.addEventListener("click", (e) => { e.stopPropagation(); autoZoom(); });
+}, "autozoom btn");
 
 // ── 3. Stil-Menü schliessen ───────────────────────────────────────────
 quiet(() => {
@@ -4568,6 +4537,38 @@ quiet(() => {
   host.addEventListener("touchcancel", hide, { passive: true });
 }, "magnifier init");
 
+// ── 4b. Chart feststellen, solange ein Werkzeug aktiv ist ─────────────
+// Ein früherer Versuch rief nur preventDefault(). Das unterbindet aber
+// bloss das native Scrollen des Browsers — KLineCharts registriert seine
+// Touch-Handler auf einem Kindelement von #mainChart und verschiebt den
+// Chart in seinem eigenen Handler trotzdem weiter.
+// Verlässlich ist nur KLCs eigene Schnittstelle. Punkte setzen und
+// bestehende Punkte ziehen bleiben möglich, weil ausschliesslich
+// Verschieben und Zoomen gesperrt werden.
+quiet(() => {
+  let locked = false;
+  const lock = (on) => {
+    if (on === locked) return;
+    locked = on;
+    quiet(() => {
+      chart.setScrollEnabled(!on);
+      chart.setZoomEnabled(!on);
+    }, "chart lock");
+  };
+  window.__tvChartLock = lock;
+
+  // state.activeTool wird an vielen Stellen gesetzt und zurückgesetzt.
+  // Statt jede einzelne anzufassen, beobachten wir das Feld selbst —
+  // so kann keine Stelle vergessen werden.
+  let raw = state.activeTool;
+  Object.defineProperty(state, "activeTool", {
+    get() { return raw; },
+    set(v) { raw = v; lock(!!v); },
+    configurable: true, enumerable: true,
+  });
+  lock(!!raw);
+}, "draw lock");
+
 // ── 5. Y-Achse mit einem Finger verschieben ───────────────────────────
 // KLineCharts bewegt bei einem Finger nur die Zeitachse. Hier kommt die
 // senkrechte Verschiebung des Preisbereichs dazu. Auf der Preisskala
@@ -4618,6 +4619,48 @@ quiet(() => {
   host.addEventListener("touchend",    stop, { passive: true });
   host.addEventListener("touchcancel", stop, { passive: true });
 }, "y-pan init");
+
+// ── 5b. Doppeltipp öffnet das Menü einer Zeichnung ────────────────────
+// Der lange Druck erzeugt ein nachgeahmtes contextmenu-Ereignis. KLineCharts
+// führt dabei aber keine Treffer-Prüfung auf Overlays durch, deshalb kam
+// onRightClick nie zustande und es öffnete sich kein Menü.
+// Doppeltipp geht den direkten Weg: Zeichnung antippen (wird ausgewählt),
+// dann zweimal tippen — wir holen das Overlay selbst und öffnen sein Menü.
+quiet(() => {
+  const host = document.getElementById("mainChart");
+  if (!host || !tvIsMobile()) return;
+  const AXIS = 80;
+  let lastTap = 0, lastX = 0, lastY = 0;
+
+  host.addEventListener("touchend", (e) => {
+    if (state.activeTool) return;               // beim Zeichnen nicht
+    if (e.touches.length !== 0) return;         // erst wenn alle Finger weg
+    const t = e.changedTouches && e.changedTouches[0];
+    if (!t) return;
+
+    const rect = host.getBoundingClientRect();
+    const x = t.clientX - rect.left;
+    const y = t.clientY - rect.top;
+    if (x > rect.width - AXIS) { lastTap = 0; return; }  // Preisskala: Auto-Fit
+
+    const now = Date.now();
+    const near = Math.abs(x - lastX) < 32 && Math.abs(y - lastY) < 32;
+
+    if (now - lastTap < 350 && near && state.selectedOverlayId != null) {
+      lastTap = 0;
+      quiet(() => {
+        const ov = chart.getOverlayById(state.selectedOverlayId);
+        if (!ov) { setStatus("Zeichnung zuerst antippen, dann doppelt tippen"); return; }
+        // menuPosition liest event.pointerCoordinate oder event.x/y
+        const ev = { pointerCoordinate: { x, y } };
+        if (ov.name === "frvp") openFrvpMenu(ov, ev);
+        else                    openOverlayMenu(ov, ev);
+      }, "dbl-tap menu");
+      return;
+    }
+    lastTap = now; lastX = x; lastY = y;
+  }, { passive: true });
+}, "dbl-tap menu init");
 
 // ── 6. Volumenprofil: zwei gestrichelte Grenzlinien ───────────────────
 // Aufziehen scheitert auf dem Handy, weil dieselbe Geste den Chart
@@ -4692,11 +4735,18 @@ quiet(() => {
         setStatus("Volumenprofil: Bereich liegt ausserhalb der Daten");
         return;
       }
+      // Ohne diese Handler ist ein per Geste gezeichnetes Volumenprofil
+      // anonym: Es lässt sich nicht auswählen und hat kein Menü.
       let id = chart.createOverlay({
         name: "frvp",
         points: [{ timestamp: a.timestamp, value: a.value },
                  { timestamp: b.timestamp, value: b.value }],
         styles: currentOverlayStyles(),
+        onSelected:   (ev) => { state.selectedOverlayId = ev.overlay.id; return false; },
+        onDeselected: () => { state.selectedOverlayId = null; return false; },
+        onMouseEnter: () => { setChartCursor("pointer"); return false; },
+        onMouseLeave: () => { setChartCursor(""); return false; },
+        onRightClick: (ev) => { openFrvpMenu(ev.overlay, ev); return true; },
       });
       if (Array.isArray(id)) id = id[0];
       if (id) captureDrawing(id);
