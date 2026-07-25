@@ -234,6 +234,152 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 /* Hilfklasse: nur auf Mobile sichtbar */
 .mobile-only { display: none !important; }
 
+
+/* ---- Draw Bottom Sheet ---- */
+.draw-sheet {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 500;
+  background: var(--bg-panel); border-top: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  padding: 0 12px max(16px, env(safe-area-inset-bottom));
+  max-height: 80vh; overflow-y: auto;
+  box-shadow: 0 -8px 32px rgba(0,0,0,.6);
+  transform: translateY(100%);
+  transition: transform .22s cubic-bezier(.4,0,.2,1);
+}
+.draw-sheet:not(.hidden) { transform: translateY(0); }
+.draw-sheet.hidden { display: none; }
+.draw-sheet-handle {
+  width: 38px; height: 4px; border-radius: 2px;
+  background: var(--border); margin: 10px auto 12px;
+}
+.draw-sheet-title {
+  font-family: var(--font-mono); font-size: 12px;
+  color: var(--text-dim); margin-bottom: 12px; text-align: center;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.draw-sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px; padding-bottom: 8px;
+}
+.draw-sheet-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 4px; border-radius: 8px; cursor: pointer;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  transition: background .1s, border-color .1s;
+  font-size: 10px; color: var(--text-dim); text-align: center;
+  line-height: 1.2;
+}
+.draw-sheet-item:hover, .draw-sheet-item.active {
+  background: var(--bg-hover); border-color: var(--accent); color: var(--accent);
+}
+.draw-sheet-item svg { width: 20px; height: 20px; }
+
+.draw-sheet-backdrop {
+  position: fixed; inset: 0; z-index: 499;
+  background: rgba(0,0,0,.4);
+}
+.draw-sheet-backdrop.hidden { display: none; }
+
+
+/* Statt am Finger zu erscheinen (öffnet am unteren Bildrand ins Nichts),
+   fahren Menüs auf schmalen Touch-Screens von unten ein: volle Breite,
+   grosse Tap-Ziele, scrollbar. Vergeben wird die Klasse in placeMenu(). */
+@media (max-width: 720px) {
+  .as-sheet {
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: 72vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 14px 14px 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 32px rgba(0,0,0,.6);
+    animation: tvSheetUp .18s ease-out;
+  }
+  /* Greifbarer "Ziehgriff" oben — signalisiert Sheet-Charakter */
+  .as-sheet::before {
+    content: "";
+    display: block;
+    width: 38px;
+    height: 4px;
+    margin: 2px auto 10px;
+    border-radius: 2px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+  /* Einträge im Sheet grösser antippbar */
+  .as-sheet .overlay-menu-item { padding: 14px 18px; font-size: 14px; }
+  .as-sheet .frvp-row { padding: 10px 0; }
+}
+@keyframes tvSheetUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+/* ---- Mobile Layout: Watchlist als Overlay, Drawbar unten ---- */
+/* Auf schmalen Screens wird die Watchlist (210px) nicht mehr als Spalte
+   neben den Chart gequetscht (→ Chart nur 124px), sondern als Overlay
+   das sich von rechts über den Chart schiebt. Drawbar wandert nach unten
+   (horizontal), damit der Chart die volle Breite bekommt. */
+@media (max-width: 720px) {
+  /* Workspace: nur chart-col füllt die ganze Breite */
+  .workspace { flex-direction: column; }
+
+  /* Drawbar: horizontal am unteren Rand */
+  .drawbar {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    width: 100%;
+    height: auto;
+    border-right: none;
+    border-top: 1px solid var(--border);
+    padding: 6px 8px;
+    gap: 4px;
+    order: 2;   /* chart-col zuerst, drawbar danach */
+  }
+
+  /* chart-col nimmt vollen Platz */
+  .chart-col { order: 1; flex: 1; min-height: 0; }
+
+  /* Watchlist: festes Overlay von rechts, schliesst sich über den Chart */
+  .watchlist {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100%;
+    width: min(280px, 85vw);
+    z-index: 300;
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+    border-left: 1px solid var(--border);
+    box-shadow: -4px 0 24px rgba(0,0,0,0.5);
+  }
+  /* Sichtbar wenn watchlistOpen */
+  .watchlist:not(.hidden) {
+    transform: translateX(0);
+  }
+  /* Backdrop hinter der Watchlist */
+  .watchlist:not(.hidden)::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: -1;
+  }
+
+  /* Drawbar fly-outs klappen auf Mobile nach oben auf — die Positionierung
+     macht renderDrawbar() im JS (Inline-Styles schlagen Stylesheet-Regeln). */
+}
 .topbar-actions{display:flex;gap:4px;margin-left:4px;}
 .action-btn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:transparent;color:var(--text-dim);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;padding:0;transition:color .12s,border-color .12s,background .12s;}
 .action-btn:hover{color:var(--text);border-color:rgba(232,182,76,.5);background:var(--bg-hover);}
@@ -616,292 +762,292 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .pat-fig { float: right; width: 140px; height: 76px; margin: 0 0 4px 12px;
   background: rgba(143,163,184,0.05); border: 1px solid var(--border); border-radius: 4px; }
 
-/* Build-Kennung: m6 */
-:root { --tv-build: "m6"; }
 
-/* ─────────────────────────────────────────────────────────────────
-   BOTTOM BAR (Mobile)
-   ──────────────────────────────────────────────────────────────── */
-.bottom-bar {
-  display: none;   /* Desktop: unsichtbar */
-}
+/* ═══════════════════════════════════════════════════════════════════════
+   MOBILE-SCHICHT  ·  Build m7
+   ───────────────────────────────────────────────────────────────────────
+   REGEL: Ab hier steht ausschliesslich Code innerhalb von @media-Blöcken.
+   Der Desktop wird dadurch nicht berührt. Neue Elemente tragen die Klasse
+   .mobile-only und sind ausserhalb dieser Blöcke unsichtbar.
 
-/* Draw-Sheet Basis */
-.draw-sheet {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 620;
-  background: var(--bg-raised); border-top: 1px solid var(--border);
-  border-radius: 16px 16px 0 0;
-  padding: 0 10px calc(12px + env(safe-area-inset-bottom));
-  max-height: 74vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  box-shadow: 0 -8px 32px rgba(0,0,0,.55);
-}
-.draw-sheet.hidden { display: none; }
-.draw-sheet-title {
-  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
-  text-align: center; text-transform: uppercase; letter-spacing: .07em;
-  margin-bottom: 10px;
-}
-.draw-sheet-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
-.draw-sheet-item {
-  display: flex; flex-direction: column; align-items: center; gap: 5px;
-  padding: 11px 3px; border-radius: 9px; cursor: pointer;
-  background: var(--bg); border: 1px solid var(--border);
-  font-size: 9.5px; line-height: 1.15; color: var(--text-dim); text-align: center;
-}
-.draw-sheet-item:active { border-color: var(--accent); color: var(--accent); }
-.ds-glyph { font-size: 17px; line-height: 1; height: 20px; display: flex; align-items: center; justify-content: center; }
-.sheet-backdrop { position: fixed; inset: 0; z-index: 615; background: rgba(0,0,0,.45); }
-.sheet-backdrop.hidden { display: none; }
+   Aufbau:
+     Topbar Zeile 1   F&G Fund OI  ·  Layout WL Nacht Vollbild FAQ
+     Topbar Zeile 2   Asset Intervall Vergleich  ·  Preis  Änderung
+     Bottom Bar       Indikatoren Zeichnen GridBot Muster FVG/OB L/S
+   Die Knöpfe werden von app.js zur Laufzeit dorthin verschoben — auf dem
+   Desktop läuft dieser Code nie, das DOM bleibt dort unverändert.
+   ═══════════════════════════════════════════════════════════════════════ */
 
-/* Zeichnungs-Lupe */
-.draw-magnifier {
-  position: fixed; z-index: 900; pointer-events: none;
-  width: 88px; height: 88px; border-radius: 50%;
-  border: 2px solid var(--accent); overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0,0,0,.6);
-  background: var(--bg); display: none;
-}
-.draw-magnifier.active { display: block; }
-.draw-magnifier canvas { position: absolute; top: 0; left: 0; }
+:root { --tv-build: "m7"; }
 
-/* Overlay Style-Menü Schliessen-Knopf */
-.om-close {
-  position: absolute; top: 8px; right: 8px;
-  background: none; border: none; color: var(--text-dim);
-  font-size: 18px; cursor: pointer; padding: 4px 8px; line-height: 1;
-}
-.om-close:hover { color: var(--text); }
-.overlay-menu { position: relative; }
-
-/* ─────────────────────────────────────────────────────────────────
-   TOPBAR ZWEI-ZEILEN-LAYOUT (Desktop)
-   ──────────────────────────────────────────────────────────────── */
-.topbar {
-  display: flex; flex-direction: column;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-raised);
-  z-index: 630; position: relative;
-}
-.tb-row {
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 12px; min-height: 36px;
-}
-.tb-row-2 { border-top: 1px solid rgba(143,163,184,.12); }
-.tb-gap { flex: 1; }
-.tb-pills { display: flex; align-items: center; gap: 4px; }
-.tb-desktop-only { display: flex; }
-.tb2-btn {
-  font-family: var(--font-mono); font-size: 12px;
-  background: none; border: 1px solid var(--border); border-radius: 6px;
-  color: var(--text); padding: 4px 9px; cursor: pointer; white-space: nowrap;
-}
-.tb2-btn:hover { border-color: var(--accent); }
-.tb2-compare { color: var(--text-dim); font-weight: 700; }
-.tb2-price { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--text); }
-.tb2-change { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); }
-.tb2-change.up { color: var(--up); }
-.tb2-change.down { color: var(--down); }
-
-/* Bottom-Bar Buttons (Desktop: zeige sie nirgends) */
-.bb-btn {
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  background: none; border: none; color: var(--text-dim); cursor: pointer;
-  padding: 6px 10px; border-radius: 8px; font-size: 9.5px; white-space: nowrap;
-}
-.bb-btn:hover, .bb-btn.active { color: var(--accent); background: var(--bg-hover); }
-.bb-icon { width: 22px; height: 22px; }
-.bb-label { font-family: var(--font-mono); font-size: 9px; line-height: 1; }
-.dd-drop-up { top: auto !important; bottom: calc(100% + 4px) !important; }
-
-/* ─────────────────────────────────────────────────────────────────
-   MOBILE-SCHICHT  ≤720px / Touch
-   ──────────────────────────────────────────────────────────────── */
-.mobile-only { display: none !important; }
+/* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
+   unten blendet sie bei Bedarf ein. */
+.draw-magnifier { display: none; }
+.om-close       { display: none; }
 
 @media (max-width: 720px), (pointer: coarse) {
 
   .mobile-only { display: flex !important; }
-  .tb-desktop-only { display: none !important; }
-  .compare-label-full { display: none; }
-  .compare-label-short { display: inline; }
 
-  /* Zeichenstift + Drawbar */
-  .drawbar { display: none !important; }
-
-  /* ── Topbar: eine Zeile + Zweite Zeile (Asset/TF/Vergleich/Preis) ── */
-  .topbar { flex-direction: column; z-index: 630; }
-  .tb-row-1 {
-    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
-    -webkit-overflow-scrolling: touch; gap: 4px; padding: 5px 8px;
+  /* ── Topbar ──────────────────────────────────────────────────────────
+     z-index MUSS über dem Abdunkler (615) liegen: .topbar hat in der Basis
+     z-index:50 + position:relative und bildet damit einen Stapelkontext.
+     Panels darin werden sonst auf Ebene 50 gedeckelt und vom Abdunkler
+     verdeckt — der Bildschirm wird dunkel, ohne dass etwas erscheint. */
+  .topbar {
+    flex-direction: column; align-items: stretch;
+    gap: 0; padding: 0; z-index: 630;
   }
-  .tb-row-1::-webkit-scrollbar { display: none; }
-  .tb-row-2 { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 5px; padding: 4px 8px; }
-  .tb-row-2::-webkit-scrollbar { display: none; }
+  .tb-row {
+    display: flex !important; align-items: center; gap: 5px;
+    padding: 5px 8px; min-height: 34px;
+    overflow-x: auto; overflow-y: visible;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .tb-row::-webkit-scrollbar { display: none; }
+  .tb-row > * { flex-shrink: 0; }
+  #tbRow2 { border-top: 1px solid rgba(143,163,184,.12); }
+  .tb-gap { flex: 1 1 auto; min-width: 8px; }
 
-  .action-btn { width: 34px; height: 34px; flex-shrink: 0; }
-  .ab-icon { width: 17px; height: 17px; }
+  /* Auf dem Handy überflüssig oder anderswo vertreten */
+  .brand,
+  #typeDropdown,
+  #screenshotBtn,
+  #autoZoomBtn,
+  #liveBadge,
+  .topbar-actions,
+  .price-header,
+  .mobile-info-bar,
+  .drawbar            { display: none !important; }
 
-  /* Preis-Header alt ausblenden — Zeile 2 übernimmt */
-  .price-header { display: none !important; }
-  .mobile-info-bar { display: none !important; }  /* neue tb-row-2 ersetzt sie */
-  .brand { display: none; }
-  .live-badge { display: none !important; }
-  .cycle-bar { gap: 3px; }
-  .cycle-pill { font-size: 10px; padding: 2px 5px; }
+  /* Zyklus-Pills: gewünschte Reihenfolge F&G · Fund · OI.
+     Im HTML steht F&G, OI, Fund — daher OI nach hinten sortieren.
+     Mayer und ER bleiben dem Bot-Panel vorbehalten (kein Platz). */
+  .cycle-bar { display: flex !important; gap: 4px; }
+  #cycleFng  { order: 1; }
+  #cycleFund { order: 2; }
+  #cycleOi   { order: 3; }
+  #cycleMayer, #cycleEr { display: none !important; }
+  .cycle-pill { font-size: 10px; padding: 3px 6px; }
 
-  /* ── Bottom Bar ── */
+  .action-btn { width: 34px; height: 34px; }
+  .ab-icon    { width: 17px; height: 17px; }
+
+  /* Zeile 2: Asset · Intervall · Vergleich · Preis · Änderung */
+  .tb-row .dd-trigger { padding: 4px 8px; font-size: 11px; }
+  #assetLabel {
+    display: inline-block; max-width: 30vw;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    vertical-align: bottom;
+  }
+  .compare-label-full  { display: none; }
+  .compare-label-short { display: inline; }
+  .tb2-price {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+    color: var(--text); white-space: nowrap;
+  }
+  .tb2-change {
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--text-dim); white-space: nowrap;
+  }
+  .tb2-change.up   { color: var(--up); }
+  .tb2-change.down { color: var(--down); }
+
+  /* ── Bottom Bar ──────────────────────────────────────────────────── */
   .bottom-bar {
     display: flex !important;
-    position: fixed; bottom: 0; left: 0; right: 0; z-index: 620;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 620;
     background: var(--bg-raised); border-top: 1px solid var(--border);
-    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
-    justify-content: space-around; align-items: flex-start;
-    gap: 0;
+    padding: 4px 2px calc(4px + env(safe-area-inset-bottom));
+    justify-content: space-around; align-items: stretch; gap: 0;
   }
-  .bb-btn { padding: 5px 4px; flex: 1; max-width: 70px; }
-  .bb-icon { width: 20px; height: 20px; }
-  .bb-label { font-size: 8.5px; }
+  .bottom-bar > * { flex: 1 1 0; min-width: 0; }
+  .bottom-bar .dropdown { display: flex; }
 
-  /* Chart-Bereich: Platz für Bottom Bar lassen */
-  .workspace { height: calc(100% - 85px); }   /* 45px topbar + 40px bottom bar */
+  /* Die verschobenen Knöpfe bekommen Symbol über Beschriftung.
+     Die Beschriftung entsteht per ::after — so bleibt das HTML der
+     bestehenden Knöpfe unverändert. */
+  .bottom-bar .action-btn,
+  .bottom-bar .dd-trigger {
+    width: 100%; height: auto; min-height: 44px;
+    flex-direction: column; gap: 3px;
+    border: none; background: none; border-radius: 8px;
+    padding: 4px 2px; font-size: 0;
+  }
+  .bottom-bar .action-btn::after,
+  .bottom-bar .dd-trigger::after {
+    font-family: var(--font-mono); font-size: 8.5px; line-height: 1;
+    color: inherit; white-space: nowrap;
+  }
+  .bottom-bar .ab-icon,
+  .bottom-bar .bino-icon { width: 20px; height: 20px; }
+  .bottom-bar .action-btn.active,
+  .bottom-bar .dd-trigger.active { color: var(--accent); background: var(--bg-hover); }
 
-  /* ── Alle Dropdowns als Bottom-Sheet (nach oben aus Bottom Bar) ── */
+  #indTrigger::after     { content: "Indikatoren"; }
+  #drawSheetBtn::after   { content: "Zeichnen"; }
+  #gridBotBtn::after     { content: "Grid Bot"; }
+  #patternTrigger::after { content: "Muster"; }
+  #smcTrigger::after     { content: "FVG / OB"; }
+  #posToolTopBtn::after  { content: "L / S"; }
+
+  /* Handfernglas statt Lupe */
+  .bino-icon       { display: block !important; }
+  .ind-mobile-icon { display: none !important; }
+  .ind-label-text  { display: none !important; }
+  .bottom-bar .dd-arrow { display: none; }
+
+  /* ── Chartfläche zwischen den beiden Leisten ─────────────────────── */
+  .workspace {
+    height: calc(100% - 81px - 54px - env(safe-area-inset-bottom));
+  }
+
+  /* ── Alle Panels öffnen als Blatt über der Bottom Bar ────────────── */
   .dd-panel, .dd-panel--wide, .dd-panel--right {
     position: fixed !important;
-    top: auto !important; bottom: 56px !important;
+    top: auto !important; bottom: 54px !important;
     left: 0 !important; right: 0 !important;
-    width: 100% !important; max-width: none !important;
-    max-height: 65vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    width: 100% !important; min-width: 0 !important; max-width: none !important;
+    max-height: 62vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
     border-radius: 16px 16px 0 0;
     border-left: none; border-right: none; border-bottom: none;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom));
-    box-shadow: 0 -8px 32px rgba(0,0,0,.55); z-index: 621;
+    box-shadow: 0 -8px 32px rgba(0,0,0,.55);
+    z-index: 640;
   }
-  /* Griff */
   .dd-panel.open::before {
-    content: ""; display: block;
-    width: 38px; height: 4px; border-radius: 2px;
-    background: var(--border); margin: 9px auto 8px;
+    content: ""; display: block; width: 38px; height: 4px;
+    border-radius: 2px; background: var(--border); margin: 9px auto 8px;
   }
-  .dd-search { position: sticky; top: 0; z-index: 2; background: var(--bg-raised); font-size: 15px; padding: 11px 13px; }
-  .dd-item { padding: 13px 15px; font-size: 13.5px; }
+  .dd-search { position: sticky; top: 0; z-index: 2; background: var(--bg-raised);
+               font-size: 15px; padding: 11px 13px; }
+  .dd-item   { padding: 13px 15px; font-size: 13.5px; }
 
-  /* Kontextmenüs (Overlay-Stil-Menü) */
-  .as-sheet, #overlayMenu {
-    position: fixed !important;
-    bottom: 56px !important; left: 0 !important; right: 0 !important; top: auto !important;
-    width: 100% !important; max-width: none !important;
-    border-radius: 16px 16px 0 0; border-left: none; border-right: none; border-bottom: none;
-    max-height: 65vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
-    box-shadow: 0 -8px 32px rgba(0,0,0,.55); z-index: 621;
-    padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  /* Zeichnungs-Lupe: schwebt über dem Finger, zeigt den Ausschnitt 2.5× */
+  .draw-magnifier {
+    position: fixed; z-index: 900; pointer-events: none;
+    width: 88px; height: 88px; border-radius: 50%;
+    border: 2px solid var(--accent); overflow: hidden;
+    background: var(--bg); box-shadow: 0 4px 16px rgba(0,0,0,.6);
   }
-  .om-row { padding: 12px 16px; font-size: 14px; }
-  .overlay-menu-del { padding: 14px 16px; font-size: 14px; }
+  .draw-magnifier.active { display: block; }
+  .draw-magnifier canvas { display: block; }
 
-  /* Draw Sheet über Bottom Bar */
-  .draw-sheet { bottom: 56px; }
+  /* Schliessen-Kreuz im Stil-Menü */
+  .om-close {
+    display: block; position: absolute; top: 6px; right: 8px;
+    background: none; border: none; color: var(--text-dim);
+    font-size: 17px; line-height: 1; padding: 4px 8px; cursor: pointer;
+  }
+  #overlayMenu { position: relative; }
+
+  .ds-glyph {
+    font-size: 17px; line-height: 1; height: 20px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Zeichenblatt */
+  .draw-sheet { bottom: 54px; z-index: 640; }
+  .draw-sheet-backdrop { z-index: 615; }
 
   /* Watchlist */
   .watchlist {
-    position: fixed; bottom: 56px; left: 0; right: 0;
+    position: fixed; left: 0; right: 0; bottom: 54px; top: auto;
     width: 100% !important; max-width: none;
-    max-height: 70vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    max-height: 62vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
     border-left: none; border-top: 1px solid var(--border);
     border-radius: 16px 16px 0 0;
-    padding-bottom: env(safe-area-inset-bottom);
-    box-shadow: 0 -8px 32px rgba(0,0,0,.55); z-index: 620;
+    box-shadow: 0 -8px 32px rgba(0,0,0,.55); z-index: 640;
   }
   .wl-header { position: sticky; top: 0; z-index: 2; background: var(--bg-raised); }
   .wl-close-btn {
     display: flex !important; align-items: center; justify-content: center;
-    width: 30px; height: 30px; flex-shrink: 0;
-    background: transparent; border: 1px solid var(--border); border-radius: 6px;
-    color: var(--text-dim); font-size: 15px; cursor: pointer;
+    width: 30px; height: 30px; flex-shrink: 0; margin-left: auto;
+    background: transparent; border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text-dim); font-size: 15px; cursor: pointer;
   }
-  .wl-item { padding: 12px 12px; }
+  .wl-item { padding: 12px; }
 
   /* Grid Bot */
   .gb-bar {
-    position: fixed; bottom: 56px; left: 0; right: 0;
+    position: fixed; left: 0; right: 0; bottom: 54px; top: auto;
     width: 100% !important; max-width: none !important;
-    max-height: 78vh !important; height: auto !important;
+    height: auto !important; max-height: 70vh !important;
     overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
     border-radius: 16px 16px 0 0; border-top: 1px solid var(--border);
-    padding-bottom: env(safe-area-inset-bottom);
-    box-shadow: 0 -8px 32px rgba(0,0,0,.55); z-index: 620;
+    box-shadow: 0 -8px 32px rgba(0,0,0,.55); z-index: 640;
   }
   .gb-status {
     position: sticky; top: 0; z-index: 2; background: var(--bg-raised);
     flex-wrap: wrap; gap: 5px 10px; padding: 8px 10px; font-size: 11px;
   }
-  .gb-stat { font-size: 10px; }
+  .gb-stat  { font-size: 10px; }
   .gb-sep-v { display: none; }
-  .gb-tab { font-size: 11px; padding: 6px 9px; }
+  .gb-tab   { font-size: 11px; padding: 6px 9px; }
   .gb-pane, .gb-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .gb-strat-row { flex-direction: column; }
   .gb-resize { display: none; }
 
-  /* Legende */
-  .chart-legend { top: 46px; left: 6px; max-width: calc(100% - 92px); }
+  /* Kontextmenü als Blatt */
+  .as-sheet, #overlayMenu.as-sheet { bottom: 54px !important; }
+
+  /* Legende: Symbol und Intervall stehen bereits in Zeile 2 */
+  .chart-legend { top: 6px; left: 6px; max-width: calc(100% - 92px); }
   .legend-ohlc .lg-sym, .legend-ohlc .lg-tf { display: none; }
-  .legend-line { white-space: normal; flex-wrap: wrap; gap: 0 4px; font-size: 9.5px; line-height: 1.35; }
+  .legend-line { white-space: normal; flex-wrap: wrap; gap: 0 4px;
+                 font-size: 9.5px; line-height: 1.35; }
   .legend-body { gap: 1px; padding: 1px 3px; }
 
-  /* Settings */
   .settings-panel, .frvp-menu, .fib-menu {
     max-width: calc(100vw - 16px) !important;
     max-height: 80vh; overflow-y: auto;
   }
 }
 
-/* ─────────────────────────────────────────────────────────────────
-   QUERFORMAT (landscape) auf kleinen Screens
-   Bottom Bar → rechte Seite  |  Top Bar → linke Seite (kompakt)
-   ──────────────────────────────────────────────────────────────── */
-@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  /* Gesamtlayout: Links-Spalte (Topbar) | Chart | Rechts-Spalte (Bottom) */
-  html, body { height: 100%; overflow: hidden; }
-  body { display: flex; flex-direction: row; }
-  .topbar {
-    flex-direction: column !important; width: 100px; height: 100%;
-    overflow-y: auto; border-right: 1px solid var(--border); border-bottom: none;
-    flex-shrink: 0;
-  }
-  .tb-row-1 { flex-direction: column; overflow-x: unset; overflow-y: auto; padding: 6px 4px; gap: 5px; }
-  .tb-row-2 { flex-direction: column; overflow-x: unset; overflow-y: auto; padding: 6px 4px; gap: 5px; border-top: 1px solid rgba(143,163,184,.12); }
-  .tb-gap { display: none; }
-  /* Zykluslus-Pills vertikal */
-  .tb-pills { flex-direction: column; }
-  .tb-row-2 .tb2-price, .tb-row-2 .tb2-change { display: none; }  /* kein Platz */
-
-  /* Bottom Bar wird zur rechten vertikalen Leiste */
-  .bottom-bar {
-    flex-direction: column !important; width: 72px; height: 100%;
-    left: auto; right: 0; top: 0; bottom: auto;
-    border-top: none; border-left: 1px solid var(--border);
-    padding: 6px 4px; justify-content: flex-start; gap: 4px;
-    overflow-y: auto;
-  }
-  .bb-btn { max-width: none; width: 100%; }
-
-  /* Workspace bekommt die ganze Breite minus die beiden Seitenleisten */
-  .workspace { height: 100%; width: calc(100% - 172px); }
-
-  /* Panels öffnen nach links (rechte Bar) oder nach rechts (linke Bar) */
-  .dd-panel, .dd-panel--wide, .dd-panel--right {
-    bottom: auto !important; top: 0 !important;
-    left: auto !important; right: 72px !important;
-    width: auto !important; max-width: 65vw !important;
-    height: 100%; max-height: 100%; border-radius: 0;
-  }
-  .draw-sheet { bottom: 0; left: 100px; right: 72px; border-radius: 0; }
-}
-
-/* Schmale Geräte */
+/* ── Sehr schmale Geräte ─────────────────────────────────────────────── */
 @media (max-width: 380px) {
   .action-btn { width: 30px; height: 30px; }
-  .ab-icon { width: 16px; height: 16px; }
-  .topbar { gap: 2px; }
-  .bb-btn { font-size: 8px; }
+  .ab-icon    { width: 16px; height: 16px; }
+  .tb-row     { gap: 3px; padding: 4px 6px; }
+  .bottom-bar .action-btn::after,
+  .bottom-bar .dd-trigger::after { font-size: 8px; }
+}
+
+/* ── Querformat: Bottom Bar → rechts, Topbar → links ─────────────────── */
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  body { display: flex; flex-direction: row; height: 100%; overflow: hidden; }
+
+  .topbar {
+    order: 1; width: 96px; height: 100%; flex-shrink: 0;
+    flex-direction: column; overflow-y: auto;
+    border-bottom: none; border-right: 1px solid var(--border);
+  }
+  .tb-row {
+    flex-direction: column; align-items: stretch;
+    overflow-x: visible; padding: 5px 4px; gap: 4px;
+  }
+  #tbRow2 { border-top: 1px solid rgba(143,163,184,.12); }
+  .tb-gap { display: none; }
+  .cycle-bar { flex-direction: column; }
+  .tb-row .dropdown, .tb-row .dd-trigger { width: 100%; }
+  #assetLabel { max-width: 76px; }
+
+  .workspace { order: 2; width: calc(100% - 96px - 66px); height: 100%; }
+
+  .bottom-bar {
+    order: 3; position: fixed; right: 0; left: auto; top: 0; bottom: 0;
+    width: 66px; height: 100%;
+    flex-direction: column; justify-content: flex-start; gap: 3px;
+    padding: 6px 4px; overflow-y: auto;
+    border-top: none; border-left: 1px solid var(--border);
+  }
+  .bottom-bar > * { flex: 0 0 auto; }
+
+  /* Blätter öffnen zur Chartmitte hin, nicht von unten */
+  .dd-panel, .dd-panel--wide, .dd-panel--right,
+  .watchlist, .gb-bar, .draw-sheet {
+    top: 0 !important; bottom: 0 !important;
+    left: auto !important; right: 66px !important;
+    width: min(62vw, 420px) !important; max-width: none !important;
+    height: 100%; max-height: 100% !important; border-radius: 0;
+  }
 }
