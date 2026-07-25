@@ -2507,7 +2507,10 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
     return (touch.clientX - rect.left) > (rect.width - AXIS_W);
   };
 
-  // Punkt 2: Long-Press entfernt — Doppeltap öffnet Stil-Menü (Abschnitt 5b).
+  // ---------- Long-Press → Rechtsklick-Menü ----------
+  let lpTimer = null, lpStart = null;
+  const LP_MS = 500, LP_MOVE = 12;
+  const cancelLP = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } lpStart = null; };
 
   // ---------- Y-Achsen-Drag-Zoom ----------
   let yDrag = null;        // { startY, base, yAxis }
@@ -2550,7 +2553,17 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
       return;
     }
 
-    // (Long-Press entfernt — Punkt 2)
+    // Sonst: normaler Long-Press
+    if (state.activeTool) return;
+    lpStart = { x: t.clientX, y: t.clientY };
+    lpTimer = setTimeout(() => {
+      if (!lpStart) return;
+      el.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true, cancelable: true,
+        clientX: lpStart.x, clientY: lpStart.y,
+      }));
+      cancelLP();
+    }, LP_MS);
   }, { passive: true });
 
   el.addEventListener("touchmove", (e) => {
@@ -2590,10 +2603,15 @@ new ResizeObserver(resize).observe(document.querySelector(".workspace"));
       return;
     }
 
-    // (Long-Press entfernt)
+    // --- Long-Press abbrechen bei Bewegung ---
+    if (lpStart &&
+        (Math.abs(t.clientX - lpStart.x) > LP_MOVE ||
+         Math.abs(t.clientY - lpStart.y) > LP_MOVE)) {
+      cancelLP();
+    }
   }, { passive: true });
 
-  const endTouch = () => { yDrag = null; };
+  const endTouch = () => { cancelLP(); yDrag = null; };
   el.addEventListener("touchend",    endTouch, { passive: true });
   el.addEventListener("touchcancel", endTouch, { passive: true });
 })();
@@ -3575,9 +3593,9 @@ function openFibMenu(event) {
 
   const menu = document.getElementById("fibMenu");
   menu.classList.remove("hidden");
-  // Punkt 1: einheitliche Platzierung — auf Mobile zentriert wie FRVP-Menü
-  const p = menuPosition(event, 252, 420);
-  placeMenu(menu, p.x, p.y);
+  const x = Math.min(event.pageX ?? event.x ?? 100, window.innerWidth - 252);
+  const y = Math.min(event.pageY ?? event.y ?? 100, window.innerHeight - 420);
+  placeMenu(menu, Math.max(8, x), Math.max(8, y));
 }
 
 function applyFibMenu() {
@@ -3888,25 +3906,9 @@ function applyTheme() {
   T.text   = css.getPropertyValue("--text-dim").trim() || T.text;
   T.grid   = state.theme === "dark" ? "rgba(143,163,184,0.07)" : "rgba(60,80,100,0.09)";
   T.accent = css.getPropertyValue("--accent").trim() || T.accent;
-  // Punkt 6: Im Compare-Modus darf baseStyles() die Kerzen nicht zurückbringen.
-  // applyCompareIndicator() hat die Candle-Styles auf transparent gesetzt;
-  // ein nacktes chart.setStyles(baseStyles()) würde sie wieder sichtbar machen.
-  if (state.compareAssets.length > 0) {
-    // Nur Grid, Achsen, Crosshair, Overlay-Farben neu setzen — KEIN candle-Block.
-    const bs = baseStyles();
-    chart.setStyles({
-      grid: bs.grid,
-      xAxis: bs.xAxis,
-      yAxis: bs.yAxis,
-      crosshair: bs.crosshair,
-      indicator: bs.indicator,
-      overlay: bs.overlay,
-    });
-    requestAnimationFrame(() => { try { drawCompare(); } catch (e) {} });
-  } else {
-    chart.setStyles(baseStyles());
-    if (state.active.has("vrvp")) requestAnimationFrame(drawVrvp);
-  }
+  chart.setStyles(baseStyles());
+  if (state.active.has("vrvp")) requestAnimationFrame(drawVrvp);
+  if (state.compareAssets.length > 0) requestAnimationFrame(() => { try { drawCompare(); } catch (e) {} });
 }
 
 function toggleTheme() {
@@ -4411,7 +4413,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m12";
+const TV_BUILD = "m11";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -4545,9 +4547,6 @@ quiet(() => {
 
   const AXIS_W = 80;
 
-  // Punkt 4: passive:false + preventDefault() damit KLC den Touch NICHT
-  // selbst als Zeichnungs-Tap verarbeitet. Nur dann kann fire() mit der
-  // Fadenkreuz-Position den Punkt korrekt setzen.
   host.addEventListener("touchstart", (e) => {
     if (!state.activeTool || e.touches.length !== 1) return;
     const t = e.touches[0];
@@ -4555,19 +4554,14 @@ quiet(() => {
     const fx = t.clientX - r.left;
     const fy = t.clientY - r.top;
     if (fx > r.width - AXIS_W) return;    // Preisskala: kein Fadenkreuz
-    // Punkt 4: Browser-Default (Scroll, Zoom) und KLCs eigene Touch-
-    // Verarbeitung unterdrücken — sonst setzt KLC den Punkt am Finger,
-    // nicht am Fadenkreuz.
-    if (e.cancelable) e.preventDefault();
     const cy = Math.max(10, fy - LIFT);
     current = { cx: fx, cy };
     canvas.style.display = "block";
     resize();
-  }, { passive: false });
+  }, { passive: true });
 
   host.addEventListener("touchmove", (e) => {
     if (!state.activeTool || e.touches.length !== 1 || !current) return;
-    if (e.cancelable) e.preventDefault();   // Chart-Scrollen während Zeichnen sperren
     if (raf) cancelAnimationFrame(raf);
     const t = e.touches[0];
     const r = host.getBoundingClientRect();
@@ -4576,22 +4570,16 @@ quiet(() => {
     const cy = Math.max(10, fy - LIFT);
     current = { cx: fx, cy };
     raf = requestAnimationFrame(() => draw(fx, cy));
-  }, { passive: false });
+  }, { passive: true });
 
   host.addEventListener("touchend", (e) => {
     if (!state.activeTool || !current) return;
-    // Punkt 4: preventDefault verhindert dass KLC nach dem touchend
-    // noch einen mousedown/-up an der Fingerposition synthetisiert.
-    if (e.cancelable) e.preventDefault();
-    const pos = { cx: current.cx, cy: current.cy };
-    // Fadenkreuz bleibt bis der nächste Punkt gesetzt wird
-    // fire() setzt den Punkt an der Fadenkreuz-Stelle
-    fire(pos.cx, pos.cy);
-    // Nach einer kurzen Pause prüfen ob das Werkzeug noch aktiv ist
+    fire(current.cx, current.cy);
+    // Kurz warten, damit KLC den Punkt verarbeitet, dann ausblenden
     setTimeout(() => {
       if (!state.activeTool) { canvas.style.display = "none"; current = null; }
     }, 80);
-  }, { passive: false });
+  }, { passive: true });
 
   host.addEventListener("touchcancel", () => {
     canvas.style.display = "none";
@@ -4726,190 +4714,16 @@ quiet(() => {
       quiet(() => {
         const ov = chart.getOverlayById(state.selectedOverlayId);
         if (!ov) { setStatus("Zeichnung zuerst antippen, dann doppelt tippen"); return; }
-        // Punkt 1: Doppeltap öffnet das passende Stilmenü für jede Zeichnungsart.
         // menuPosition liest event.pointerCoordinate oder event.x/y
-        const ev = { pointerCoordinate: { x, y }, overlay: ov, x, y };
-        if (ov.name === "frvp") {
-          openFrvpMenu(ov, ev);
-        } else if (ov.name === "fibRetracement" || ov.name === "fibExtension") {
-          // Fib-Menü: event muss .overlay und Koordinaten tragen
-          openFibMenu(ev);
-        } else {
-          openOverlayMenu(ov, ev);
-        }
+        const ev = { pointerCoordinate: { x, y } };
+        if (ov.name === "frvp") openFrvpMenu(ov, ev);
+        else                    openOverlayMenu(ov, ev);
       }, "dbl-tap menu");
       return;
     }
     lastTap = now; lastX = x; lastY = y;
   }, { passive: true });
 }, "dbl-tap menu init");
-
-// ── 5c. Zeichnungs-Drag: ganzes Overlay oder einzelner Punkt verschieben ──
-// Punkt 3: "Druck und verschieben" auf einer ausgewählten Zeichnung verschiebt
-// entweder das ganze Overlay oder — wenn der Finger genau auf einem Punkt
-// landet — nur diesen Punkt. Während des Verschiebens sind X- und Y-Achsen-
-// Navigation gesperrt (chart.setScrollEnabled/setZoomEnabled false).
-//
-// Trefferradius: 28px auf dem Bildschirm (entspricht ~14px physisch bei 2× DPR).
-// Wenn kein Punkt nah genug ist und ein Overlay ausgewählt ist, wird das
-// ganze Overlay verschoben.
-//
-// KLC-Schnittstelle: chart.overrideOverlay({ id, points }) mit den neuen
-// Punkten in { timestamp, value }. convertFromPixel({ x, y }, { paneId })
-// liefert { timestamp, dataIndex, value }. convertToPixel({ timestamp, value },
-// { paneId }) liefert { x, y } — für die initiale Pixel-Position der Punkte.
-quiet(() => {
-  if (!tvIsMobile()) return;
-  const host = document.getElementById("mainChart");
-  if (!host) return;
-
-  const HIT_R   = 28;    // Pixel-Trefferradius für Punkt-Selektion
-  const HOLD_MS = 180;   // ms gedrückt halten bevor Drag startet
-  const AXIS_W  = 80;
-
-  let holdTimer  = null;
-  let dragState  = null;   // null | { mode: "point"|"overlay", ... }
-  let holdStart  = null;   // { x, y, time }
-
-  const cancelHold = () => {
-    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
-    holdStart = null;
-  };
-
-  const lockAxes = (on) => {
-    quiet(() => {
-      chart.setScrollEnabled(!on);
-      chart.setZoomEnabled(!on);
-    }, "drag lock");
-  };
-
-  // Pixel-Position eines Overlay-Punktes ermitteln
-  const pointToPixel = (pt) => {
-    try {
-      const r = chart.convertToPixel(
-        { timestamp: pt.timestamp, value: pt.value },
-        { paneId: "candle_pane" }
-      );
-      if (!r) return null;
-      return Array.isArray(r) ? r[0] : r;
-    } catch (e) { return null; }
-  };
-
-  // Chart-Position aus Pixel
-  const pixelToChart = (px, py) => {
-    try {
-      const r = chart.convertFromPixel({ x: px, y: py }, { paneId: "candle_pane" });
-      const one = (v) => Array.isArray(v) ? v[0] : v;
-      return one(r);
-    } catch (e) { return null; }
-  };
-
-  host.addEventListener("touchstart", (e) => {
-    if (state.activeTool || e.touches.length !== 1) { cancelHold(); return; }
-    const t = e.touches[0];
-    const rect = host.getBoundingClientRect();
-    const fx = t.clientX - rect.left;
-    const fy = t.clientY - rect.top;
-    if (fx > rect.width - AXIS_W) { cancelHold(); return; }   // Preisskala
-    if (!state.selectedOverlayId) return;   // kein Overlay ausgewählt
-
-    holdStart = { x: fx, y: fy, time: Date.now() };
-    holdTimer = setTimeout(() => {
-      if (!holdStart) return;
-      // Drag initialisieren
-      const ov = quiet(() => chart.getOverlayById(state.selectedOverlayId), "drag get ov");
-      if (!ov || !ov.points || !ov.points.length) { cancelHold(); return; }
-
-      // Prüfen ob der Finger auf einem Punkt liegt
-      let hitIdx = -1;
-      for (let i = 0; i < ov.points.length; i++) {
-        const px = pointToPixel(ov.points[i]);
-        if (!px) continue;
-        const dx = holdStart.x - px.x, dy = holdStart.y - px.y;
-        if (Math.sqrt(dx * dx + dy * dy) <= HIT_R) { hitIdx = i; break; }
-      }
-
-      // Startwerte für alle Punkte in Chart-Koordinaten merken
-      const startPoints = ov.points.map(p => ({ ...p }));
-      // Pixel-Deltas von der Startposition berechnen
-      const startPx = holdStart.x, startPy = holdStart.y;
-
-      lockAxes(true);
-      if (hitIdx >= 0) {
-        dragState = { mode: "point", id: ov.id, idx: hitIdx, startPoints, startPx, startPy };
-        setStatus("Punkt verschieben — loslassen zum Setzen");
-      } else {
-        dragState = { mode: "overlay", id: ov.id, startPoints, startPx, startPy };
-        setStatus("Zeichnung verschieben");
-      }
-      holdStart = null;
-    }, HOLD_MS);
-  }, { passive: true });
-
-  host.addEventListener("touchmove", (e) => {
-    // Überschreitung der Haltedauer-Schwelle abbrechen wenn sich Finger bewegt
-    if (holdStart && e.touches.length === 1) {
-      const t = e.touches[0];
-      const rect = host.getBoundingClientRect();
-      const dx = (t.clientX - rect.left) - holdStart.x;
-      const dy = (t.clientY - rect.top)  - holdStart.y;
-      if (Math.sqrt(dx * dx + dy * dy) > 8) cancelHold();
-    }
-
-    if (!dragState || e.touches.length !== 1) return;
-    if (e.cancelable) e.preventDefault();   // Chart-Scroll sperren
-
-    const t = e.touches[0];
-    const rect = host.getBoundingClientRect();
-    const fx = t.clientX - rect.left;
-    const fy = t.clientY - rect.top;
-
-    quiet(() => {
-      const { mode, id, idx, startPoints, startPx, startPy } = dragState;
-      const newPoints = startPoints.map(p => ({ ...p }));
-
-      if (mode === "point") {
-        // Nur den getroffenen Punkt verschieben
-        const newPos = pixelToChart(fx, fy);
-        if (!newPos || newPos.timestamp == null) return;
-        newPoints[idx] = { timestamp: newPos.timestamp, value: newPos.value };
-      } else {
-        // Delta in Pixel → Delta in Chart-Einheiten
-        const refOrig = pixelToChart(startPx, startPy);
-        const refNew  = pixelToChart(fx, fy);
-        if (!refOrig || !refNew) return;
-        const dtMs = refNew.timestamp - refOrig.timestamp;
-        const dVal = refNew.value     - refOrig.value;
-        for (let i = 0; i < newPoints.length; i++) {
-          newPoints[i] = {
-            timestamp: startPoints[i].timestamp + dtMs,
-            value:     startPoints[i].value     + dVal,
-          };
-        }
-      }
-      chart.overrideOverlay({ id, points: newPoints });
-    }, "drag move");
-  }, { passive: false });
-
-  const endDrag = (e) => {
-    cancelHold();
-    if (!dragState) return;
-    // Zeichnungs-Register aktualisieren damit Layout gespeichert werden kann
-    quiet(() => {
-      const ov = chart.getOverlayById(dragState.id);
-      if (ov) {
-        const rec = state.drawings.find(d => d.id === dragState.id);
-        if (rec) { rec.points = ov.points.map(p => ({ ...p })); saveWorkspace(); }
-      }
-    }, "drag save");
-    lockAxes(false);
-    dragState = null;
-    setStatus("");
-  };
-
-  host.addEventListener("touchend",    endDrag, { passive: true });
-  host.addEventListener("touchcancel", endDrag, { passive: true });
-}, "drawing drag init");
 
 // ── 6. Volumenprofil: zwei gestrichelte Grenzlinien ───────────────────
 // Aufziehen scheitert auf dem Handy, weil dieselbe Geste den Chart
