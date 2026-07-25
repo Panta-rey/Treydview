@@ -2059,6 +2059,7 @@ function openFrvpMenu(overlay, event) {
   const p = menuPosition(event, 260, 380);
   menu.classList.remove("hidden");
   placeMenu(menu, p.x, p.y);   // klemmt bzw. wird auf Touch zum Bottom-Sheet
+  document.body.classList.add("menu-open");
 
   document.getElementById("frvpApply").onclick = () => {
     const op = parseInt(document.getElementById("frvpOpacity").value, 10) || 55;
@@ -2085,6 +2086,7 @@ function openFrvpMenu(overlay, event) {
     if (rec) rec.extendData = newExt;
     saveWorkspace();
     menu.classList.add("hidden");
+    document.body.classList.remove("menu-open");
   };
   document.getElementById("frvpDelete").onclick = () => {
     chart.removeOverlay(overlay.id);
@@ -4411,7 +4413,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m10";
+const TV_BUILD = "m11";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -4481,61 +4483,122 @@ quiet(() => {
   const x = document.getElementById("omClose");
   const m = document.getElementById("overlayMenu");
   if (!x || !m) return;
-  x.addEventListener("click", (e) => { e.stopPropagation(); m.classList.add("hidden"); });
+  const closeMenu = () => { m.classList.add("hidden"); document.body.classList.remove("menu-open"); };
+  x.addEventListener("click", (e) => { e.stopPropagation(); closeMenu(); });
 }, "om close");
 
-// ── 4. Zeichnungs-Lupe ────────────────────────────────────────────────
-// Beim Setzen von Punkten verdeckt der Finger die Stelle. Die Lupe zeigt
-// den Ausschnitt darüber vergrössert mit Fadenkreuz.
+// ── 4. Fadenkreuz beim Einzeichnen ────────────────────────────────────
+// Wenn ein Werkzeug aktiv ist und der Finger den Chart berührt, erscheint
+// ein gestricheltes Fadenkreuz 120px ÜBER dem Finger. Der Finger selbst
+// verdeckt die genaue Position nicht mehr. Beim Loslassen wird
+// mousedown/mouseup an der Fadenkreuz-Stelle gefeuert — KLC setzt den
+// Punkt genau dort.
+//
+// Vorteil gegenüber der Lupe: keine verzerrte Canvas-Kopie, kein Lag,
+// funktioniert bei beliebiger Chart-Zoom-Stufe exakt.
 quiet(() => {
-  const mag  = document.getElementById("drawMagnifier");
-  const cv   = document.getElementById("drawMagnifierCanvas");
-  const host = document.getElementById("mainChart");
-  if (!mag || !cv || !host || !tvIsMobile()) return;
+  const host   = document.getElementById("mainChart");
+  const canvas = document.createElement("canvas");
+  canvas.id = "crosshairCanvas";
+  canvas.style.cssText = [
+    "position:absolute","top:0","left:0","width:100%","height:100%",
+    "pointer-events:none","z-index:25","display:none",
+  ].join(";");
+  host.style.position = "relative";
+  host.appendChild(canvas);
 
-  const SIZE = 88, ZOOM = 2.5;
-  const ctx = cv.getContext("2d");
+  let raf = null;
+  let current = null;   // { cx, cy } = Fadenkreuz-Position im Chart
 
-  const draw = (touch) => {
-    // Beim Volumenprofil stört die Lupe — dort führen gestrichelte
-    // Linien durch die Geste.
-    if (!state.activeTool || state.activeTool === "frvp") { hide(); return; }
-    const rect = host.getBoundingClientRect();
-    const px = touch.clientX - rect.left;
-    const py = touch.clientY - rect.top;
-
-    mag.classList.add("active");
-    mag.style.left = Math.max(4, Math.min(window.innerWidth - SIZE - 4,
-                       touch.clientX - SIZE / 2)) + "px";
-    mag.style.top  = Math.max(4, touch.clientY - SIZE - 28) + "px";
-
-    // Alle Chart-Ebenen übereinander in die Lupe zeichnen
-    ctx.clearRect(0, 0, SIZE, SIZE);
-    const s = SIZE / ZOOM;
-    host.querySelectorAll("canvas").forEach(src => {
-      if (!src.width || !src.height) return;
-      const sx = px * (src.width  / rect.width)  - s / 2;
-      const sy = py * (src.height / rect.height) - s / 2;
-      try { ctx.drawImage(src, sx, sy, s, s, 0, 0, SIZE, SIZE); } catch (_) {}
-    });
-    ctx.strokeStyle = "rgba(232,182,76,.85)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(SIZE / 2, 0); ctx.lineTo(SIZE / 2, SIZE);
-    ctx.moveTo(0, SIZE / 2); ctx.lineTo(SIZE, SIZE / 2);
-    ctx.stroke();
+  const LIFT = 120;    // Pixel über dem Finger
+  const resize = () => {
+    canvas.width  = host.offsetWidth  * devicePixelRatio;
+    canvas.height = host.offsetHeight * devicePixelRatio;
+    if (current) draw(current.cx, current.cy);
   };
-  const hide = () => mag.classList.remove("active");
+  new ResizeObserver(resize).observe(host);
+
+  const draw = (cx, cy) => {
+    const ctx = canvas.getContext("2d");
+    const dpr = devicePixelRatio;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const px = cx * dpr, py = cy * dpr;
+    ctx.strokeStyle = "rgba(232,182,76,.9)";
+    ctx.lineWidth   = 1 * dpr;
+    ctx.setLineDash([6 * dpr, 4 * dpr]);
+    ctx.beginPath();
+    ctx.moveTo(0,  py); ctx.lineTo(canvas.width, py);
+    ctx.moveTo(px, 0);  ctx.lineTo(px, canvas.height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Kleines Quadrat am Kreuzungspunkt
+    const S = 5 * dpr;
+    ctx.strokeRect(px - S, py - S, S * 2, S * 2);
+  };
+
+  const fire = (cx, cy) => {
+    // Maus-Ereignisse an der Fadenkreuz-Stelle — KLC setzt den Punkt dort
+    const rect = host.getBoundingClientRect();
+    const opt  = { bubbles: true, cancelable: true, button: 0,
+                   clientX: rect.left + cx, clientY: rect.top + cy };
+    host.dispatchEvent(new MouseEvent("mousedown", opt));
+    host.dispatchEvent(new MouseEvent("mouseup",   opt));
+  };
+
+  const AXIS_W = 80;
 
   host.addEventListener("touchstart", (e) => {
-    if (e.touches.length === 1) draw(e.touches[0]);
+    if (!state.activeTool || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const r = host.getBoundingClientRect();
+    const fx = t.clientX - r.left;
+    const fy = t.clientY - r.top;
+    if (fx > r.width - AXIS_W) return;    // Preisskala: kein Fadenkreuz
+    const cy = Math.max(10, fy - LIFT);
+    current = { cx: fx, cy };
+    canvas.style.display = "block";
+    resize();
   }, { passive: true });
+
   host.addEventListener("touchmove", (e) => {
-    if (e.touches.length === 1) draw(e.touches[0]);
+    if (!state.activeTool || e.touches.length !== 1 || !current) return;
+    if (raf) cancelAnimationFrame(raf);
+    const t = e.touches[0];
+    const r = host.getBoundingClientRect();
+    const fx = t.clientX - r.left;
+    const fy = t.clientY - r.top;
+    const cy = Math.max(10, fy - LIFT);
+    current = { cx: fx, cy };
+    raf = requestAnimationFrame(() => draw(fx, cy));
   }, { passive: true });
-  host.addEventListener("touchend",    hide, { passive: true });
-  host.addEventListener("touchcancel", hide, { passive: true });
-}, "magnifier init");
+
+  host.addEventListener("touchend", (e) => {
+    if (!state.activeTool || !current) return;
+    fire(current.cx, current.cy);
+    // Kurz warten, damit KLC den Punkt verarbeitet, dann ausblenden
+    setTimeout(() => {
+      if (!state.activeTool) { canvas.style.display = "none"; current = null; }
+    }, 80);
+  }, { passive: true });
+
+  host.addEventListener("touchcancel", () => {
+    canvas.style.display = "none";
+    current = null;
+  }, { passive: true });
+
+  // Fadenkreuz ausblenden wenn Werkzeug deaktiviert wird
+  const origProp = Object.getOwnPropertyDescriptor(state, "activeTool");
+  if (origProp && origProp.set) {
+    const origSet = origProp.set;
+    Object.defineProperty(state, "activeTool", {
+      ...origProp,
+      set(v) {
+        origSet.call(this, v);
+        if (!v) { canvas.style.display = "none"; current = null; }
+      },
+    });
+  }
+}, "crosshair init");
 
 // ── 4b. Chart feststellen, solange ein Werkzeug aktiv ist ─────────────
 // Ein früherer Versuch rief nur preventDefault(). Das unterbindet aber
