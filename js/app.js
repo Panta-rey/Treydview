@@ -1353,7 +1353,11 @@ function toggleLegend() {
 
 // ---------- Chart-Typ (Kerzen / Linie) ----------
 function renderTypeList() {
+  // Auf Mobile gibt es kein Kerzen-Dropdown mehr — dann still aussteigen.
+  // Ohne diesen Ausstieg wirft die Funktion und der gesamte Startup-Code
+  // danach (Watchlist, Theme, FAQ, Vollbild, Grid Bot, L/S) wird nie erreicht.
   const list = document.getElementById("typeList");
+  if (!list) return;
   list.innerHTML = "";
   const types = [
     { id: "candle_solid", label: "Kerzen" },
@@ -1369,8 +1373,8 @@ function renderTypeList() {
     name.addEventListener("click", () => {
       state.chartType = t.id;
       saveWorkspace();
-      document.getElementById("typeLabel").textContent = t.label;
-      document.getElementById("typePanel").classList.remove("open");
+      const _tl = document.getElementById("typeLabel"); if (_tl) _tl.textContent = t.label;
+      document.getElementById("typePanel")?.classList.remove("open");
       chart.setStyles(baseStyles());
       renderTypeList();
     });
@@ -1387,11 +1391,11 @@ function renderTypeList() {
       if (state.chartType !== t.id) {
         state.chartType = t.id;
         saveWorkspace();
-        document.getElementById("typeLabel").textContent = t.label;
+        const _tl = document.getElementById("typeLabel"); if (_tl) _tl.textContent = t.label;
         chart.setStyles(baseStyles());
         renderTypeList();
       }
-      document.getElementById("typePanel").classList.remove("open");
+      document.getElementById("typePanel")?.classList.remove("open");
       openChartStyleMenu(document.getElementById("typeTrigger"));
     });
     item.appendChild(gear);
@@ -4492,166 +4496,167 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 
 // Type-Dropdown öffnen/schliessen (zur bestehenden Dropdown-Logik hinzufügen)
 
-})();
+  // ================================================================
+  // MOBILE EXTRAS
+  // ================================================================
 
-// ================================================================
-// MOBILE EXTRAS
-// ================================================================
+  // ── 1. Stil-Menü Schliessen-Knopf ───────────────────────────────
+  (function() {
+    const btn = document.getElementById("omClose");
+    const menu = document.getElementById("overlayMenu");
+    if (btn && menu) btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.classList.add("hidden");
+    });
+  })();
 
-// ── 1. Stil-Menü Schliessen-Knopf ───────────────────────────────
-(function() {
-  const btn = document.getElementById("omClose");
-  const menu = document.getElementById("overlayMenu");
-  if (btn && menu) btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    menu.classList.add("hidden");
-  });
-})();
+  // ── 2. Zeichnungs-Lupe ──────────────────────────────────────────
+  (function initDrawMagnifier() {
+    const mag   = document.getElementById("drawMagnifier");
+    const magC  = document.getElementById("drawMagnifierCanvas");
+    const chart = document.getElementById("mainChart");
+    if (!mag || !magC || !chart) return;
+    const SIZE = 88, SCALE = 2.5;
+    magC.width = SIZE; magC.height = SIZE;
+    const ctx = magC.getContext("2d");
+    let active = false;
 
-// ── 2. Zeichnungs-Lupe ──────────────────────────────────────────
-(function initDrawMagnifier() {
-  const mag   = document.getElementById("drawMagnifier");
-  const magC  = document.getElementById("drawMagnifierCanvas");
-  const chart = document.getElementById("mainChart");
-  if (!mag || !magC || !chart) return;
-  const SIZE = 88, SCALE = 2.5;
-  magC.width = SIZE; magC.height = SIZE;
-  const ctx = magC.getContext("2d");
-  let active = false;
+    function show(touch) {
+      if (!state.activeTool) return;
+      active = true;
+      mag.classList.add("active");
+      const rect = chart.getBoundingClientRect();
+      const tx = touch.clientX - rect.left;
+      const ty = touch.clientY - rect.top;
 
-  function show(touch) {
-    if (!state.activeTool) return;
-    active = true;
-    mag.classList.add("active");
-    const rect = chart.getBoundingClientRect();
-    const tx = touch.clientX - rect.left;
-    const ty = touch.clientY - rect.top;
+      // Lupe oberhalb des Fingers anzeigen
+      const mx = touch.clientX - SIZE / 2;
+      const my = touch.clientY - SIZE - 30;
+      mag.style.left = Math.max(0, Math.min(window.innerWidth - SIZE, mx)) + "px";
+      mag.style.top  = Math.max(0, my) + "px";
 
-    // Lupe oberhalb des Fingers anzeigen
-    const mx = touch.clientX - SIZE / 2;
-    const my = touch.clientY - SIZE - 30;
-    mag.style.left = Math.max(0, Math.min(window.innerWidth - SIZE, mx)) + "px";
-    mag.style.top  = Math.max(0, my) + "px";
-
-    // Chartbereich um den Finger herum ausschneiden und vergrössert zeichnen
-    try {
-      const src = chart.querySelector("canvas");
-      if (!src) return;
-      ctx.clearRect(0, 0, SIZE, SIZE);
-      const sw = SIZE / SCALE, sh = SIZE / SCALE;
-      ctx.drawImage(src, tx - sw/2, ty - sh/2, sw, sh, 0, 0, SIZE, SIZE);
-      // Fadenkreuz
-      ctx.strokeStyle = "rgba(232,182,76,.8)"; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(SIZE/2, 0); ctx.lineTo(SIZE/2, SIZE);
-      ctx.moveTo(0, SIZE/2); ctx.lineTo(SIZE, SIZE/2); ctx.stroke();
-    } catch (_) {}
-  }
-
-  function hide() { active = false; mag.classList.remove("active"); }
-
-  chart.addEventListener("touchstart", (e) => {
-    if (e.touches.length === 1) show(e.touches[0]);
-  }, { passive: true });
-  chart.addEventListener("touchmove", (e) => {
-    if (e.touches.length === 1 && state.activeTool) show(e.touches[0]);
-  }, { passive: true });
-  chart.addEventListener("touchend",    hide, { passive: true });
-  chart.addEventListener("touchcancel", hide, { passive: true });
-})();
-
-// ── 3. Y-Achsen-Verschiebung (ein Finger, Nicht-Preisskala) ─────
-// KLC verschiebt bei einerm Finger horizontal (X-Achse) nativ.
-// Wir addieren vertikale Verschiebung des Preisbereichs —
-// der Nutzer kann so den Chart hoch/runter schieben.
-(function initYPan() {
-  const el = document.getElementById("mainChart");
-  const AXIS_W = 80;
-  let panStart = null;
-
-  el.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1 || state.activeTool) return;
-    const t = e.touches[0];
-    const rect = el.getBoundingClientRect();
-    const onAxis = (t.clientX - rect.left) > (rect.width - AXIS_W);
-    if (onAxis) return;  // Preisskala: dort Y-Zoom, nicht Y-Pan
-    panStart = { y: t.pageY };
-  }, { passive: true });
-
-  el.addEventListener("touchmove", (e) => {
-    if (e.touches.length !== 1 || !panStart || state.activeTool) return;
-    const t = e.touches[0];
-    const dy = t.pageY - panStart.y;
-    panStart = { y: t.pageY };
-    if (Math.abs(dy) < 1) return;
-
-    quiet(() => {
-      const pane = chart.getDrawPaneById("candle_pane");
-      if (!pane) return;
-      const yAxis = pane.getAxisComponent();
-      if (!yAxis) return;
-      const r = yAxis.getRange();
-      if (!r || r.range == null) return;
-      // dy > 0 = Finger nach unten = Preisbereich nach unten verschieben
-      const shift = (r.range / el.clientHeight) * dy;
-      const from = r.from - shift, to = r.to - shift;
-      const rf = yAxis.convertToRealValue(from);
-      const rt = yAxis.convertToRealValue(to);
-      yAxis.setAutoCalcTickFlag(false);
-      yAxis.setRange({ from, to, range: r.range, realFrom: rf, realTo: rt, realRange: rt - rf });
-      chart.adjustPaneViewport(false, true, true, true);
-    }, "y-pan");
-  }, { passive: true });
-
-  el.addEventListener("touchend",    () => { panStart = null; }, { passive: true });
-  el.addEventListener("touchcancel", () => { panStart = null; }, { passive: true });
-})();
-
-// ── 4. FRVP Zwei-Tap-Gestik ─────────────────────────────────────
-(function initFrvpTwoTap() {
-  let frvpStart = null;
-  const STATUS_MSG = "FRVP: Erster Tap = Start, zweiter Tap = Ende";
-
-  // Wir horchen auf den Chart — aber nur wenn das FRVP-Tool aktiv ist
-  const el = document.getElementById("mainChart");
-  if (!el) return;
-
-  el.addEventListener("touchend", (e) => {
-    if (state.activeTool !== "frvp") return;
-    if (e.changedTouches.length !== 1) return;
-    const t = e.changedTouches[0];
-    const rect = el.getBoundingClientRect();
-    const coord = { x: t.clientX - rect.left, y: t.clientY - rect.top };
-
-    if (!frvpStart) {
-      // Erster Tap
-      frvpStart = coord;
-      setStatus(STATUS_MSG + " ✓ Start gesetzt — jetzt Ende tippen");
-    } else {
-      // Zweiter Tap: synthetisches mousedown/mouseup Paar senden
-      // damit KLC das FRVP abschliesst
-      const fire = (type, cx, cy) => {
-        const ev = new MouseEvent(type, { bubbles: true, cancelable: true,
-          clientX: rect.left + cx, clientY: rect.top + cy, button: 0 });
-        el.dispatchEvent(ev);
-      };
-      fire("mousedown", frvpStart.x, frvpStart.y);
-      fire("mouseup",   frvpStart.x, frvpStart.y);
-      fire("click",     frvpStart.x, frvpStart.y);
-      setTimeout(() => {
-        fire("mousedown", coord.x, coord.y);
-        fire("mouseup",   coord.x, coord.y);
-        fire("click",     coord.x, coord.y);
-      }, 30);
-      frvpStart = null;
-      setStatus("FRVP gezeichnet");
+      // Chartbereich um den Finger herum ausschneiden und vergrössert zeichnen
+      try {
+        const src = chart.querySelector("canvas");
+        if (!src) return;
+        ctx.clearRect(0, 0, SIZE, SIZE);
+        const sw = SIZE / SCALE, sh = SIZE / SCALE;
+        ctx.drawImage(src, tx - sw/2, ty - sh/2, sw, sh, 0, 0, SIZE, SIZE);
+        // Fadenkreuz
+        ctx.strokeStyle = "rgba(232,182,76,.8)"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(SIZE/2, 0); ctx.lineTo(SIZE/2, SIZE);
+        ctx.moveTo(0, SIZE/2); ctx.lineTo(SIZE, SIZE/2); ctx.stroke();
+      } catch (_) {}
     }
-  }, { passive: true });
 
-  // Reset wenn Tool gewechselt wird
-  const origStart = startTool;
-  window.__tvStartTool = (name) => {
-    if (name !== "frvp") frvpStart = null;
-    if (name === "frvp") setStatus(STATUS_MSG);
-    origStart(name);
-  };
+    function hide() { active = false; mag.classList.remove("active"); }
+
+    chart.addEventListener("touchstart", (e) => {
+      if (e.touches.length === 1) show(e.touches[0]);
+    }, { passive: true });
+    chart.addEventListener("touchmove", (e) => {
+      if (e.touches.length === 1 && state.activeTool) show(e.touches[0]);
+    }, { passive: true });
+    chart.addEventListener("touchend",    hide, { passive: true });
+    chart.addEventListener("touchcancel", hide, { passive: true });
+  })();
+
+  // ── 3. Y-Achsen-Verschiebung (ein Finger, Nicht-Preisskala) ─────
+  // KLC verschiebt bei einerm Finger horizontal (X-Achse) nativ.
+  // Wir addieren vertikale Verschiebung des Preisbereichs —
+  // der Nutzer kann so den Chart hoch/runter schieben.
+  (function initYPan() {
+    const el = document.getElementById("mainChart");
+    const AXIS_W = 80;
+    let panStart = null;
+
+    el.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1 || state.activeTool) return;
+      const t = e.touches[0];
+      const rect = el.getBoundingClientRect();
+      const onAxis = (t.clientX - rect.left) > (rect.width - AXIS_W);
+      if (onAxis) return;  // Preisskala: dort Y-Zoom, nicht Y-Pan
+      panStart = { y: t.pageY };
+    }, { passive: true });
+
+    el.addEventListener("touchmove", (e) => {
+      if (e.touches.length !== 1 || !panStart || state.activeTool) return;
+      const t = e.touches[0];
+      const dy = t.pageY - panStart.y;
+      panStart = { y: t.pageY };
+      if (Math.abs(dy) < 1) return;
+
+      quiet(() => {
+        const pane = chart.getDrawPaneById("candle_pane");
+        if (!pane) return;
+        const yAxis = pane.getAxisComponent();
+        if (!yAxis) return;
+        const r = yAxis.getRange();
+        if (!r || r.range == null) return;
+        // dy > 0 = Finger nach unten = Preisbereich nach unten verschieben
+        const shift = (r.range / el.clientHeight) * dy;
+        const from = r.from - shift, to = r.to - shift;
+        const rf = yAxis.convertToRealValue(from);
+        const rt = yAxis.convertToRealValue(to);
+        yAxis.setAutoCalcTickFlag(false);
+        yAxis.setRange({ from, to, range: r.range, realFrom: rf, realTo: rt, realRange: rt - rf });
+        chart.adjustPaneViewport(false, true, true, true);
+      }, "y-pan");
+    }, { passive: true });
+
+    el.addEventListener("touchend",    () => { panStart = null; }, { passive: true });
+    el.addEventListener("touchcancel", () => { panStart = null; }, { passive: true });
+  })();
+
+  // ── 4. FRVP Zwei-Tap-Gestik ─────────────────────────────────────
+  (function initFrvpTwoTap() {
+    let frvpStart = null;
+    const STATUS_MSG = "FRVP: Erster Tap = Start, zweiter Tap = Ende";
+
+    // Wir horchen auf den Chart — aber nur wenn das FRVP-Tool aktiv ist
+    const el = document.getElementById("mainChart");
+    if (!el) return;
+
+    el.addEventListener("touchend", (e) => {
+      if (state.activeTool !== "frvp") return;
+      if (e.changedTouches.length !== 1) return;
+      const t = e.changedTouches[0];
+      const rect = el.getBoundingClientRect();
+      const coord = { x: t.clientX - rect.left, y: t.clientY - rect.top };
+
+      if (!frvpStart) {
+        // Erster Tap
+        frvpStart = coord;
+        setStatus(STATUS_MSG + " ✓ Start gesetzt — jetzt Ende tippen");
+      } else {
+        // Zweiter Tap: synthetisches mousedown/mouseup Paar senden
+        // damit KLC das FRVP abschliesst
+        const fire = (type, cx, cy) => {
+          const ev = new MouseEvent(type, { bubbles: true, cancelable: true,
+            clientX: rect.left + cx, clientY: rect.top + cy, button: 0 });
+          el.dispatchEvent(ev);
+        };
+        fire("mousedown", frvpStart.x, frvpStart.y);
+        fire("mouseup",   frvpStart.x, frvpStart.y);
+        fire("click",     frvpStart.x, frvpStart.y);
+        setTimeout(() => {
+          fire("mousedown", coord.x, coord.y);
+          fire("mouseup",   coord.x, coord.y);
+          fire("click",     coord.x, coord.y);
+        }, 30);
+        frvpStart = null;
+        setStatus("FRVP gezeichnet");
+      }
+    }, { passive: true });
+
+    // Reset wenn Tool gewechselt wird
+    const origStart = startTool;
+    window.__tvStartTool = (name) => {
+      if (name !== "frvp") frvpStart = null;
+      if (name === "frvp") setStatus(STATUS_MSG);
+      origStart(name);
+    };
+  })();
+
+
 })();
