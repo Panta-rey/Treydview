@@ -4258,6 +4258,28 @@ document.getElementById("posToolTopBtn").addEventListener("click", () => {
   setStatus("Long/Short: 1. Einstieg klicken  →  2. Stop  →  3. Ziel");
 });
 document.getElementById("gridBotBtn").addEventListener("click", () => gbToggleBar());
+
+  // Magnetknopf in der Bottom Bar
+  quiet(() => {
+    const btn = document.getElementById("magnetBbBtn");
+    if (!btn) return;
+    const update = () => {
+      const on = state.magnetMode !== "normal";
+      btn.classList.toggle("active", on);
+      btn.title = on
+        ? "Magnet: " + (state.magnetMode === "strong_magnet" ? "stark" : "schwach") + " (tippen zum Wechseln)"
+        : "Magnet: aus";
+    };
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.magnetMode = state.magnetMode === "normal"      ? "weak_magnet"
+                       : state.magnetMode === "weak_magnet" ? "strong_magnet"
+                       : "normal";
+      update();
+      renderDrawbar();
+    });
+    update();
+  }, "magnet bb btn");
 document.getElementById("gbClose").addEventListener("click", (e) => { e.stopPropagation(); gbToggleBar(false); });
 document.getElementById("gbToggle").addEventListener("click", (e) => {
   e.stopPropagation();
@@ -4452,7 +4474,9 @@ quiet(() => {
   if (!btn) return;
 
   const root      = document.documentElement;
-  const canNative = !!(root.requestFullscreen || root.webkitRequestFullscreen);
+  // Brave/Safari auf iPhone: API existiert, lehnt aber ab (sandboxed).
+  const inSafariOrBrave = /iP(hone|od|ad)/.test(navigator.userAgent);
+  const canNative = !inSafariOrBrave && !!(root.requestFullscreen || root.webkitRequestFullscreen);
   const standalone = window.navigator.standalone === true
     || window.matchMedia("(display-mode: standalone)").matches;
 

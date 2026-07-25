@@ -205,7 +205,8 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 /* Popover */
 .cycle-popover {
   position: fixed; z-index: 9000;
-  background: var(--bg-panel); border: 1px solid var(--border);
+  background: var(--bg-raised); border: 1px solid var(--border);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
   border-radius: 8px; padding: 10px 14px; min-width: 180px; max-width: 260px;
   box-shadow: 0 6px 24px rgba(0,0,0,.5);
   animation: cpFadeIn .12s ease;
@@ -778,7 +779,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
    Desktop läuft dieser Code nie, das DOM bleibt dort unverändert.
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root { --tv-build: "m8"; }
+:root { --tv-build: "m9"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -835,7 +836,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .ab-icon    { width: 19px; height: 19px; }
 
   /* Zeile 2: Asset · Intervall · Vergleich · Preis · Änderung */
-  .tb-row .dd-trigger { padding: 4px 8px; font-size: 11px; }
+  .tb-row .dd-trigger { padding: 5px 10px; font-size: 13px; font-weight: 500; }
   #assetLabel {
     display: inline-block; max-width: 30vw;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -844,11 +845,11 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .compare-label-full  { display: none; }
   .compare-label-short { display: inline; }
   .tb2-price {
-    font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+    font-family: var(--font-mono); font-size: 15px; font-weight: 700;
     color: var(--text); white-space: nowrap;
   }
   .tb2-change {
-    font-family: var(--font-mono); font-size: 11px;
+    font-family: var(--font-mono); font-size: 13px;
     color: var(--text-dim); white-space: nowrap;
   }
   .tb2-change.up   { color: var(--up); }
@@ -886,6 +887,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .bottom-bar .dd-trigger.active { color: var(--accent); background: var(--bg-hover); }
 
   #indTrigger::after     { content: "Indikatoren"; }
+  #magnetBbBtn::after    { content: "Magnet"; }
   #drawSheetBtn::after   { content: "Zeichnen"; }
   #gridBotBtn::after     { content: "Grid Bot"; }
   #patternTrigger::after { content: "Muster"; }
