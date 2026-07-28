@@ -779,7 +779,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
    Desktop läuft dieser Code nie, das DOM bleibt dort unverändert.
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root { --tv-build: "m12"; }
+:root { --tv-build: "m13"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1096,6 +1096,15 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .legend-line { white-space: normal; flex-wrap: wrap; gap: 0 4px;
                  font-size: 9.5px; line-height: 1.35; }
   .legend-body { gap: 1px; padding: 1px 3px; }
+
+  /* Löschen und Ein-/Ausblenden bei Vergleichs-Assets: grössere Touch-Ziele */
+  .compare-chip { padding: 7px 10px; gap: 10px; }
+  .cc-eye, .cc-remove {
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cc-eye svg { width: 19px; height: 19px; }
+  .cc-remove { font-size: 17px; }
 
   .settings-panel, .frvp-menu, .fib-menu {
     max-width: calc(100vw - 16px) !important;

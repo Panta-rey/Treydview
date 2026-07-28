@@ -4494,7 +4494,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m12";
+const TV_BUILD = "m13";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -4631,12 +4631,34 @@ quiet(() => {
 
   // Setzt den Punkt GENAU an der Fadenkreuz-Position — über dieselben
   // mousedown/mouseup-Ereignisse, auf die KLC selbst hört.
+  // Setzt den Punkt GENAU an der Fadenkreuz-Position — über dieselben
+  // mousedown/mouseup-Ereignisse, auf die KLC selbst hört.
+  //
+  // Ein vorheriges mousemove ist zwingend: KLC trackt die Klickposition
+  // offenbar über eine intern gemerkte Cursor-Position, die per mousemove
+  // aktualisiert wird — nicht über die Koordinaten von mousedown/mouseup
+  // selbst. Ohne dieses mousemove landete der gesetzte Punkt an einer
+  // veralteten Stelle (sichtbar erst beim NÄCHSTEN, völlig separaten Tap,
+  // der zufällig ein mousemove auf dem Weg dorthin auslöste). Dieses
+  // Muster war in einer früheren FRVP-Gestik im Projekt bereits nötig.
   const fireAtCrosshair = (cx, cy) => {
     const rect = host.getBoundingClientRect();
     const opt  = { bubbles: true, cancelable: true, button: 0,
                    clientX: rect.left + cx, clientY: rect.top + cy };
+    host.dispatchEvent(new MouseEvent("mousemove", opt));
     host.dispatchEvent(new MouseEvent("mousedown", opt));
     host.dispatchEvent(new MouseEvent("mouseup",   opt));
+  };
+
+  // Hält KLCs interne Cursor-Position laufend auf dem Fadenkreuz — nicht
+  // nur beim finalen Klick. Das lässt eine eventuelle Vorschaulinie bei
+  // Mehrpunkt-Werkzeugen (Segment, Kanal, …) live mitziehen.
+  const sendMove = (cx, cy) => {
+    const rect = host.getBoundingClientRect();
+    host.dispatchEvent(new MouseEvent("mousemove", {
+      bubbles: true, cancelable: true, button: 0,
+      clientX: rect.left + cx, clientY: rect.top + cy,
+    }));
   };
 
   host.addEventListener("touchstart", (e) => {
@@ -4658,6 +4680,7 @@ quiet(() => {
     canvas.style.display = "block";
     resize();
     draw(fx, cy);
+    sendMove(fx, cy);
   }, { capture: true, passive: false });
 
   host.addEventListener("touchmove", (e) => {
@@ -4671,7 +4694,7 @@ quiet(() => {
     const fy = t.clientY - r.top;
     const cy = Math.max(10, fy - LIFT);
     current = { fx, fy, cx: fx, cy };
-    raf = requestAnimationFrame(() => draw(fx, cy));
+    raf = requestAnimationFrame(() => { draw(fx, cy); sendMove(fx, cy); });
   }, { capture: true, passive: false });
 
   host.addEventListener("touchend", (e) => {
@@ -4783,14 +4806,25 @@ quiet(() => {
 // Y-Verschiebung des Charts gesperrt (window.__tvChartLock), sonst würde
 // jede Bewegung gleichzeitig die Zeichnung UND den sichtbaren Bereich
 // verschieben.
+//
+// WICHTIG: Die Geste darf erst "scharf" werden (preventDefault +
+// stopPropagation), sobald der Finger sich tatsächlich über einen
+// Schwellenwert hinaus bewegt hat. Ein einfacher Tap ohne Bewegung muss
+// ungehindert durchlaufen — sonst bekommt der Doppeltipp-Handler weiter
+// unten nie ein touchend zu sehen, weil stopPropagation in der
+// Capture-Phase auch dessen Bubble-Listener auf demselben Element
+// verschluckt. Das war der Grund, warum sich das Stil-Menü nicht mehr
+// öffnen liess, nachdem diese Geste hinzukam.
 quiet(() => {
   const host = document.getElementById("mainChart");
   if (!host || !tvIsMobile()) return;
   const AXIS_W = 80;
-  const START_TOL = 26;   // Toleranz zum Fassen einer Zeichnung
-  const POINT_TOL = 20;   // innerhalb davon gilt es als "genau auf dem Punkt"
+  const START_TOL   = 26;  // Toleranz zum Fassen einer Zeichnung
+  const POINT_TOL    = 20; // innerhalb davon gilt es als "genau auf dem Punkt"
+  const ENGAGE_MOVE  = 8;  // Pixel Bewegung, ab der aus einem Tap ein Drag wird
 
-  let drag = null;   // { overlay, mode: 'point'|'all', pointIndex, startPts, touchStart }
+  let pending = null;  // Treffer + Startposition, VOR dem Schwellenwert
+  let drag    = null;  // aktive Verschiebung, NACH dem Schwellenwert
 
   const toPx = (p) => {
     try {
@@ -4799,20 +4833,9 @@ quiet(() => {
     } catch (e) { return null; }
   };
 
-  host.addEventListener("touchstart", (e) => {
-    if (state.activeTool || e.touches.length !== 1 || drag) return;
-    const t = e.touches[0];
-    const rect = host.getBoundingClientRect();
-    const x = t.clientX - rect.left, y = t.clientY - rect.top;
-    if (x > rect.width - AXIS_W) return;   // Preisskala bleibt frei
-
-    const hit = findOverlayNear(x, y, START_TOL, POINT_TOL);
-    if (!hit) return;   // nichts getroffen — Chart pannt normal weiter
-
-    e.preventDefault();
-    e.stopPropagation();
+  const engage = (x, y) => {
+    const hit = pending.hit;
     window.__tvChartLock && window.__tvChartLock(true);
-
     const startPts = hit.overlay.points.map(p => ({ timestamp: p.timestamp, value: p.value }));
     drag = {
       overlay: hit.overlay,
@@ -4820,17 +4843,49 @@ quiet(() => {
       pointIndex: hit.pointIndex,
       startPts,
       startPxPts: startPts.map(toPx),
-      touchStart: { x, y },
+      touchStart: { x: pending.x, y: pending.y },
     };
-  }, { capture: true, passive: false });
+    pending = null;
+  };
 
-  host.addEventListener("touchmove", (e) => {
-    if (!drag || e.touches.length !== 1) return;
-    e.preventDefault();
-    e.stopPropagation();
+  host.addEventListener("touchstart", (e) => {
+    if (state.activeTool || e.touches.length !== 1 || drag || pending) return;
     const t = e.touches[0];
     const rect = host.getBoundingClientRect();
     const x = t.clientX - rect.left, y = t.clientY - rect.top;
+    if (x > rect.width - AXIS_W) return;   // Preisskala bleibt frei
+
+    const hit = findOverlayNear(x, y, START_TOL, POINT_TOL);
+    if (!hit) return;   // nichts getroffen — Tap läuft normal durch
+
+    // Noch KEIN preventDefault/stopPropagation — ein einfacher Tap muss
+    // KLC und den Doppeltipp-Handler weiterhin erreichen.
+    pending = { hit, x, y };
+  }, { capture: true, passive: false });
+
+  host.addEventListener("touchmove", (e) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const rect = host.getBoundingClientRect();
+    const x = t.clientX - rect.left, y = t.clientY - rect.top;
+
+    // Noch nicht scharf: prüfen ob die Bewegung den Schwellenwert
+    // überschreitet. Erst dann greifen wir überhaupt ein — ein Tap ohne
+    // nennenswerte Bewegung bleibt für KLC und den Doppeltipp sichtbar.
+    if (pending && !drag) {
+      const moved = Math.hypot(x - pending.x, y - pending.y);
+      if (moved < ENGAGE_MOVE) return;
+      e.preventDefault();
+      e.stopPropagation();
+      engage(x, y);
+      // drag.touchStart entspricht der ursprünglichen Antipp-Position,
+      // nicht der aktuellen — das erste Verschieben unten nutzt daher
+      // sofort den vollen bisherigen Versatz.
+    }
+    if (!drag) return;
+
+    e.preventDefault();
+    e.stopPropagation();
     const dx = x - drag.touchStart.x, dy = y - drag.touchStart.y;
 
     quiet(() => {
@@ -4866,6 +4921,7 @@ quiet(() => {
   }, { capture: true, passive: false });
 
   const endDrag = () => {
+    pending = null;   // ein Tap ohne Bewegung endet hier — sauberer Neustart
     if (!drag) return;
     const id = drag.overlay.id;
     drag = null;
