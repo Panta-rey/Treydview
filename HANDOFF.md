@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 29. Juli 2026 · Build m16**
+**Stand: 29. Juli 2026 · Build m17**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -59,13 +59,28 @@ zur Laufzeit erzeugte Klassen aus app.js abgleichen.
 Gefunden hat dieser Test: `.gb-topbar` (heisst `.gb-status`), `.wl-row`
 (heisst `.wl-item`), `.overlay-menu-item` (heisst `.om-row`),
 `.sheet-backdrop` (heisst `.draw-sheet-backdrop`).
-Falschmeldung: `#fff` aus `color:#fff` — kein Selektor.
+Falschmeldung: `#fff` aus `color:#fff` — kein Selektor. Ebenso
+`className = "a " + (x ? "b" : "c")` (Ternary) und Klassen aus
+`settings.js` — der Scanner muss alle Modul-Dateien einlesen.
+
+**Noch offen (tote Regeln, seit ≤ m16, harmlos):** `.draw-btn`
+(heisst `.draw-cat-btn`) und `.overlay-menu-item` (heisst `.om-row`).
+Beide stehen in @media-Blöcken und greifen nirgends.
 
 ### Prüfung 4 — Mobil-Modus, jeder Knopf
 jsdom mit `matchMedia → true`, jeden Knopf klicken und die **Wirkung**
 prüfen, nicht nur „kein Fehler".
 
-Testdateien unter `/home/claude/`: `harness.js`, `t-compare.js`,
+Prüfstand m17 unter `/home/claude/treydview-v03/`: `harness.js` (jsdom +
+KLineCharts-Stub; lädt Module über **`vm.runInContext`**, weil `eval()`
+Top-Level-`const` verwirft und `CONFIG` dann unsichtbar bleibt),
+`t-desktop3.js` (Prüfung 2, ohne mobile-only-Zweige), `t-selectors.js`
+(Prüfung 3), `t-mobile.js` (Prüfung 4 + 4 Zieltests, 41 Prüfpunkte).
+Der Canvas-Stub protokolliert `moveTo`/`lineTo`, damit Tests das gezeichnete
+Fadenkreuz auslesen können. `chart.setLoadDataCallback` muss im Stub stehen.
+Kerzenabstand im Stub: 8 px.
+
+Ältere Testdateien: `t-compare.js`,
 `t-desktop.js`, `t-mobile2.js`, `t-rebuild.js` (Fadenkreuz),
 `t-rebuild2.js` (Auswahl/Verschieben), `t-rebuild4.js` (kein Drag ohne
 Vorauswahl), `t-frvp-select.js`, `t-neu.js` (Magnet, Linien-Trefferzone,
@@ -86,13 +101,13 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m16)
+## Datei-MD5 (Build m17)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | 12e499fcc2751997d647739f5e77dbf3 | 1066 |
-| style.css | e0b4adc2c93fc5d62942ad7d2bc4775c | 1255 |
-| app.js | 7bafcefc60bc2107f60c7ce501b8f556 | 5493 |
+| index.html | 2471eb94df8af7425908ce1adf677b23 | 1073 |
+| style.css | 1ae55a99b4f231e5efba347742dc3602 | 1266 |
+| app.js | c60a2b2e5464d94ddfb2fa9c2640d8bc | 5570 |
 | manifest.webmanifest | f00d4e5b6341e6400f7b5dfb48b2e667 | 11 |
 | config.js | fc6cff7fab290a246c255349f13a8fd8 | 384 |
 | data.js | 0bd0ac117e6ddd750ef11de15c484893 | 368 |
@@ -104,9 +119,9 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 
 ## Build-Abgleich — zuerst prüfen, wenn etwas „nicht wirkt"
 
-- `style.css`: `:root { --tv-build: "m16" }`
-- `app.js`: `const TV_BUILD = "m16"`
-- `index.html`: alle Verweise mit `?v=m16`
+- `style.css`: `:root { --tv-build: "m17" }`
+- `app.js`: `const TV_BUILD = "m17"`
+- `index.html`: alle Verweise mit `?v=m17`
 
 Beim Start liest das JS die CSS-Kennung aus und meldet grün oder warnt.
 **Bei jeder Auslieferung an allen drei Stellen erhöhen.**
@@ -180,15 +195,40 @@ Drei Sonderfälle, weil die Ankerpunkte nicht dort liegen, wo man hintippt:
 | `horizontalStraightLine`, `priceLine`, `horizontalRayLine` | waagrechter Abstand egal, nur `|y − Linie|` |
 | `verticalStraightLine`, `verticalRayLine` | senkrechter Abstand egal, nur `|x − Linie|` |
 | `rayLine` | Segment nach vorn verlängert (`t ≥ 0`) |
+| `positionTool` | **Fläche** von `minX` bis `maxX + 60` und über alle drei Kursniveaus (m17) |
 
-## Magnet
+**Warum `positionTool` eine Fläche braucht:** Auf dem Handy liegen alle drei
+Anker auf demselben Zeitstempel, also auf einer einzigen senkrechten Linie.
+`overlays.js` zieht Linien und Preis-Schilder aber bis `x1 = maxX + 60`
+(Zeile ~702). Ein Tap auf das Stop- oder Ziel-Schild lag damit rund 56 px
+neben der Ankerlinie und wurde nie erkannt. Als Rangmass dient der
+senkrechte Abstand zur nächsten der drei waagrechten Linien — sonst würde
+bei Überschneidung immer die Zeichnung mit dem grösseren Kasten gewinnen.
 
-Rastet **ausschliesslich auf der Preisachse** ein — auf H/L/O/C der Kerze
-unter dem Fadenkreuz. Die Zeitachse bleibt frei am Finger.
+## Magnet  (m17 erweitert)
 
-`magnetSnapY(px, py)` läuft schon **während** der Fingerbewegung, damit das
-Einrasten sichtbar ist. Eingerastet wechselt das Fadenkreuz von gelb
-gestrichelt auf grün durchgezogen. Fangbereich: 18 px schwach, 40 px stark.
+Rastet auf **beiden** Achsen ein: Y auf H/L/O/C der Kerze unter dem
+Fadenkreuz, X gleichzeitig auf die **Mitte derselben Kerze**.
+
+`magnetSnap(px, py)` gibt `{x, y}` zurück oder `null`. Läuft schon
+**während** der Fingerbewegung, damit das Einrasten sichtbar ist.
+Eingerastet wechselt das Fadenkreuz von gelb gestrichelt auf grün
+durchgezogen. Fangbereich: 18 px schwach, 40 px stark.
+
+**Kein Y-Treffer bedeutet kein X-Einrasten.** Ohne eingerastetes Kursniveau
+bleibt das Fadenkreuz auf beiden Achsen frei am Finger. Ein Punkt, der auf
+dem Hoch einer Kerze sitzt, soll auch waagrecht auf dieser Kerze sitzen.
+
+`convertToPixel` liefert für einen Zeitstempel bereits die Kerzenmitte —
+dieselbe Umrechnung gibt also beide Achsen in einem Schritt.
+
+> **Messfalle beim Prüfen:** Der *gespeicherte Punkt* taugt NICHT als
+> Nachweis. `convertFromPixel` rastet den Zeitstempel ohnehin auf die
+> nächste Kerze — der Punkt lag also schon vor m17 zeitlich zentriert.
+> Die Änderung wirkt auf das **gezeichnete Fadenkreuz**. Ein Test, der nur
+> den Punkt prüft, besteht auch gegen m16 und beweist nichts. Richtig ist,
+> die senkrechte Linie aus dem Canvas-Protokoll auszulesen
+> (`moveTo(px, 0)` → `px / devicePixelRatio`).
 
 ## Long/Short
 
@@ -199,6 +239,15 @@ Stop und Ziel aus dem **Tages-ATR** (`state.gbResult.market.atr14`, derselbe
 Wert wie im Grid-Bot). Verhältnis 1:2 — Stop 1×ATR, Ziel 2×ATR. ATR statt
 Prozent, weil BTC je nach Phase sehr unterschiedlich schwankt.
 Rückfall ohne Bot-Ergebnis: aus 14 sichtbaren Kerzen schätzen, sonst 2 %.
+
+**m17 — Pixel-Untergrenze (`widenForTouch`, `MIN_LEG_PX = 48`):**
+Der ATR liefert einen sinnvollen *Kursabstand*, aber kein sinnvolles
+*Bildschirmmass*. Bei weit herausgezoomtem Chart schrumpft 1×ATR auf wenige
+Pixel; Stop und Ziel liegen dann näher zusammen als `POINT_TOL` (20 px) und
+lassen sich nicht mehr einzeln greifen. `widenForTouch()` streckt den
+ATR-Wert, bis Einstieg↔Stop mindestens 48 px auseinanderliegen — **beide
+Schenkel mit demselben Faktor**, das Verhältnis 1:2 bleibt exakt erhalten.
+Ist der ATR-Abstand schon gross genug, bleibt er unangetastet.
 
 Punktreihenfolge des Overlays: `[Einstieg, Stop, Ziel]`. Die Richtung leitet
 `positionTool` aus `stop < entry` ab.
@@ -241,6 +290,25 @@ Neuer Code muss **vor** dem letzten `})();` stehen — Klammertiefe ≥ 1 prüfe
 ### Media-Query ohne schliessende Klammer
 Ein Block schloss nie — 353 Regeln steckten ungewollt darin. Nach jeder
 CSS-Änderung Klammerbilanz **und** „offene Media-Query am Dateiende" prüfen.
+
+### Gefüllte SVG-Symbole in `.ab-icon`
+`.ab-icon { fill:none; stroke:currentColor }` ist eine **CSS-Regel** und
+schlägt damit jedes Präsentations-Attribut am Element. `fill="currentColor"`
+am `<svg>` wirkt nicht. Gefüllte Formen brauchen ein Inline-`style`
+(`style="fill:currentColor;stroke:none"`) — das schlägt die Regel. Negative
+Flächen (die Kerben an den Magnetpolen) nehmen `var(--bg-raised)` und
+funktionieren so in beiden Themes.
+
+### Rundungsrand bei Kerzen-Zuordnung
+`convertFromPixel` rundet auf die nächste Kerze, `Math.round` rundet halbe
+Werte **auf**. Ein Fingerabstand von genau der halben Kerzenbreite landet
+deshalb auf der *Nachbarkerze*. In Tests immer deutlich unter die halbe
+Kerzenbreite gehen — sonst sucht man einen Fehler, der keiner ist.
+
+### Testabstände gegen ALLE vier Kursniveaus prüfen
+Ein Abstand, der weit vom Hoch weg ist, kann zufällig direkt am Tief liegen
+(Kerzenkörper im Prüfstand nur ~40 px hoch). Für „kein Snap erwartet"
+muss der Abstand zu O, H, L **und** C ausserhalb der Toleranz liegen.
 
 ### Klassennamen aus dem Gedächtnis
 `.gb-topbar` → `.gb-status`, `.wl-row` → `.wl-item`, `.overlay-menu-item` →

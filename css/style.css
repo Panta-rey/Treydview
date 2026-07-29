@@ -779,7 +779,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
    Desktop läuft dieser Code nie, das DOM bleibt dort unverändert.
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root { --tv-build: "m16"; }
+:root { --tv-build: "m17"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -951,28 +951,36 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
     display: flex !important;
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 620;
     background: var(--bg-raised); border-top: 1px solid var(--border);
-    padding: 4px 2px var(--tv-safe-b);
-    justify-content: space-around; align-items: stretch; gap: 0;
+    padding: 5px 6px var(--tv-safe-b);
+    justify-content: space-around; align-items: center; gap: 0;
   }
-  .bottom-bar > * { flex: 1 1 0; min-width: 0; }
+  /* Nicht mehr strecken: die Knoepfe sollen wie in der Topbar als einzeln
+     umrandete Quadrate stehen, nicht als randlose Kacheln ueber die volle
+     Zellenbreite. space-around auf .bottom-bar verteilt sie gleichmaessig. */
+  .bottom-bar > * { flex: 0 0 auto; min-width: 0; }
   .bottom-bar .dropdown { display: flex; }
 
-  /* Die verschobenen Knöpfe bekommen Symbol über Beschriftung.
-     Die Beschriftung entsteht per ::after — so bleibt das HTML der
-     bestehenden Knöpfe unverändert. */
+  /* Gleiche Optik wie die Topbar-Knoepfe: 1px Rahmen in --border,
+     --radius, transparenter Grund. Ohne Beschriftung (font-size:0),
+     dafuer Symbole in Topbar-Groesse. */
   .bottom-bar .action-btn,
   .bottom-bar .dd-trigger {
-    width: 100%; height: 44px;
+    width: 38px; height: 38px;
     display: flex; align-items: center; justify-content: center;
-    border: none; background: none; border-radius: 8px;
+    border: 1px solid var(--border); background: transparent;
+    border-radius: var(--radius);
     padding: 0; font-size: 0;
+    transition: color .12s, border-color .12s, background .12s;
   }
 
   .bottom-bar .ab-icon,
   .bottom-bar .ab-icon,
   .bottom-bar .ind-i-icon { width: 19px; height: 19px; }
   .bottom-bar .action-btn.active,
-  .bottom-bar .dd-trigger.active { color: var(--accent); background: var(--bg-hover); }
+  .bottom-bar .dd-trigger.active {
+    color: var(--accent); background: var(--bg-hover);
+    border-color: rgba(232,182,76,.5);
+  }
 
   /* Ohne Beschriftungen bleibt Platz für Symbole in Topbar-Grösse. */
 
@@ -1160,6 +1168,9 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .tb-row     { gap: 3px; padding: 4px 6px; }
   .bottom-bar .action-btn::after,
   .bottom-bar .dd-trigger::after { font-size: 8px; }
+  .bottom-bar .action-btn,
+  .bottom-bar .dd-trigger { width: 34px; height: 34px; }
+  .bottom-bar { padding-left: 3px; padding-right: 3px; }
 }
 
 /* ── Querformat ────────────────────────────────────────────────────────
@@ -1232,7 +1243,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   }
   .bottom-bar > * { flex: 0 0 auto; }
   .bottom-bar .action-btn,
-  .bottom-bar .dd-trigger { min-height: 40px; }
+  .bottom-bar .dd-trigger { width: 40px; height: 40px; min-height: 40px; }
 
   /* Chart füllt den Rest */
   .workspace {

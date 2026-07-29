@@ -1607,6 +1607,37 @@ function findOverlayNear(x, y, lineTol, pointTol) {
       continue;
     }
 
+    // Long/Short: Die drei Anker liegen auf dem Handy alle auf demselben
+    // Zeitstempel, also auf einer einzigen senkrechten Linie. Die sichtbare
+    // Zeichnung ist aber ein Kasten — overlays.js zieht Linien und
+    // Preis-Schilder bis x1 = maxX + 60. Ein Tap auf das Stop- oder
+    // Ziel-Schild lag damit rund 56 px neben der Anker-Linie und wurde nie
+    // erkannt. Wie beim FRVP zaehlt deshalb die Flaeche, nicht die Linie.
+    if (ov.name === "positionTool" && pts.length >= 2) {
+      const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+      const left  = Math.min(...xs) - lineTol;
+      const right = Math.max(...xs) + 60 + lineTol;   // 60 = Kastenbreite
+      const top   = Math.min(...ys) - lineTol;
+      const bot   = Math.max(...ys) + lineTol;
+      if (x >= left && x <= right && y >= top && y <= bot) {
+        // Als Rangmass dient der senkrechte Abstand zur naechsten der drei
+        // waagrechten Linien. So gewinnt bei Ueberschneidung die Zeichnung,
+        // auf die tatsaechlich gezielt wurde, und nicht einfach die mit dem
+        // groesseren Kasten.
+        let dist = Infinity;
+        for (const p of pts) dist = Math.min(dist, Math.abs(y - p.y));
+        let nIdx = -1, nDist = Infinity;
+        pts.forEach((p, i) => {
+          const d = Math.hypot(x - p.x, y - p.y);
+          if (d < nDist) { nDist = d; nIdx = i; }
+        });
+        if (!best || dist < best.dist) {
+          best = { overlay: ov, pointIndex: nDist <= pointTol ? nIdx : -1, dist };
+        }
+      }
+      continue;
+    }
+
     // Werkzeuge mit unbegrenzter Ausdehnung: Die Ankerpunkte markieren nur
     // die Lage, die sichtbare Linie zieht sich über den ganzen Chart. Ein
     // Tap darauf lag bisher weit ausserhalb der Punkt-Trefferzone.
@@ -4598,7 +4629,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m16";
+const TV_BUILD = "m17";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -4810,11 +4841,21 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
   // fast immer bewusst gewählt, die senkrechte soll dagegen sauber auf
   // einem Kursniveau sitzen.
   //
-  // Gibt die eingerastete Bildschirm-Y-Position zurück oder null, wenn
-  // nichts in Reichweite liegt. Wird schon während der Fingerbewegung
-  // aufgerufen, damit das Einrasten sichtbar ist und nicht erst beim
-  // Absetzen des Punktes überrascht.
-  function magnetSnapY(px, py) {
+  // Gibt { x, y } der eingerasteten Bildschirmposition zurück oder null,
+  // wenn kein Kursniveau in Reichweite liegt. Wird schon während der
+  // Fingerbewegung aufgerufen, damit das Einrasten sichtbar ist und nicht
+  // erst beim Absetzen des Punktes überrascht.
+  //
+  // Rastet Y auf O/H/L/C ein UND zentriert X gleichzeitig auf die Mitte
+  // derselben Kerze. Beides gehört zusammen: ein Punkt, der auf dem Hoch
+  // einer Kerze sitzt, soll auch waagrecht auf dieser Kerze sitzen und
+  // nicht zwischen zwei Kerzen hängen. convertToPixel liefert für einen
+  // Zeitstempel bereits die Kerzenmitte — dieselbe Umrechnung liefert also
+  // beide Achsen in einem Schritt.
+  //
+  // Kein Y-Treffer bedeutet kein X-Einrasten: ohne eingerastetes Kursniveau
+  // bleibt das Fadenkreuz vollständig frei am Finger.
+  function magnetSnap(px, py) {
     if (state.magnetMode === "normal") return null;
     try {
       const v = chart.convertFromPixel({ x: px, y: py }, { paneId: "candle_pane" });
@@ -4830,16 +4871,22 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
       if (!closest) return null;
 
       const tol = state.magnetMode === "strong_magnet" ? 40 : 18;
-      let bestY = null, bestPxDiff = tol;
+      let best = null, bestPxDiff = tol;
       for (const val of [closest.open, closest.high, closest.low, closest.close]) {
         if (val == null) continue;
         const p = chart.convertToPixel({ timestamp: closest.timestamp, value: val }, { paneId: "candle_pane" });
         const one = Array.isArray(p) ? p[0] : p;
         if (!one || one.y == null) continue;
         const d = Math.abs(one.y - py);
-        if (d < bestPxDiff) { bestPxDiff = d; bestY = one.y; }
+        // one.x ist die Kerzenmitte des Zeitstempels. Fehlt sie aus
+        // irgendeinem Grund, bleibt die waagrechte Position unverändert —
+        // das Einrasten auf der Preisachse darf davon nicht abhängen.
+        if (d < bestPxDiff) {
+          bestPxDiff = d;
+          best = { x: one.x != null ? one.x : px, y: one.y };
+        }
       }
-      return bestY;
+      return best;
     } catch (e) { return null; }
   }
 
@@ -4976,8 +5023,10 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
     if (Math.hypot(x - touchStart.x, y - touchStart.y) > ENGAGE) {
       touchMoved = true;
       const rawY = Math.max(10, y - CROSSHAIR_LIFT);
-      const snapY = magnetSnapY(x, rawY);
-      crosshair = { x, y: snapY != null ? snapY : rawY, snapped: snapY != null };
+      const snap = magnetSnap(x, rawY);
+      crosshair = snap
+        ? { x: snap.x, y: snap.y, snapped: true }
+        : { x, y: rawY, snapped: false };
       draw();
       if (need === Infinity && points.length >= 2) showConfirmBar();
     }
@@ -5054,6 +5103,34 @@ quiet(() => {
     return price * 0.02;   // letzter Rückfall: 2 %
   }
 
+  // Der ATR liefert einen sinnvollen Kursabstand — aber kein sinnvolles
+  // Bildschirmmass. Bei weit herausgezoomtem Chart schrumpft 1x ATR auf
+  // wenige Pixel; Stop und Ziel liegen dann so dicht am Einstieg, dass sie
+  // sich mit dem Finger nicht mehr einzeln greifen lassen (POINT_TOL = 20).
+  // Deshalb wird der ATR-Wert gestreckt, bis Einstieg <-> Stop mindestens
+  // MIN_LEG_PX auseinanderliegen. Beide Schenkel nutzen denselben Faktor,
+  // das Verhaeltnis 1:2 bleibt damit exakt erhalten.
+  const MIN_LEG_PX = 48;
+
+  function widenForTouch(entry, atr) {
+    try {
+      const toY = (value) => {
+        const r = chart.convertToPixel(
+          { timestamp: entry.timestamp, value },
+          { paneId: "candle_pane" }
+        );
+        const one = Array.isArray(r) ? r[0] : r;
+        return one && one.y != null ? one.y : null;
+      };
+      const yEntry = toY(entry.value);
+      const yStop  = toY(entry.value + atr);
+      if (yEntry == null || yStop == null) return atr;
+      const gap = Math.abs(yStop - yEntry);
+      if (gap > 0 && gap < MIN_LEG_PX) return atr * (MIN_LEG_PX / gap);
+    } catch (e) {}
+    return atr;
+  }
+
   function placePosition(dir) {
     menu.classList.add("hidden");
     const cfg = buildOverlayConfig("positionTool");
@@ -5071,7 +5148,7 @@ quiet(() => {
       // positionTool-Overlay erwartet.
       expandPoints: (pts) => {
         const entry = pts[0];
-        const atr = dailyAtr(entry.value);
+        const atr = widenForTouch(entry, dailyAtr(entry.value));
         const stop   = dir === "long" ? entry.value - atr     : entry.value + atr;
         const target = dir === "long" ? entry.value + 2 * atr : entry.value - 2 * atr;
         return [

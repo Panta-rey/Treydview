@@ -14,11 +14,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m16">
-  <link rel="stylesheet" href="css/style.css?v=m16">
+  <link rel="manifest" href="manifest.webmanifest?v=m17">
+  <link rel="stylesheet" href="css/style.css?v=m17">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m16"></script>
+  <script src="js/lib/klinecharts.min.js?v=m17"></script>
 </head>
 <body>
 
@@ -120,12 +120,19 @@
     </button>
     <!-- Magnet -->
     <button class="action-btn mobile-only" id="magnetBbBtn" title="Magnet ein/aus">
-      <svg viewBox="0 0 24 24" class="ab-icon" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M4 8a8 8 0 0 1 16 0" stroke-linecap="round"/>
-        <line x1="4" y1="8" x2="4" y2="14" stroke-linecap="round"/>
-        <line x1="20" y1="8" x2="20" y2="14" stroke-linecap="round"/>
-        <line x1="4" y1="14" x2="7" y2="14" stroke-linecap="round"/>
-        <line x1="20" y1="14" x2="17" y2="14" stroke-linecap="round"/>
+      <!-- Hufeisen-Magnet mit Blitz. Die Farben stehen als Inline-style, weil
+           .ab-icon { fill:none; stroke:currentColor } als CSS-Regel jedes
+           Praesentations-Attribut am Element schlaegt. Die Kerben an den Polen
+           nehmen die Leistenfarbe und funktionieren so in beiden Themes. -->
+      <svg viewBox="0 0 24 24" class="ab-icon" aria-hidden="true">
+        <g transform="rotate(-42 11.5 14.5)">
+          <path d="M6.0 8.2 V13.2 a5.4 5.4 0 0 0 10.8 0 V8.2"
+                style="fill:none;stroke:currentColor" stroke-width="3.6" stroke-linecap="butt"/>
+          <path d="M6.0 9.7 H9.6"  style="fill:none;stroke:var(--bg-raised)" stroke-width="1.4"/>
+          <path d="M13.2 9.7 H16.8" style="fill:none;stroke:var(--bg-raised)" stroke-width="1.4"/>
+        </g>
+        <path d="M19.0 1.6 L22.8 1.6 L20.7 4.6 L22.6 4.6 L17.4 9.6 L19.4 5.4 L17.2 5.4 Z"
+              style="fill:currentColor;stroke:none"/>
       </svg>
     </button>
         <button class="action-btn" id="posToolTopBtn" title="Long / Short Position — Einstieg, Stop, Ziel klicken">
@@ -1052,15 +1059,15 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m16"></script>
-<script src="js/indicators.js?v=m16"></script>
-<script src="js/overlays.js?v=m16"></script>
-<script src="js/data.js?v=m16"></script>
-<script src="js/settings.js?v=m16"></script>
-<script src="js/derivatives.js?v=m16"></script>
-<script src="js/gridbot.js?v=m16"></script>
-<script src="js/patterns.js?v=m16"></script>
-<script src="js/smc.js?v=m16"></script>
-<script src="js/app.js?v=m16"></script>
+<script src="js/config.js?v=m17"></script>
+<script src="js/indicators.js?v=m17"></script>
+<script src="js/overlays.js?v=m17"></script>
+<script src="js/data.js?v=m17"></script>
+<script src="js/settings.js?v=m17"></script>
+<script src="js/derivatives.js?v=m17"></script>
+<script src="js/gridbot.js?v=m17"></script>
+<script src="js/patterns.js?v=m17"></script>
+<script src="js/smc.js?v=m17"></script>
+<script src="js/app.js?v=m17"></script>
 </body>
 </html>
