@@ -1607,6 +1607,45 @@ function findOverlayNear(x, y, lineTol, pointTol) {
       continue;
     }
 
+    // Werkzeuge mit unbegrenzter Ausdehnung: Die Ankerpunkte markieren nur
+    // die Lage, die sichtbare Linie zieht sich über den ganzen Chart. Ein
+    // Tap darauf lag bisher weit ausserhalb der Punkt-Trefferzone.
+    const INFINITE = {
+      horizontalStraightLine: "h", priceLine: "h", horizontalRayLine: "h",
+      verticalStraightLine:   "v", verticalRayLine:  "v",
+    };
+    if (INFINITE[ov.name]) {
+      const dist = INFINITE[ov.name] === "h"
+        ? Math.abs(y - pts[0].y)
+        : Math.abs(x - pts[0].x);
+      if (dist <= lineTol && (!best || dist < best.dist)) {
+        const onPoint = Math.hypot(x - pts[0].x, y - pts[0].y) <= pointTol;
+        best = { overlay: ov, pointIndex: onPoint ? 0 : -1, dist };
+      }
+      continue;
+    }
+
+    // rayLine läuft von Punkt 0 durch Punkt 1 und darüber hinaus weiter.
+    if (ov.name === "rayLine" && pts.length >= 2) {
+      const dx = pts[1].x - pts[0].x, dy = pts[1].y - pts[0].y;
+      const len = Math.hypot(dx, dy);
+      if (len > 0) {
+        const t = ((x - pts[0].x) * dx + (y - pts[0].y) * dy) / (len * len);
+        const tc = Math.max(0, t);   // nur nach vorn verlängern, nicht rückwärts
+        const cx = pts[0].x + tc * dx, cy = pts[0].y + tc * dy;
+        const dist = Math.hypot(x - cx, y - cy);
+        if (dist <= lineTol && (!best || dist < best.dist)) {
+          let nIdx = -1, nDist = Infinity;
+          pts.forEach((p, i) => {
+            const d = Math.hypot(x - p.x, y - p.y);
+            if (d < nDist) { nDist = d; nIdx = i; }
+          });
+          best = { overlay: ov, pointIndex: nDist <= pointTol ? nIdx : -1, dist };
+        }
+      }
+      continue;
+    }
+
     // Nächster Einzelpunkt
     let nearestIdx = -1, nearestDist = Infinity;
     pts.forEach((p, i) => {
@@ -1929,15 +1968,10 @@ function currentOverlayStyles() {
   };
 }
 
-function startTool(overlayName) {
-  window.__tvStartTool = startTool;   // Draw-Sheet-Zugriff
-  // Freihand und Polyline laufen über eigene Maus-Handler, nicht über KLineCharts
-  if (overlayName === "freehand") { stopPolyline(); startFreehand(); return; }
-  if (overlayName === "polyline") { stopFreehand(); startPolyline(); return; }
-  stopFreehand();
-  stopPolyline();
-  state.activeTool = overlayName;
-  const overlayConfig = {
+// Baut die Overlay-Konfiguration. Ausgelagert, damit auch der
+// Long/Short-Weg auf dem Handy dieselbe Konfiguration bekommt.
+function buildOverlayConfig(overlayName) {
+  return {
     name: overlayName,
     mode: state.magnetMode,
     // KLineCharts snappt im Magnet-Modus an alle vier OHLC-Werte (High, Low,
@@ -1997,6 +2031,19 @@ function startTool(overlayName) {
       return true;
     },
   };
+}
+
+function startTool(overlayName) {
+  window.__tvStartTool = startTool;   // Draw-Sheet-Zugriff
+  // Freihand und Polyline laufen über eigene Maus-Handler, nicht über KLineCharts
+  if (overlayName === "freehand") { stopPolyline(); startFreehand(); return; }
+  // Polylinie: auf dem Desktop weiterhin der Maus-Weg, auf dem Handy das
+  // Fadenkreuz-System (unbegrenzte Punkte, Abschluss über den ✓-Knopf).
+  if (overlayName === "polyline" && !tvIsMobile()) { stopFreehand(); startPolyline(); return; }
+  stopFreehand();
+  stopPolyline();
+  state.activeTool = overlayName;
+  const overlayConfig = buildOverlayConfig(overlayName);
   // FRVP: zuletzt gespeicherte Einstellungen als Vorlage (Punkt 4),
   // sonst die eingebauten Defaults.
   if (overlayName === "frvp") {
@@ -2507,6 +2554,14 @@ function resize() {
   }
 }
 new ResizeObserver(resize).observe(document.querySelector(".workspace"));
+// Die Statusleiste kann bei langem Text auf zwei oder mehr Zeilen wachsen.
+// Der Chart darüber muss dann neu vermessen werden, sonst behält seine
+// Zeichenfläche die alte Höhe und die Zeitachse verschwindet hinter der
+// Statusleiste.
+quiet(() => {
+  const sl = document.getElementById("statusline");
+  if (sl) new ResizeObserver(() => resize()).observe(sl);
+}, "statusline resize");
 
 // ---------- Touch-Support (Mobile) ----------
 // KLineCharts hat eingeschränkten Touch-Support. Wir ergänzen:
@@ -4359,16 +4414,34 @@ document.getElementById("wlDeleteBtn").addEventListener("click", () => {
 
 // ---------- Grid-Bot-Handler ----------
 document.getElementById("posToolTopBtn").addEventListener("click", () => {
+  const btn = document.getElementById("posToolTopBtn");
   // Zweiter Klick bricht ab — gleiche Logik wie der ESC-Handler
   if (state.activeTool === "positionTool") {
     if (state.drawingId != null) { try { chart.removeOverlay(state.drawingId); } catch (err) {} state.drawingId = null; }
     state.activeTool = null;
-    document.getElementById("posToolTopBtn").classList.remove("active");
+    btn.classList.remove("active");
+    document.getElementById("lsChoice")?.classList.add("hidden");
     setStatus("Abgebrochen");
     return;
   }
+
+  // Auf dem Handy zuerst die Richtung wählen: Einstieg, Stop und Ziel
+  // entstehen danach mit einem einzigen Tap. Am Desktop bleibt der
+  // bisherige Weg mit drei Klicks unverändert.
+  if (tvIsMobile()) {
+    const menu = document.getElementById("lsChoice");
+    if (menu) {
+      const r = btn.getBoundingClientRect();
+      const w = 152, h = 48;
+      menu.style.left = Math.max(6, Math.min(window.innerWidth - w - 6, r.left + r.width / 2 - w / 2)) + "px";
+      menu.style.top  = Math.max(6, r.top - h - 10) + "px";
+      menu.classList.remove("hidden");
+      return;
+    }
+  }
+
   startTool("positionTool");
-  document.getElementById("posToolTopBtn").classList.add("active");
+  btn.classList.add("active");
   setStatus("Long/Short: 1. Einstieg klicken  →  2. Stop  →  3. Ziel");
 });
 document.getElementById("gridBotBtn").addEventListener("click", () => gbToggleBar());
@@ -4525,7 +4598,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m15";
+const TV_BUILD = "m16";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -4645,10 +4718,14 @@ const TOOL_POINT_COUNT = {
   priceLine: 1, priceChannelLine: 3, parallelStraightLine: 3,
   fibRetracement: 2, fibExtension: 3, rectangle: 2, priceRange: 2,
   dateRange: 2, avwap: 1, simpleAnnotation: 1, positionTool: 3,
+  // Polylinie ist unbegrenzt — sie wird über den Bestätigungs-Balken
+  // abgeschlossen, nicht über eine feste Punktzahl.
+  polyline: Infinity,
 };
 const CROSSHAIR_LIFT = 120;   // Pixel über dem Finger
 
-function startMobilePointTool(overlayName, overlayConfig) {
+function startMobilePointTool(overlayName, overlayConfig, opts) {
+  opts = opts || {};
   const host   = document.getElementById("mainChart");
   const canvas = document.getElementById("crosshairCanvas");
   if (!host || !canvas) {
@@ -4659,14 +4736,27 @@ function startMobilePointTool(overlayName, overlayConfig) {
   }
   document.getElementById("drawActionBar")?.classList.add("hidden");
   state.selectedOverlayId = null;
+  const confirmBar = document.getElementById("drawConfirmBar");
+  confirmBar?.classList.add("hidden");
 
-  const need = TOOL_POINT_COUNT[overlayName] || 2;
+  // Das Canvas muss IM Chart liegen, nicht daneben: es ist absolut
+  // positioniert, und als Geschwister im .chart-col bezöge es sich auf
+  // dessen Kasten — der die Statusleiste mit einschliesst. Das Fadenkreuz
+  // wäre dann senkrecht um deren Höhe versetzt.
+  host.style.position = "relative";
+  if (canvas.parentElement !== host) host.appendChild(canvas);
+
+  // needPoints erlaubt es, weniger Punkte abzufragen als das Overlay am
+  // Ende bekommt — beim Long/Short wird aus einem Einstieg per
+  // expandPoints ein Dreiergespann [Einstieg, Stop, Ziel].
+  const need = opts.needPoints || TOOL_POINT_COUNT[overlayName] || 2;
   const AXIS_W = 80, ENGAGE = 8;
   let points = [];
   let markers = [];   // Pixel-Positionen bereits gesetzter Punkte — sichtbare Bestätigung
   let previewId = null;
   let crosshair = { x: host.clientWidth / 2, y: host.clientHeight / 2 };
   let touchStart = null, touchMoved = false;
+  let offAccept = () => {}, offCancel = () => {};
 
   canvas.classList.remove("hidden");
   const resize = () => {
@@ -4696,9 +4786,12 @@ function startMobilePointTool(overlayName, overlayConfig) {
     });
 
     const px = crosshair.x * dpr, py = crosshair.y * dpr;
-    ctx.strokeStyle = "rgba(232,182,76,.9)";
-    ctx.lineWidth = 1 * dpr;
-    ctx.setLineDash([6 * dpr, 4 * dpr]);
+    // Eingerastet: kräftigeres Grün und durchgezogene Linie, damit sofort
+    // erkennbar ist, dass der Punkt auf einem Kursniveau der Kerze sitzt.
+    const snapped = !!crosshair.snapped;
+    ctx.strokeStyle = snapped ? "rgba(63,182,139,.95)" : "rgba(232,182,76,.9)";
+    ctx.lineWidth = (snapped ? 1.5 : 1) * dpr;
+    ctx.setLineDash(snapped ? [] : [6 * dpr, 4 * dpr]);
     ctx.beginPath();
     ctx.moveTo(0, py); ctx.lineTo(canvas.width, py);
     ctx.moveTo(px, 0);  ctx.lineTo(px, canvas.height);
@@ -4711,34 +4804,52 @@ function startMobilePointTool(overlayName, overlayConfig) {
   // Rastet auf Wunsch an O/H/L/C der nächstgelegenen Kerze ein — dieselbe
   // Vorstellung wie KLCs eigener mode/modeSensitivity, hier aber selbst
   // nachgebaut, weil wir KLCs interaktiven Modus nicht mehr nutzen.
-  function magnetSnap(pt, py) {
-    if (state.magnetMode === "normal") return pt;
+  // Magnet rastet AUSSCHLIESSLICH auf der Preisachse ein: auf Hoch, Tief,
+  // Eröffnung oder Schluss der Kerze unter dem Fadenkreuz. Die Zeitachse
+  // bleibt frei am Finger — beim Zeichnen ist die waagrechte Position
+  // fast immer bewusst gewählt, die senkrechte soll dagegen sauber auf
+  // einem Kursniveau sitzen.
+  //
+  // Gibt die eingerastete Bildschirm-Y-Position zurück oder null, wenn
+  // nichts in Reichweite liegt. Wird schon während der Fingerbewegung
+  // aufgerufen, damit das Einrasten sichtbar ist und nicht erst beim
+  // Absetzen des Punktes überrascht.
+  function magnetSnapY(px, py) {
+    if (state.magnetMode === "normal") return null;
     try {
+      const v = chart.convertFromPixel({ x: px, y: py }, { paneId: "candle_pane" });
+      if (!v || v.timestamp == null) return null;
       const data = chart.getDataList();
-      if (!data || !data.length) return pt;
-      let closest = data[0], bestDiff = Infinity;
+      if (!data || !data.length) return null;
+
+      let closest = null, bestDiff = Infinity;
       for (const d of data) {
-        const diff = Math.abs(d.timestamp - pt.timestamp);
+        const diff = Math.abs(d.timestamp - v.timestamp);
         if (diff < bestDiff) { bestDiff = diff; closest = d; }
       }
+      if (!closest) return null;
+
       const tol = state.magnetMode === "strong_magnet" ? 40 : 18;
-      let best = null, bestPxDiff = tol;
-      for (const v of [closest.open, closest.high, closest.low, closest.close]) {
-        const p = chart.convertToPixel({ timestamp: closest.timestamp, value: v }, { paneId: "candle_pane" });
+      let bestY = null, bestPxDiff = tol;
+      for (const val of [closest.open, closest.high, closest.low, closest.close]) {
+        if (val == null) continue;
+        const p = chart.convertToPixel({ timestamp: closest.timestamp, value: val }, { paneId: "candle_pane" });
         const one = Array.isArray(p) ? p[0] : p;
-        if (!one) continue;
+        if (!one || one.y == null) continue;
         const d = Math.abs(one.y - py);
-        if (d < bestPxDiff) { bestPxDiff = d; best = v; }
+        if (d < bestPxDiff) { bestPxDiff = d; bestY = one.y; }
       }
-      return best != null ? { timestamp: closest.timestamp, value: best } : pt;
-    } catch (e) { return pt; }
+      return bestY;
+    } catch (e) { return null; }
   }
 
+  // Das Fadenkreuz steht bereits auf der eingerasteten Position, deshalb
+  // ist hier kein weiteres Einrasten mehr nötig.
   function toDataPoint(px, py) {
     try {
       const v = chart.convertFromPixel({ x: px, y: py }, { paneId: "candle_pane" });
       if (!v || v.timestamp == null) return null;
-      return magnetSnap({ timestamp: v.timestamp, value: v.value }, py);
+      return { timestamp: v.timestamp, value: v.value };
     } catch (e) { return null; }
   }
 
@@ -4761,6 +4872,8 @@ function startMobilePointTool(overlayName, overlayConfig) {
 
   function cleanup() {
     canvas.classList.add("hidden");
+    confirmBar?.classList.add("hidden");
+    offAccept(); offCancel();
     ro.disconnect();
     if (previewId != null) { try { chart.removeOverlay(previewId); } catch (e) {} previewId = null; }
     host.removeEventListener("touchstart", onStart, true);
@@ -4787,13 +4900,49 @@ function startMobilePointTool(overlayName, overlayConfig) {
 
     if (points.length < need) {
       updatePreview();
-      setStatus(`Punkt ${points.length}/${need} gesetzt — nächsten Punkt positionieren und antippen`);
+      if (need === Infinity) {
+        // Ab dem zweiten Punkt kann abgeschlossen werden — der Balken
+        // erscheint erst dann, weil eine Linie mindestens zwei Punkte
+        // braucht.
+        if (points.length >= 2) showConfirmBar();
+        setStatus(`${points.length} Punkte — weiter antippen, ✓ schliesst ab`);
+      } else {
+        setStatus(`Punkt ${points.length}/${need} gesetzt — nächsten Punkt positionieren und antippen`);
+      }
       return;
     }
 
+    finishDrawing();
+  }
+
+  function showConfirmBar() {
+    if (!confirmBar) return;
+    const rect = host.getBoundingClientRect();
+    const barW = 84, barH = 46;
+    let left = rect.left + crosshair.x - barW / 2;
+    let top  = rect.top + crosshair.y - barH - 16;
+    left = Math.max(6, Math.min(window.innerWidth - barW - 6, left));
+    top  = Math.max(6, top);
+    confirmBar.style.left = left + "px";
+    confirmBar.style.top  = top + "px";
+    confirmBar.classList.remove("hidden");
+  }
+
+  function abortDrawing() {
     cleanup();
+    state.activeTool = null;
+    state.drawingId = null;
+    renderDrawbar();
+    setStatus("Zeichnung verworfen");
+  }
+
+  function finishDrawing() {
+    const minPts = opts.needPoints || 2;
+    if (points.length < minPts) { abortDrawing(); return; }
+    cleanup();
+    const finalPts = opts.expandPoints ? opts.expandPoints(points) : points;
     let id;
-    try { id = chart.createOverlay({ ...overlayConfig, points }); } catch (e) { id = null; }
+    try { id = chart.createOverlay({ ...overlayConfig, points: finalPts }); } catch (e) { id = null; }
     id = Array.isArray(id) ? id[0] : id;
     state.drawingId = id;
     if (id) {
@@ -4801,8 +4950,9 @@ function startMobilePointTool(overlayName, overlayConfig) {
       // AVWAP-Bridge, pinTool-Wiederholung) — KLC ruft es bei explizit
       // übergebenen points nicht selbst auf, weil kein interaktiver
       // Abschluss stattfand.
-      quiet(() => overlayConfig.onDrawEnd({ overlay: chart.getOverlayById(id) || { id, points } }),
+      quiet(() => overlayConfig.onDrawEnd({ overlay: chart.getOverlayById(id) || { id, points: finalPts } }),
             "mobile draw onDrawEnd");
+      if (opts.done) quiet(() => opts.done(id), "mobile draw done");
     } else {
       state.activeTool = null;
       renderDrawbar();
@@ -4825,8 +4975,11 @@ function startMobilePointTool(overlayName, overlayConfig) {
     const x = t.clientX - r.left, y = t.clientY - r.top;
     if (Math.hypot(x - touchStart.x, y - touchStart.y) > ENGAGE) {
       touchMoved = true;
-      crosshair = { x, y: Math.max(10, y - CROSSHAIR_LIFT) };
+      const rawY = Math.max(10, y - CROSSHAIR_LIFT);
+      const snapY = magnetSnapY(x, rawY);
+      crosshair = { x, y: snapY != null ? snapY : rawY, snapped: snapY != null };
       draw();
+      if (need === Infinity && points.length >= 2) showConfirmBar();
     }
   }
   function onEnd(e) {
@@ -4842,9 +4995,115 @@ function startMobilePointTool(overlayName, overlayConfig) {
   host.addEventListener("touchend",    onEnd,    { capture: true, passive: false });
   host.addEventListener("touchcancel", onCancel, { capture: true, passive: false });
 
+  // Bestätigungs-Knöpfe. touchend statt click, damit ein Tap genügt —
+  // sonst käme der Chart-Handler dazwischen (gleicher Grund wie beim
+  // Aktionsbalken).
+  const bindConfirm = (id, fn) => {
+    const btn = document.getElementById(id);
+    if (!btn) return () => {};
+    const h = (e) => { e.preventDefault(); e.stopPropagation(); fn(); };
+    btn.addEventListener("touchend", h, { passive: false });
+    btn.addEventListener("click", h);
+    return () => {
+      btn.removeEventListener("touchend", h);
+      btn.removeEventListener("click", h);
+    };
+  };
+  offAccept = bindConfirm("dcbAccept", () => finishDrawing());
+  offCancel = bindConfirm("dcbCancel", () => abortDrawing());
+
   resize();
-  setStatus(`Punkt 1/${need}: Fadenkreuz positionieren und antippen`);
+  setStatus(opts.hint || (need === Infinity
+    ? "Punkte antippen — ab dem zweiten schliesst ✓ ab"
+    : `Punkt 1/${need}: Fadenkreuz positionieren und antippen`));
 }
+
+// ── 4b2. Long/Short: Richtung wählen, dann Einstieg mit dem Fadenkreuz ─
+// Statt drei einzelner Klicks (Einstieg, Stop, Ziel) genügt auf dem Handy
+// ein Tap: Stop und Ziel entstehen automatisch aus dem Tages-ATR.
+// Verhältnis 1:2 — Stop 1x ATR, Ziel 2x ATR. ATR statt Prozent, weil BTC
+// je nach Phase sehr unterschiedlich schwankt; ein fester Prozentsatz wäre
+// in ruhigen Phasen zu weit und in volatilen zu eng.
+quiet(() => {
+  const menu    = document.getElementById("lsChoice");
+  const btnLong = document.getElementById("lsLong");
+  const btnShort= document.getElementById("lsShort");
+  const host    = document.getElementById("mainChart");
+  if (!menu || !btnLong || !btnShort || !host) return;
+
+  function dailyAtr(price) {
+    // Der Grid-Bot rechnet den ATR bereits auf Tageskerzen — denselben
+    // Wert zu nehmen hält Chart und Bot konsistent.
+    const a = state.gbResult?.market?.atr14;
+    if (a && isFinite(a) && a > 0) return a;
+    // Notnagel, falls der Bot noch nicht gerechnet hat: aus den letzten
+    // 14 sichtbaren Kerzen schätzen.
+    try {
+      const d = chart.getDataList();
+      if (d && d.length > 15) {
+        let sum = 0, n = 0;
+        for (let i = d.length - 14; i < d.length; i++) {
+          const p = d[i - 1], k = d[i];
+          if (!p || !k) continue;
+          sum += Math.max(k.high - k.low, Math.abs(k.high - p.close), Math.abs(k.low - p.close));
+          n++;
+        }
+        if (n) return sum / n;
+      }
+    } catch (e) {}
+    return price * 0.02;   // letzter Rückfall: 2 %
+  }
+
+  function placePosition(dir) {
+    menu.classList.add("hidden");
+    const cfg = buildOverlayConfig("positionTool");
+    // Zwingend: ohne aktives Werkzeug würde der Auswahl-Handler parallel
+    // mitlaufen und die Chart-Sperre nicht greifen.
+    state.activeTool = "positionTool";
+    renderDrawbar();
+    startMobilePointTool("positionTool", cfg, {
+      needPoints: 1,
+      hint: dir === "long"
+        ? "Long: Einstieg positionieren und antippen"
+        : "Short: Einstieg positionieren und antippen",
+      // Aus dem einen gesetzten Einstieg werden drei Punkte gemacht:
+      // [Einstieg, Stop, Ziel] — genau die Reihenfolge, die das
+      // positionTool-Overlay erwartet.
+      expandPoints: (pts) => {
+        const entry = pts[0];
+        const atr = dailyAtr(entry.value);
+        const stop   = dir === "long" ? entry.value - atr     : entry.value + atr;
+        const target = dir === "long" ? entry.value + 2 * atr : entry.value - 2 * atr;
+        return [
+          entry,
+          { timestamp: entry.timestamp, value: stop },
+          { timestamp: entry.timestamp, value: target },
+        ];
+      },
+      done: () => {
+        setStatus(dir === "long"
+          ? "Long gesetzt — Position antippen, dann Stop oder Ziel ziehen"
+          : "Short gesetzt — Position antippen, dann Stop oder Ziel ziehen");
+      },
+    });
+    document.getElementById("posToolTopBtn")?.classList.add("active");
+  }
+
+  const bind = (btn, dir) => {
+    const h = (e) => { e.preventDefault(); e.stopPropagation(); placePosition(dir); };
+    btn.addEventListener("touchend", h, { passive: false });
+    btn.addEventListener("click", h);
+  };
+  bind(btnLong, "long");
+  bind(btnShort, "short");
+
+  // Tap daneben schliesst die Auswahl wieder
+  document.addEventListener("touchstart", (e) => {
+    if (menu.classList.contains("hidden")) return;
+    if (menu.contains(e.target) || document.getElementById("posToolTopBtn")?.contains(e.target)) return;
+    menu.classList.add("hidden");
+  }, { passive: true });
+}, "ls choice init");
 
 // ── 4c. Bestehende Zeichnung: antippen wählt aus, zweiter Griff verschiebt ─
 // Genau wie in TradingView: ein Tap wählt aus und zeigt einen kleinen
@@ -4896,8 +5155,22 @@ quiet(() => {
   const selectOverlay = (ov) => { state.selectedOverlayId = ov.id; showBarFor(ov); };
   const deselect = () => { state.selectedOverlayId = null; hideBar(); };
 
-  btnStyle.addEventListener("click", (e) => {
-    e.stopPropagation();
+  const onBarButton = (btn, fn) => {
+    let handled = false;
+    btn.addEventListener("touchend", (e) => {
+      e.preventDefault(); e.stopPropagation();
+      handled = true;
+      setTimeout(() => { handled = false; }, 400);
+      fn();
+    }, { passive: false });
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (handled) return;   // Touch hat bereits ausgelöst
+      fn();
+    });
+  };
+
+  const doStyle = () => {
     if (!state.selectedOverlayId) return;
     const ov = chart.getOverlayById(state.selectedOverlayId);
     if (!ov) return;
@@ -4911,13 +5184,16 @@ quiet(() => {
     } else {
       openOverlayMenu(ov, { pointerCoordinate: { x: relX, y: relY } });
     }
-  });
-  btnDelete.addEventListener("click", (e) => {
-    e.stopPropagation();
+  };
+
+  const doDelete = () => {
     if (!state.selectedOverlayId) return;
     try { chart.removeOverlay(state.selectedOverlayId); } catch (e) {}
     deselect();
-  });
+  };
+
+  onBarButton(btnStyle,  doStyle);
+  onBarButton(btnDelete, doDelete);
 
   const toPx = (p) => {
     try {

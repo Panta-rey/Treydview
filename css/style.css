@@ -779,7 +779,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
    Desktop läuft dieser Code nie, das DOM bleibt dort unverändert.
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root { --tv-build: "m15"; }
+:root { --tv-build: "m16"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -787,6 +787,8 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .frvp-guide        { display: none; }
 .crosshair-canvas  { display: none; }
 .draw-action-bar   { display: none; }
+#drawConfirmBar    { display: none; }
+.ls-choice         { display: none; }
 
 @media (max-width: 720px), (pointer: coarse) {
 
@@ -960,28 +962,19 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
      bestehenden Knöpfe unverändert. */
   .bottom-bar .action-btn,
   .bottom-bar .dd-trigger {
-    width: 100%; height: auto; min-height: 44px;
-    flex-direction: column; gap: 3px;
+    width: 100%; height: 44px;
+    display: flex; align-items: center; justify-content: center;
     border: none; background: none; border-radius: 8px;
-    padding: 4px 2px; font-size: 0;
+    padding: 0; font-size: 0;
   }
-  .bottom-bar .action-btn::after,
-  .bottom-bar .dd-trigger::after {
-    font-family: var(--font-mono); font-size: 8.5px; line-height: 1;
-    color: inherit; white-space: nowrap;
-  }
+
   .bottom-bar .ab-icon,
-  .bottom-bar .ind-i-icon { width: 21px; height: 21px; }
+  .bottom-bar .ab-icon,
+  .bottom-bar .ind-i-icon { width: 19px; height: 19px; }
   .bottom-bar .action-btn.active,
   .bottom-bar .dd-trigger.active { color: var(--accent); background: var(--bg-hover); }
 
-  #indTrigger::after     { content: "Indikatoren"; }
-  #magnetBbBtn::after    { content: "Magnet"; }
-  #drawSheetBtn::after   { content: "Zeichnen"; }
-  #gridBotBtn::after     { content: "Grid Bot"; }
-  #patternTrigger::after { content: "Muster"; }
-  #smcTrigger::after     { content: "FVG / OB"; }
-  #posToolTopBtn::after  { content: "L / S"; }
+  /* Ohne Beschriftungen bleibt Platz für Symbole in Topbar-Grösse. */
 
   /* «i» statt Lupe auf dem Indikator-Knopf */
   .ind-i-icon      { display: block !important; }
@@ -993,6 +986,13 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .workspace {
     height: calc(100% - var(--tv-topbar) - var(--tv-botbar));
   }
+
+  /* Statusleiste: darf über mehrere Zeilen wachsen. Der Chart darüber
+     schrumpft entsprechend (flex), damit die Zeitachse nicht verdeckt
+     wird. Ohne das kleinere min-height könnte .main-chart nicht
+     nachgeben und die Statusleiste würde sich darüberlegen. */
+  .statusline { white-space: normal; line-height: 1.35; }
+  .main-chart { min-height: 160px; }
 
   /* ── Alle Panels öffnen als Blatt über der Bottom Bar ────────────── */
   .dd-panel, .dd-panel--wide, .dd-panel--right {
@@ -1049,6 +1049,29 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   }
   .draw-action-bar button:active { background: var(--bg-hover); color: var(--accent); }
   #dabDelete:active { color: var(--down); }
+  /* ID-Spezifität muss die Basisregel #drawConfirmBar{display:none} schlagen */
+  #drawConfirmBar        { display: flex; }
+  #drawConfirmBar.hidden { display: none; }
+  #dcbAccept { color: var(--up); }
+  #dcbCancel:active { color: var(--down); }
+
+  /* Auswahl Long / Short vor dem Platzieren einer Position */
+  .ls-choice {
+    display: flex; gap: 6px;
+    position: fixed; z-index: 660;
+    background: var(--bg-raised); border: 1px solid var(--border);
+    border-radius: 10px; padding: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  }
+  .ls-choice.hidden { display: none; }
+  .ls-choice button {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+    padding: 9px 16px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--bg);
+  }
+  .ls-long  { color: var(--up); }
+  .ls-short { color: var(--down); }
+  .ls-long:active  { background: var(--up);   color: #fff; }
+  .ls-short:active { background: var(--down); color: #fff; }
 
   /* Schliessen-Kreuz im Stil-Menü */
   .om-close {

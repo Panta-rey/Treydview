@@ -14,11 +14,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m15">
-  <link rel="stylesheet" href="css/style.css?v=m15">
+  <link rel="manifest" href="manifest.webmanifest?v=m16">
+  <link rel="stylesheet" href="css/style.css?v=m16">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m15"></script>
+  <script src="js/lib/klinecharts.min.js?v=m16"></script>
 </head>
 <body>
 
@@ -346,6 +346,18 @@
       </button>
       <button id="dabDelete" title="Löschen">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      </button>
+    </div>
+    <div class="ls-choice hidden" id="lsChoice">
+      <button id="lsLong"  class="ls-long">Long</button>
+      <button id="lsShort" class="ls-short">Short</button>
+    </div>
+    <div class="draw-action-bar hidden" id="drawConfirmBar">
+      <button id="dcbAccept" title="Zeichnung abschliessen">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="20 6 9 17 4 12"/></svg>
+      </button>
+      <button id="dcbCancel" title="Verwerfen">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <canvas id="crosshairCanvas" class="crosshair-canvas hidden"></canvas>
@@ -1040,15 +1052,15 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m15"></script>
-<script src="js/indicators.js?v=m15"></script>
-<script src="js/overlays.js?v=m15"></script>
-<script src="js/data.js?v=m15"></script>
-<script src="js/settings.js?v=m15"></script>
-<script src="js/derivatives.js?v=m15"></script>
-<script src="js/gridbot.js?v=m15"></script>
-<script src="js/patterns.js?v=m15"></script>
-<script src="js/smc.js?v=m15"></script>
-<script src="js/app.js?v=m15"></script>
+<script src="js/config.js?v=m16"></script>
+<script src="js/indicators.js?v=m16"></script>
+<script src="js/overlays.js?v=m16"></script>
+<script src="js/data.js?v=m16"></script>
+<script src="js/settings.js?v=m16"></script>
+<script src="js/derivatives.js?v=m16"></script>
+<script src="js/gridbot.js?v=m16"></script>
+<script src="js/patterns.js?v=m16"></script>
+<script src="js/smc.js?v=m16"></script>
+<script src="js/app.js?v=m16"></script>
 </body>
 </html>
