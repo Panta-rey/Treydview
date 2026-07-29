@@ -1589,6 +1589,24 @@ function findOverlayNear(x, y, lineTol, pointTol) {
     const pts = ov.points.map(toPx).filter(Boolean);
     if (!pts.length) continue;
 
+    // FRVP ist eine Fläche, keine Linie: Die zwei Ankerpunkte markieren
+    // nur den Zeitbereich (beide auf derselben Höhe, der Bildschirmmitte
+    // beim Zeichnen) — die sichtbaren Balken erstrecken sich aber über
+    // den gesamten Kursbereich. Die normale Linien-Trefferzone würde hier
+    // fast nie treffen. Für FRVP zählt deshalb die horizontale Nähe zum
+    // Zeitfenster, die Höhe spielt keine Rolle.
+    if (ov.name === "frvp" && pts.length >= 2) {
+      const xs = pts.map(p => p.x);
+      const left = Math.min(...xs) - lineTol, right = Math.max(...xs) + lineTol;
+      if (x >= left && x <= right) {
+        const distX = Math.min(Math.abs(x - Math.min(...xs)), Math.abs(x - Math.max(...xs)));
+        if (!best || distX < best.dist) {
+          best = { overlay: ov, pointIndex: -1, dist: distX };
+        }
+      }
+      continue;
+    }
+
     // Nächster Einzelpunkt
     let nearestIdx = -1, nearestDist = Infinity;
     pts.forEach((p, i) => {
@@ -4507,7 +4525,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m14";
+const TV_BUILD = "m15";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -4645,6 +4663,7 @@ function startMobilePointTool(overlayName, overlayConfig) {
   const need = TOOL_POINT_COUNT[overlayName] || 2;
   const AXIS_W = 80, ENGAGE = 8;
   let points = [];
+  let markers = [];   // Pixel-Positionen bereits gesetzter Punkte — sichtbare Bestätigung
   let previewId = null;
   let crosshair = { x: host.clientWidth / 2, y: host.clientHeight / 2 };
   let touchStart = null, touchMoved = false;
@@ -4662,6 +4681,20 @@ function startMobilePointTool(overlayName, overlayConfig) {
     const ctx = canvas.getContext("2d");
     const dpr = devicePixelRatio;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Bereits gesetzte Punkte: gefüllter Kreis mit hellem Rand, damit der
+    // Nutzer sieht, dass der Tap tatsächlich angekommen ist.
+    markers.forEach((m) => {
+      const mx = m.x * dpr, my = m.y * dpr, R = 6 * dpr;
+      ctx.beginPath();
+      ctx.arc(mx, my, R, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(232,182,76,.95)";
+      ctx.fill();
+      ctx.lineWidth = 2 * dpr;
+      ctx.strokeStyle = "rgba(255,255,255,.9)";
+      ctx.stroke();
+    });
+
     const px = crosshair.x * dpr, py = crosshair.y * dpr;
     ctx.strokeStyle = "rgba(232,182,76,.9)";
     ctx.lineWidth = 1 * dpr;
@@ -4740,6 +4773,17 @@ function startMobilePointTool(overlayName, overlayConfig) {
     const pt = toDataPoint(crosshair.x, crosshair.y);
     if (!pt) { setStatus("Kein gültiger Punkt an dieser Stelle"); return; }
     points.push(pt);
+
+    // Sichtbare Bestätigung: Marker an der tatsächlich gespeicherten
+    // Position (nach Magnet-Snap zurück in Pixel gerechnet), nicht an der
+    // rohen Fadenkreuz-Stelle — bei aktivem Magnet können die minimal
+    // auseinanderliegen.
+    quiet(() => {
+      const r = chart.convertToPixel({ timestamp: pt.timestamp, value: pt.value }, { paneId: "candle_pane" });
+      const one = Array.isArray(r) ? r[0] : r;
+      markers.push(one && one.x != null ? { x: one.x, y: one.y } : { x: crosshair.x, y: crosshair.y });
+    }, "marker convert");
+    draw();
 
     if (points.length < need) {
       updatePreview();
@@ -4823,10 +4867,19 @@ quiet(() => {
   function showBarFor(overlay) {
     let px = null, py = null;
     try {
-      const p0 = overlay.points[0];
-      const r = chart.convertToPixel({ timestamp: p0.timestamp, value: p0.value }, { paneId: "candle_pane" });
-      const one = Array.isArray(r) ? r[0] : r;
-      if (one) { px = one.x; py = one.y; }
+      if (overlay.name === "frvp" && overlay.points.length >= 2) {
+        // FRVP: Balken über der Mitte des Zeitfensters, nicht am ersten
+        // Ankerpunkt — der liegt ohnehin nur in der Bildschirmmitte.
+        const a = chart.convertToPixel({ timestamp: overlay.points[0].timestamp, value: overlay.points[0].value }, { paneId: "candle_pane" });
+        const b = chart.convertToPixel({ timestamp: overlay.points[1].timestamp, value: overlay.points[1].value }, { paneId: "candle_pane" });
+        const oneA = Array.isArray(a) ? a[0] : a, oneB = Array.isArray(b) ? b[0] : b;
+        if (oneA && oneB) { px = (oneA.x + oneB.x) / 2; py = Math.min(oneA.y, oneB.y); }
+      } else {
+        const p0 = overlay.points[0];
+        const r = chart.convertToPixel({ timestamp: p0.timestamp, value: p0.value }, { paneId: "candle_pane" });
+        const one = Array.isArray(r) ? r[0] : r;
+        if (one) { px = one.x; py = one.y; }
+      }
     } catch (e) {}
     if (px == null) { hideBar(); return; }
     const rect = host.getBoundingClientRect();
