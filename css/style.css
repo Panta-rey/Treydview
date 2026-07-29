@@ -779,13 +779,14 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
    Desktop läuft dieser Code nie, das DOM bleibt dort unverändert.
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root { --tv-build: "m13"; }
+:root { --tv-build: "m14"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
-/* draw-magnifier entfernt — Fadenkreuz-Canvas ist inline */
-.om-close       { display: none; }
-.frvp-guide     { display: none; }
+.om-close          { display: none; }
+.frvp-guide        { display: none; }
+.crosshair-canvas  { display: none; }
+.draw-action-bar   { display: none; }
 
 @media (max-width: 720px), (pointer: coarse) {
 
@@ -1023,14 +1024,31 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .frvp-guide.active { display: block; }
   .frvp-guide.set    { border-left-style: solid; opacity: .75; }
 
-  /* Zeichnungs-Lupe: schwebt über dem Finger, zeigt den Ausschnitt 2.5× */
-  .draw-magnifier {
-    position: fixed; z-index: 900; pointer-events: none;
-    width: 88px; height: 88px; border-radius: 50%;
-    border: 2px solid var(--accent); overflow: hidden;
-    background: var(--bg); box-shadow: 0 4px 16px rgba(0,0,0,.6);
+  /* Fadenkreuz-Canvas: liegt fest über dem Chart, wird nur bei aktivem
+     Zeichenwerkzeug eingeblendet. display muss hier explizit gesetzt
+     werden — sonst gewinnt die äussere Desktop-Sperrregel weiter oben. */
+  .crosshair-canvas {
+    display: block;
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 25;
   }
-  /* draw-magnifier entfernt, Fadenkreuz-Canvas braucht kein eigenes CSS */
+  .crosshair-canvas.hidden { display: none; }
+
+  /* Schwebender Aktionsbalken über einer ausgewählten Zeichnung */
+  .draw-action-bar {
+    display: flex;
+    position: fixed; z-index: 660; gap: 2px;
+    background: var(--bg-raised); border: 1px solid var(--border);
+    border-radius: 10px; padding: 4px; box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  }
+  .draw-action-bar.hidden { display: none; }
+  .draw-action-bar button {
+    width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
+    background: transparent; border: none; border-radius: 7px;
+    color: var(--text-dim); cursor: pointer;
+  }
+  .draw-action-bar button:active { background: var(--bg-hover); color: var(--accent); }
+  #dabDelete:active { color: var(--down); }
 
   /* Schliessen-Kreuz im Stil-Menü */
   .om-close {
