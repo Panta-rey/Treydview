@@ -786,7 +786,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
    Desktop läuft dieser Code nie, das DOM bleibt dort unverändert.
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root { --tv-build: "m22"; }
+:root { --tv-build: "m23"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -822,7 +822,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
     width: min(320px, calc(100vw - 40px)) !important;
     max-height: 80vh; overflow-y: auto;
     border-radius: 12px;
-    z-index: 650;
+    z-index: 670;   /* ueber dem Schwebebalken (660) */
   }
   /* as-sheet-Klasse ignorieren wenn es das FRVP-Menü ist */
   .frvp-menu.as-sheet {
@@ -852,7 +852,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
     width: min(300px, calc(100vw - 40px)) !important;
     max-height: 80vh; overflow-y: auto;
     border-radius: 12px;
-    z-index: 650;
+    z-index: 670;   /* ueber dem Schwebebalken (660) */
   }
   .fib-menu.as-sheet {
     top: 50% !important; left: 50% !important;
@@ -875,7 +875,9 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   /* Abdunkler hinter den zentrierten Menüs */
   body::after {
     content: "";
-    position: fixed; inset: 0; z-index: 649;
+    /* 665: ueber dem Schwebebalken (660), damit der bei offenem Menue
+       verdeckt und unantastbar ist statt davorzuliegen. */
+    position: fixed; inset: 0; z-index: 665;
     background: rgba(0,0,0,.5);
     display: none;
     pointer-events: all;
@@ -1089,10 +1091,22 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .ls-short:active { background: var(--down); color: #fff; }
 
   /* Schliessen-Kreuz im Stil-Menü */
-  .om-close {
-    display: block; position: absolute; top: 6px; right: 8px;
+  /* Alle Schliessknoepfe in Menues und Aufklappfenstern einheitlich.
+     Vorher reichten sie von 11px (.fib-close — kaum zu treffen) ueber
+     13px (.faq-close) bis 17px (.om-close). Jetzt durchgehend 20px mit
+     einem Tippziel von mindestens 34px. */
+  .om-close, .fib-close, .settings-close, .faq-close, .wl-close-btn,
+  .frvp-menu .fib-close, .chartstyle-menu .fib-close {
+    font-size: 20px; line-height: 1; padding: 5px 9px;
+    min-width: 34px; min-height: 34px;
+    display: flex; align-items: center; justify-content: center;
     background: none; border: none; color: var(--text-dim);
-    font-size: 17px; line-height: 1; padding: 4px 8px; cursor: pointer;
+    cursor: pointer; border-radius: 6px;
+  }
+  .om-close:active, .fib-close:active, .settings-close:active,
+  .faq-close:active, .wl-close-btn:active { background: var(--bg-hover); }
+  .om-close {
+    display: flex; position: absolute; top: 6px; right: 8px;
   }
   /* NICHT position:relative — .overlay-menu ist fixed, und ein ID-Selektor
      schlaegt den Klassen-Selektor. Mit relative landet das Menue im

@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 29. Juli 2026 · Build m22**
+**Stand: 29. Juli 2026 · Build m23**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -77,7 +77,7 @@ Top-Level-`const` verwirft und `CONFIG` dann unsichtbar bleibt),
 `t-desktop3.js` (Prüfung 2, ohne mobile-only-Zweige), `t-selectors.js`
 (Prüfung 3), `t-mobile.js` (Prüfung 4 + Zieltests, 44 Prüfpunkte), `t-m18.js` (18),
 `t-m19.js` (23), `t-m20.js` (31), `t-m21.js` (27, asynchron),
-`t-tokens.js` (Prüfung 5), `t-m22.js` (26, asynchron).
+`t-tokens.js` (Prüfung 5), `t-m22.js` (26), `t-m23.js` (26), beide asynchron.
 Rückwärtskompatibilität der Drei-Punkt-Zeichnungen: eigener Lauf, 5 Punkte.
 Der Canvas-Stub protokolliert `moveTo`/`lineTo`, damit Tests das gezeichnete
 Fadenkreuz auslesen können. `chart.setLoadDataCallback` muss im Stub stehen.
@@ -104,14 +104,14 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m22)
+## Datei-MD5 (Build m23)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | c2d1b5eb729e08d87bd3689d6dab4f08 | 1073 |
-| style.css | 1dca220bd5daf9780dbb9795b6cc259e | 1334 |
-| app.js | e61b03f4dca3991218d2c9c7991a77f7 | 5883 |
-| overlays.js | c5536fae85ea0af2668be6a06e7695a3 | 1081 |
+| index.html | def02115f7db6c72dcfdec4f1a3da6bd | 1073 |
+| style.css | 2df3b0ae6413adf3e79152bd94c092e4 | 1348 |
+| app.js | 22326b56ed7938d8e32ead72bdce9ae1 | 5912 |
+| overlays.js | 616c8944e2f8e8e16d87597d920b9ce0 | 1131 |
 | overlays.js | 41863e842e40478db3326d46156c2b89 | 1075 |
 | manifest.webmanifest | f00d4e5b6341e6400f7b5dfb48b2e667 | 11 |
 | config.js | fc6cff7fab290a246c255349f13a8fd8 | 384 |
@@ -124,9 +124,9 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 
 ## Build-Abgleich — zuerst prüfen, wenn etwas „nicht wirkt"
 
-- `style.css`: `:root { --tv-build: "m22" }`
-- `app.js`: `const TV_BUILD = "m22"`
-- `index.html`: alle Verweise mit `?v=m22`
+- `style.css`: `:root { --tv-build: "m23" }`
+- `app.js`: `const TV_BUILD = "m23"`
+- `index.html`: alle Verweise mit `?v=m23`
 
 Beim Start liest das JS die CSS-Kennung aus und meldet grün oder warnt.
 **Bei jeder Auslieferung an allen drei Stellen erhöhen.**
@@ -209,6 +209,65 @@ Anker auf demselben Zeitstempel, also auf einer einzigen senkrechten Linie.
 neben der Ankerlinie und wurde nie erkannt. Als Rangmass dient der
 senkrechte Abstand zur nächsten der drei waagrechten Linien — sonst würde
 bei Überschneidung immer die Zeichnung mit dem grösseren Kasten gewinnen.
+
+## .filter(Boolean) verschiebt Indizes  (m23 — schwerwiegend)
+
+`findOverlayNear` baute die Pixelpunkte mit
+`ov.points.map(toPx).filter(Boolean)`. Laesst sich EIN Punkt nicht
+umrechnen, ruecken alle folgenden auf: `pts[3]` meint dann Punkt 5 oder
+fehlt ganz. Beim Long/Short liegt der vierte Punkt 20 Kerzen rechts, oft
+ausserhalb der geladenen Daten — der Breiten-Griff wurde deshalb bei
+`x0 + 60` gesucht, gezeichnet aber bei `x1`. Tippen ging zwangslaeufig
+daneben, in JEDER Zoomstufe.
+
+Seit m23 gibt es **`ptsIdx`** (indexerhaltend, kann Luecken enthalten) neben
+`pts` (verdichtet, nur fuer die allgemeine Linienpruefung). Alle
+indexabhaengigen Zweige — FRVP, Fibonacci, positionTool — nutzen `ptsIdx`.
+
+**Und wichtiger: die Geometrie wird nicht mehr nachgerechnet.**
+`renderPosition` in `overlays.js` veroeffentlicht nach jedem Zeichnen
+`window.__tvPositionBox[overlay.id] = { x0, x1, cEntry, cStop, cTarget }`.
+`app.js` liest genau das. Zwei Stellen, die dieselbe Geometrie unabhaengig
+ausrechnen, laufen frueher oder spaeter auseinander — hier war es ein Punkt,
+der sich nicht umrechnen liess.
+
+> **Pruefstand:** `__tvPositionBox` fuellt sich nur, wenn der Renderer
+> laeuft. Am echten Chart zeichnet KLineCharts nach jeder Aenderung neu; im
+> Test muss das von Hand nachgezogen werden, sonst ist die Geometrie
+> veraltet und die Griffe liegen woanders.
+
+## Griffe liegen AUSSERHALB des Kastens  (m23)
+
+Innen gibt es keinen freien Platz: die Preis-Schilder sind rechtsbuendig und
+fuellen den Kasten fast aus, der Kennzahlen-Block sitzt oben links. Mittig
+lagen die Griffe auf den Prozentzahlen, am linken Innenrand auf dem
+Schildanfang. Jetzt:
+
+- Stop und Ziel: `x0 - HANDLE_R - 3` (links davor)
+- Breite: `x1 + HANDLE_R + 3` (rechts daneben)
+- Schilder duerfen wieder bis `x1 - 4`, Kennzahlen bis `x0 + 4`
+
+## Desktop-Magnet auf O/H/L/C  (m23)
+
+KLineCharts rastet beim Zeichnen nur auf der Zeitachse ein; die Preisachse
+blieb frei. `performEventMoveForDrawing` ist der vorgesehene Haken — er wird
+**einmal zentral** an jede Registrierung gehaengt (Wrapper um
+`klinecharts.registerOverlay`), statt in zwanzig Definitionen wiederholt.
+
+Der Haken bekommt **keine Bildschirmkoordinaten**, die Toleranz kann also
+nicht in Pixeln gerechnet werden. Stattdessen ein Anteil der Kerzenspanne:
+stark 45 %, schwach 18 % von (Hoch − Tief). Die Kerze liefert
+`window.__tvCandleAt(timestamp)` aus `app.js`.
+
+## Schliessknoepfe und Menue-Ebene  (m23)
+
+Alle X-Knoepfe einheitlich **20 px** mit 34-px-Tippziel. Vorher: `.fib-close`
+11 px (kaum zu treffen), `.faq-close` 13 px, `.om-close` 17 px,
+`.settings-close` 16 px. Regel liegt in der Mobil-Schicht.
+
+**Stapelung:** Schwebebalken 660, Menues **670**, Abdunkler **665**. Vorher
+lagen die Menues auf 650 und oeffneten damit HINTER dem Balken. Der Balken
+liegt jetzt unter dem Abdunkler und ist bei offenem Menue unantastbar.
 
 ## touch-action — die Ursache abbrechender Zuege  (m22)
 

@@ -1621,7 +1621,12 @@ function findOverlayNear(x, y, lineTol, pointTol) {
     try { ov = chart.getOverlayById(id); } catch (e) { continue; }
     if (!ov || !ov.points || !ov.points.length) continue;
 
-    const pts = ov.points.map(toPx).filter(Boolean);
+    // ptsIdx behaelt die Indizes: .filter(Boolean) verschiebt sie, sobald
+    // sich ein Punkt nicht umrechnen laesst — dann meint pts[3] in
+    // Wahrheit Punkt 4 oder fehlt ganz. Genau daran ist der Breiten-Griff
+    // gescheitert. pts bleibt verdichtet fuer die allgemeine Linienpruefung.
+    const ptsIdx = ov.points.map(toPx);
+    const pts = ptsIdx.filter(Boolean);
     if (!pts.length) continue;
 
     // FRVP ist eine Fläche, keine Linie: Die zwei Ankerpunkte markieren
@@ -1657,8 +1662,9 @@ function findOverlayNear(x, y, lineTol, pointTol) {
         ? FIB_LEVEL_SETS[ov.name].map(l => l.v) : [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
       // Die Linien liegen zwischen den beiden Ankern; y linear
       // interpolieren spart das Umrechnen ueber Kurswerte.
-      const yA = pts[0].y, yB = pts[1].y;
-      const xs = pts.map(p => p.x);
+      if (!ptsIdx[0] || !ptsIdx[1]) continue;
+      const yA = ptsIdx[0].y, yB = ptsIdx[1].y;
+      const xs = [ptsIdx[0].x, ptsIdx[1].x];
       const left = Math.min(...xs) - lineTol;
       // Nach rechts laufen die Linien ueber den zweiten Anker hinaus weiter.
       const right = Math.max(...xs) + 240;
@@ -1670,7 +1676,8 @@ function findOverlayNear(x, y, lineTol, pointTol) {
         }
         if (dist <= lineTol) {
           let nIdx = -1, nDist = Infinity;
-          pts.forEach((p, i) => {
+          ptsIdx.forEach((p, i) => {
+            if (!p) return;
             const d = Math.hypot(x - p.x, y - p.y);
             if (d < nDist) { nDist = d; nIdx = i; }
           });
@@ -1683,23 +1690,31 @@ function findOverlayNear(x, y, lineTol, pointTol) {
     }
 
     if (ov.name === "positionTool" && pts.length >= 2) {
-      const xs = pts.slice(0, 3).map(p => p.x), ys = pts.slice(0, 3).map(p => p.y);
-      const left  = Math.min(...xs);
-      // Rechter Rand aus dem vierten Punkt, sonst alte feste Breite.
-      const geom  = window.__tvPositionGeom || { MIN_WIDTH: 40, HANDLE_R: 7 };
-      const right = Math.max(left + geom.MIN_WIDTH,
-                             pts[3] ? pts[3].x : Math.max(...xs) + 60);
+      // Geometrie kommt aus overlays.js — dieselbe, die gezeichnet wurde.
+      // Nachrechnen aus den Punkten fuehrte zu Abweichungen, sobald sich
+      // der vierte Punkt nicht in Pixel umrechnen liess.
+      const box = (window.__tvPositionBox || {})[ov.id];
+      const geom = window.__tvPositionGeom || { MIN_WIDTH: 40, HANDLE_R: 7 };
+      let left, right, cE, cS, cT;
+      if (box) {
+        ({ x0: left, x1: right, cEntry: cE, cStop: cS, cTarget: cT } = box);
+      } else {
+        // Noch nie gezeichnet (z. B. direkt nach dem Wiederherstellen):
+        // Rueckfall auf die Punkte, mit erhaltenen Indizes.
+        const xs = ptsIdx.slice(0, 3).filter(Boolean).map(p => p.x);
+        if (!xs.length) continue;
+        left  = Math.min(...xs);
+        right = Math.max(left + geom.MIN_WIDTH,
+                         ptsIdx[3] ? ptsIdx[3].x : Math.max(...xs) + 60);
+        cE = ptsIdx[0]; cS = ptsIdx[1]; cT = ptsIdx[2];
+      }
 
       // Ist die Zeichnung angetippt, zaehlen NUR die drei Anfasspunkte als
       // Ziehpunkte: Stop, Ziel und der Breiten-Griff. Der Einstieg bleibt
       // liegen, und der Kasten laesst sich nicht als Ganzes verschieben.
       if (state.selectedOverlayId === ov.id && window.__tvPositionHandles) {
-        const h = window.__tvPositionHandles(
-          left, right, pts[0], pts[1], pts[2]
-        );
+        const h = window.__tvPositionHandles(left, right, cE, cS, cT);
         const griff = [[1, h.stop], [2, h.target], [3, h.width]];
-        // Grosszuegiger als der gezeichnete Radius — mit dem Finger trifft
-        // man sonst kaum.
         const griffTol = Math.max(pointTol, geom.HANDLE_R + 14);
         let bestGriff = null;
         for (const [idx, pos] of griff) {
@@ -1719,14 +1734,12 @@ function findOverlayNear(x, y, lineTol, pointTol) {
 
       // Sonst nur Flaechentreffer: waehlt die Zeichnung aus und zeigt den
       // Schwebebalken, zieht aber nichts.
+      const ys = [cE, cS, cT].filter(Boolean).map(p => p.y);
+      if (!ys.length) continue;
       const top = Math.min(...ys) - lineTol, bot = Math.max(...ys) + lineTol;
       if (x >= left - lineTol && x <= right + lineTol && y >= top && y <= bot) {
-        // Als Rangmass dient der senkrechte Abstand zur naechsten der drei
-        // waagrechten Linien. So gewinnt bei Ueberschneidung die Zeichnung,
-        // auf die tatsaechlich gezielt wurde, und nicht einfach die mit dem
-        // groesseren Kasten.
         let dist = Infinity;
-        for (const p of pts.slice(0, 3)) dist = Math.min(dist, Math.abs(y - p.y));
+        for (const yy of ys) dist = Math.min(dist, Math.abs(y - yy));
         if (!best || dist < best.dist) {
           best = { overlay: ov, pointIndex: -1, dist };
         }
@@ -1763,7 +1776,8 @@ function findOverlayNear(x, y, lineTol, pointTol) {
         const dist = Math.hypot(x - cx, y - cy);
         if (dist <= lineTol && (!best || dist < best.dist)) {
           let nIdx = -1, nDist = Infinity;
-          pts.forEach((p, i) => {
+          ptsIdx.forEach((p, i) => {
+            if (!p) return;
             const d = Math.hypot(x - p.x, y - p.y);
             if (d < nDist) { nDist = d; nIdx = i; }
           });
@@ -4851,7 +4865,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m22";
+const TV_BUILD = "m23";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -4944,6 +4958,21 @@ quiet(() => {
     }, "chart lock");
   };
   window.__tvChartLock = lock;
+
+  // Kerze zu einem Zeitstempel — overlays.js braucht sie fuer den
+  // Desktop-Magneten, hat aber keinen Zugriff auf chart.
+  window.__tvCandleAt = (timestamp) => {
+    try {
+      const data = chart.getDataList();
+      if (!data || !data.length || timestamp == null) return null;
+      let best = null, diff = Infinity;
+      for (const d of data) {
+        const dd = Math.abs(d.timestamp - timestamp);
+        if (dd < diff) { diff = dd; best = d; }
+      }
+      return best;
+    } catch (e) { return null; }
+  };
 
   // state.activeTool wird an vielen Stellen gesetzt und zurückgesetzt.
   // Statt jede einzelne anzufassen, beobachten wir das Feld selbst —
