@@ -779,7 +779,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
    Desktop läuft dieser Code nie, das DOM bleibt dort unverändert.
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root { --tv-build: "m17"; }
+:root { --tv-build: "m19"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1087,12 +1087,34 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
     background: none; border: none; color: var(--text-dim);
     font-size: 17px; line-height: 1; padding: 4px 8px; cursor: pointer;
   }
-  #overlayMenu { position: relative; }
+  /* NICHT position:relative — .overlay-menu ist fixed, und ein ID-Selektor
+     schlaegt den Klassen-Selektor. Mit relative landet das Menue im
+     Textfluss: unsichtbar, waehrend body.menu-open::after den Bildschirm
+     abdunkelt und alle Eingaben abfaengt. fixed ist ebenfalls ein
+     positionierter Vorfahre, .om-close bleibt also korrekt platziert. */
+  #overlayMenu { position: fixed; }
 
-  .ds-glyph {
-    font-size: 17px; line-height: 1; height: 20px;
-    display: flex; align-items: center; justify-content: center;
+  /* Gruppen-Zwischentitel im Zeichnungs-Blatt. Spannt sich ueber alle vier
+     Spalten des Rasters, sonst nimmt der Titel eine Werkzeug-Zelle ein.
+     Erster Titel ohne Abstand oben, damit das Blatt nicht mit einer Luecke
+     beginnt. (Die frueheren .ds-glyph-Regeln sind entfallen: der neue
+     Katalog liefert fuer jedes Werkzeug ein SVG, der Notnagel griff
+     nirgends mehr.) */
+  .draw-sheet-group {
+    grid-column: 1 / -1;
+    font-family: var(--font-mono); font-size: 10px;
+    text-transform: uppercase; letter-spacing: .07em;
+    color: var(--text-dim); opacity: .75;
+    padding: 10px 2px 2px; margin: 0;
   }
+  .draw-sheet-group:first-child { padding-top: 0; }
+
+  /* Symbole der neuen Garnitur duerfen nicht von .ab-icon-Regeln erfasst
+     werden — eigene Klasse, eigene Groesse. */
+  .draw-sheet-item svg.ds-icon { width: 22px; height: 22px; }
+  .draw-sheet-item { color: var(--text); }
+  .draw-sheet-item span { color: var(--text-dim); }
+  .draw-sheet-item:hover span, .draw-sheet-item.active span { color: var(--accent); }
 
   /* Zeichenblatt */
   .draw-sheet { bottom: var(--tv-botbar); z-index: 640; }

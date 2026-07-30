@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 29. Juli 2026 · Build m17**
+**Stand: 29. Juli 2026 · Build m19**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -75,7 +75,8 @@ Prüfstand m17 unter `/home/claude/treydview-v03/`: `harness.js` (jsdom +
 KLineCharts-Stub; lädt Module über **`vm.runInContext`**, weil `eval()`
 Top-Level-`const` verwirft und `CONFIG` dann unsichtbar bleibt),
 `t-desktop3.js` (Prüfung 2, ohne mobile-only-Zweige), `t-selectors.js`
-(Prüfung 3), `t-mobile.js` (Prüfung 4 + 4 Zieltests, 41 Prüfpunkte).
+(Prüfung 3), `t-mobile.js` (Prüfung 4 + Zieltests, 44 Prüfpunkte), `t-m18.js` (18),
+`t-m19.js` (23).
 Der Canvas-Stub protokolliert `moveTo`/`lineTo`, damit Tests das gezeichnete
 Fadenkreuz auslesen können. `chart.setLoadDataCallback` muss im Stub stehen.
 Kerzenabstand im Stub: 8 px.
@@ -101,13 +102,13 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m17)
+## Datei-MD5 (Build m19)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | 2471eb94df8af7425908ce1adf677b23 | 1073 |
-| style.css | 1ae55a99b4f231e5efba347742dc3602 | 1266 |
-| app.js | c60a2b2e5464d94ddfb2fa9c2640d8bc | 5570 |
+| index.html | 06017c4832ee7d8751f9a50ebc9e7c92 | 1073 |
+| style.css | f4045afa05a67a382d7e67a115782573 | 1288 |
+| app.js | e65efe8f240b389e5733c5fc91cdb581 | 5663 |
 | manifest.webmanifest | f00d4e5b6341e6400f7b5dfb48b2e667 | 11 |
 | config.js | fc6cff7fab290a246c255349f13a8fd8 | 384 |
 | data.js | 0bd0ac117e6ddd750ef11de15c484893 | 368 |
@@ -119,9 +120,9 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 
 ## Build-Abgleich — zuerst prüfen, wenn etwas „nicht wirkt"
 
-- `style.css`: `:root { --tv-build: "m17" }`
-- `app.js`: `const TV_BUILD = "m17"`
-- `index.html`: alle Verweise mit `?v=m17`
+- `style.css`: `:root { --tv-build: "m19" }`
+- `app.js`: `const TV_BUILD = "m19"`
+- `index.html`: alle Verweise mit `?v=m19`
 
 Beim Start liest das JS die CSS-Kennung aus und meldet grün oder warnt.
 **Bei jeder Auslieferung an allen drei Stellen erhöhen.**
@@ -205,6 +206,49 @@ neben der Ankerlinie und wurde nie erkannt. Als Rangmass dient der
 senkrechte Abstand zur nächsten der drei waagrechten Linien — sonst würde
 bei Überschneidung immer die Zeichnung mit dem grösseren Kasten gewinnen.
 
+## Menüs und Abdunkler  (m18)
+
+Der Abdunkler hängt an `body.menu-open::after` (z-index 649,
+`pointer-events: all`). Bleibt die Klasse liegen, ist der Bildschirm dunkel
+und taub. Deshalb nie blind entfernen, sondern mit `syncMenuOpen()` aus dem
+Zustand ALLER Menüs ableiten (`overlayMenu`, `frvpMenu`, `fibMenu`) — sonst
+reisst das Schliessen eines Menüs den Abdunkler weg, während ein anderes
+noch offen ist.
+
+> **`#overlayMenu { position: relative }` war tödlich.** `.overlay-menu` ist
+> `position: fixed`; ein ID-Selektor schlägt den Klassen-Selektor. Mit
+> `relative` landete das Menü im Textfluss — unsichtbar, während der
+> Abdunkler alles abfing. Das `relative` war für `.om-close` gedacht, aber
+> `fixed` ist ebenfalls ein positionierter Vorfahre.
+
+Schwebebalken über dem Fadenkreuz: `CONFIRM_BAR_GAP = 44` (vorher 16 — bei
+der Polylinie sass der Balken fast auf dem Punkt, den man gerade setzte).
+
+Long/Short-Einzelpunkte wandern nur **senkrecht**: alle drei Punkte teilen
+einen Zeitstempel; verrutscht einer zeitlich, zieht `overlays.js` den Kasten
+auf (`x1 = maxX + 60`) und die Zuordnung bricht.
+
+## Zeichenwerkzeuge auf dem Handy  (m19)
+
+`MOBILE_DRAW_GROUPS` in `initDrawSheet` — eigener Katalog, Gruppen und
+Reihenfolge nach der TradingView-Zeichnungsliste. 18 Werkzeuge in fünf
+Gruppen. Symbolgarnitur `TOOL_ICONS`: dünne Linien (`DS_STROKE`), hohle
+Ankerpunkte (`DS_DOT`, Füllung `var(--bg-raised)`, wirkt als Loch und
+stimmt in beiden Themes).
+
+Neu und **nur auf dem Handy**, weil ein Eintrag in `DRAW_CATEGORIES`
+den Desktop mitändern würde:
+- `straightLine` — Verlängerte Linie, zwei Punkte, in beide Richtungen
+  unendlich (KLineCharts-Bordmittel)
+- `horizontalRayLine` — Horizontaler Strahl (KLineCharts-Bordmittel)
+
+Nicht im Blatt: `positionTool` (eigener Knopf in der Bottom Bar),
+`parallelStraightLine` (vom Parallelkanal abgedeckt). Beide bleiben in
+`DRAW_CATEGORIES` und damit auf dem Desktop erhalten.
+
+Neue Werkzeuge brauchen zwingend einen Eintrag in `TOOL_POINT_COUNT` —
+`buildOverlayConfig` ist generisch, die Punktzahl nicht.
+
 ## Magnet  (m17 erweitert)
 
 Rastet auf **beiden** Achsen ein: Y auf H/L/O/C der Kerze unter dem
@@ -240,14 +284,23 @@ Wert wie im Grid-Bot). Verhältnis 1:2 — Stop 1×ATR, Ziel 2×ATR. ATR statt
 Prozent, weil BTC je nach Phase sehr unterschiedlich schwankt.
 Rückfall ohne Bot-Ergebnis: aus 14 sichtbaren Kerzen schätzen, sonst 2 %.
 
-**m17 — Pixel-Untergrenze (`widenForTouch`, `MIN_LEG_PX = 48`):**
-Der ATR liefert einen sinnvollen *Kursabstand*, aber kein sinnvolles
-*Bildschirmmass*. Bei weit herausgezoomtem Chart schrumpft 1×ATR auf wenige
-Pixel; Stop und Ziel liegen dann näher zusammen als `POINT_TOL` (20 px) und
-lassen sich nicht mehr einzeln greifen. `widenForTouch()` streckt den
-ATR-Wert, bis Einstieg↔Stop mindestens 48 px auseinanderliegen — **beide
-Schenkel mit demselben Faktor**, das Verhältnis 1:2 bleibt exakt erhalten.
-Ist der ATR-Abstand schon gross genug, bleibt er unangetastet.
+**m18 — auf Prozent umgestellt (`STOP_PCT = 0.01`, `TARGET_PCT = 0.02`):**
+Der ATR war theoretisch sauberer, in der Praxis unbrauchbar: bei weit
+herausgezoomtem Chart ergab er **Ziel +0.01 % und Stop 0.00 %** — nicht
+sichtbar und nicht greifbar. Jetzt Stop 1 %, Ziel 2 % des Einstiegs.
+
+Sicherheitsnetz `minRiskForTouch()`, `MIN_LEG_PX = 24` (knapp über
+`POINT_TOL` 20, also die echte Greifschwelle). Absichtlich NICHT höher:
+bei 48 px hätte das Netz die 1 % im Normalfall auf 1.6 % hochgezogen und
+die Vorgabe wäre wieder unvorhersagbar. Streckt es doch, wächst die
+Belohnung im selben Verhältnis mit — 1:2 bleibt exakt.
+
+> **Wie die ATR-Fassung gescheitert ist:** Sie bildete den Faktor aus der
+> Pixeldifferenz zweier Preise. Bei sehr kleinem Abstand landen aber beide
+> auf DEMSELBEN Pixel, die Differenz ist 0, und der Guard `gap > 0` liess
+> den Wert unverändert durch — genau der Fall, der abgefangen werden
+> sollte, fiel durch. Den Maßstab px-pro-Kurseinheit an einer **grossen**
+> Messlatte bestimmen (10 %), nie an der Zieldifferenz selbst.
 
 Punktreihenfolge des Overlays: `[Einstieg, Stop, Ziel]`. Die Richtung leitet
 `positionTool` aus `stop < entry` ab.
@@ -290,6 +343,28 @@ Neuer Code muss **vor** dem letzten `})();` stehen — Klammertiefe ≥ 1 prüfe
 ### Media-Query ohne schliessende Klammer
 Ein Block schloss nie — 353 Regeln steckten ungewollt darin. Nach jeder
 CSS-Änderung Klammerbilanz **und** „offene Media-Query am Dateiende" prüfen.
+
+### Temporale Todeszone bei IIFEs — bricht die ganze Datei ab
+`tvIsMobile` ist ein **`const` bei Zeile ~4724**. Jede IIFE, die früher in
+der Datei läuft (z. B. `initDrawSheet` bei 2623), darf es NICHT aufrufen:
+der Name liegt dann in der temporalen Todeszone, der Zugriff wirft
+`Cannot access 'tvIsMobile' before initialization`, und weil die IIFE nicht
+in `quiet()` steckt, **bricht die Auswertung der gesamten app.js ab**.
+Symptom in m19: 290 Knoten fehlten, Auswahllisten leer.
+In früh laufenden IIFEs die Abfrage wortgleich direkt setzen:
+`window.matchMedia("(max-width: 720px), (pointer: coarse)").matches`
+
+### Prüfung 2 kennt drei leere Mobil-Behälter — `tbRow2` ist keiner
+Leer im Desktop-Modus sein MÜSSEN: `#tbRow1`, `#bottomBar`,
+`#drawSheetGrid`. **`#tbRow2` gehört nicht dazu** — die Zeile trägt im
+Desktop-Modus echte Inhalte (Vergleichs- und Zeitrahmen-Auswahl). Wer sie
+in die Ausnahmeliste nimmt, verschiebt den ganzen Vergleich und erzeugt
+über 1400 Scheinabweichungen.
+
+### `DRAW_CATEGORIES` versorgt Desktop UND Handy
+Dort etwas zu entfernen, umzusortieren oder zu ergänzen ändert die
+Desktop-Leiste mit und verletzt Regel 1. Der Mobil-Katalog steht deshalb
+seit m19 getrennt in `initDrawSheet` (`MOBILE_DRAW_GROUPS`).
 
 ### Gefüllte SVG-Symbole in `.ab-icon`
 `.ab-icon { fill:none; stroke:currentColor }` ist eine **CSS-Regel** und

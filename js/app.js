@@ -2109,6 +2109,21 @@ function startTool(overlayName) {
 // Menüs dürfen nie über den Bildrand ragen — sonst ist "Übernehmen"
 // unerreichbar. Nach dem Einblenden die ECHTE Grösse messen und klemmen
 // (menuPosition schätzt nur; das FRVP-Menü ist höher als die Schätzung).
+// Der Abdunkler haengt an body.menu-open (style.css: body.menu-open::after,
+// z-index 649, pointer-events:all). Wird die Klasse beim Schliessen nicht
+// entfernt, bleibt der Bildschirm dunkel und nimmt keine Eingaben mehr an.
+// Darum nie blind entfernen, sondern immer aus dem tatsaechlichen Zustand
+// ALLER Menues ableiten — sonst reisst das Schliessen eines Menues den
+// Abdunkler weg, waehrend ein anderes noch offen ist.
+const TV_MENU_IDS = ["overlayMenu", "frvpMenu", "fibMenu"];
+function syncMenuOpen() {
+  const anyOpen = TV_MENU_IDS.some((id) => {
+    const el = document.getElementById(id);
+    return el && !el.classList.contains("hidden");
+  });
+  document.body.classList.toggle("menu-open", anyOpen);
+}
+
 function clampMenuToViewport(menu) {
   const r = menu.getBoundingClientRect();
   if (r.bottom > window.innerHeight - 6) menu.style.top = Math.max(6, window.innerHeight - r.height - 6) + "px";
@@ -2203,7 +2218,7 @@ function openOverlayMenu(overlay, event) {
   document.getElementById("overlayDelete").onclick = () => {
     chart.removeOverlay(overlay.id);
     menu.classList.add("hidden");
-    document.body.classList.remove("menu-open");
+    syncMenuOpen();
   };
 }
 
@@ -2219,7 +2234,11 @@ function parseColor(c) {
 }
 document.addEventListener("click", (e) => {
   const om = document.getElementById("overlayMenu");
-  if (om && !om.contains(e.target)) om.classList.add("hidden");
+  if (om && !om.contains(e.target)) {
+    om.classList.add("hidden");
+    // Ohne diese Ableitung blieb der Abdunkler nach dem Wegtippen liegen.
+    syncMenuOpen();
+  }
 });
 function openFrvpMenu(overlay, event) {
   const menu = document.getElementById("frvpMenu");
@@ -2276,12 +2295,12 @@ function openFrvpMenu(overlay, event) {
     if (rec) rec.extendData = newExt;
     saveWorkspace();
     menu.classList.add("hidden");
-    document.body.classList.remove("menu-open");
+    syncMenuOpen();
   };
   document.getElementById("frvpDelete").onclick = () => {
     chart.removeOverlay(overlay.id);
     menu.classList.add("hidden");
-    document.body.classList.remove("menu-open");
+    syncMenuOpen();
   };
 }
 
@@ -2607,47 +2626,109 @@ quiet(() => {
   const backdrop = document.getElementById("drawSheetBackdrop");
   const grid     = document.getElementById("drawSheetGrid");
   if (!btn || !sheet || !grid) return;
+  // Nur auf dem Handy aufbauen. Der einzige Oeffner (#drawSheetBtn) ist
+  // mobile-only, das Blatt ist auf dem Desktop also unerreichbar — trotzdem
+  // wurde sein Inhalt dort bisher erzeugt. #drawSheetGrid bleibt im
+  // Desktop-Modus jetzt leer, genau wie #tbRow1 und #bottomBar.
+  //
+  // NICHT tvIsMobile() verwenden: das ist ein const weiter unten in der
+  // Datei (Zeile ~4724). Diese IIFE laeuft bereits waehrend der
+  // Skriptauswertung, der Name liegt dann in der temporalen Todeszone und
+  // der Zugriff wirft "Cannot access before initialization" — was die
+  // Auswertung der ganzen app.js abbricht. Die Abfrage steht deshalb
+  // wortgleich direkt hier.
+  if (!window.matchMedia("(max-width: 720px), (pointer: coarse)").matches) return;
+
+  // Einheitliche Garnitur im Stil der TradingView-Zeichnungsliste: dünne
+  // Linien, hohle Ankerpunkte. Der Ankerpunkt nimmt die Blattfarbe als
+  // Füllung, damit er als Loch wirkt und in beiden Themes stimmt.
+  const DS_STROKE = "fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round";
+  const DS_DOT    = "fill:var(--bg-raised);stroke:currentColor;stroke-width:1.5";
+  const dsSvg = (inner) => `<svg viewBox="0 0 24 24" class="ds-icon" aria-hidden="true">${inner}</svg>`;
+  const dsDot = (x, y) => `<circle cx="${x}" cy="${y}" r="2.1" style="${DS_DOT}"/>`;
+  const dsLine = (d) => `<path d="${d}" style="${DS_STROKE}"/>`;
 
   const TOOL_ICONS = {
-    segment:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="20" x2="20" y2="4"/></svg>`,
-    horizontalLine:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="2" y1="12" x2="22" y2="12"/></svg>`,
-    verticalLine:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="2" x2="12" y2="22"/></svg>`,
-    priceLine:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="2" y1="8" x2="20" y2="8"/><rect x="20" y="5" width="2" height="6" rx="1"/></svg>`,
-    ray:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="20" x2="22" y2="4"/><circle cx="4" cy="20" r="2" fill="currentColor"/></svg>`,
-    rectangle:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="1"/></svg>`,
-    parallelChannel:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="2" y1="16" x2="22" y2="8"/><line x1="2" y1="20" x2="22" y2="12"/></svg>`,
-    polyline:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3,20 8,10 14,15 20,5"/></svg>`,
-    fibRetracement:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="2" y1="6" x2="22" y2="6"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="18" x2="22" y2="18"/></svg>`,
-    frvp:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="14" height="2"/><rect x="3" y="9" width="10" height="2"/><rect x="3" y="14" width="18" height="2"/><rect x="3" y="19" width="7" height="2"/></svg>`,
-    avwap:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 18 Q12 6 20 10"/><circle cx="4" cy="18" r="2" fill="currentColor"/></svg>`,
-    priceRange:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="4" x2="12" y2="20"/><line x1="6" y1="4" x2="18" y2="4"/><line x1="6" y1="20" x2="18" y2="20"/></svg>`,
-    simpleAnnotation:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
-    positionTool:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="12" y1="2" x2="12" y2="22"/><polyline points="7,7 12,2 17,7"/><polyline points="7,17 12,22 17,17"/></svg>`,
+    straightLine:           dsSvg(dsLine("M2 22 L22 2") + dsDot(8,16) + dsDot(16,8)),
+    segment:                dsSvg(dsLine("M6 18 L18 6") + dsDot(6,18) + dsDot(18,6)),
+    rayLine:                dsSvg(dsLine("M6 18 L22 2") + dsDot(6,18) + dsDot(14,10)),
+    horizontalStraightLine: dsSvg(dsLine("M2 12 H22") + dsDot(9,12)),
+    verticalStraightLine:   dsSvg(dsLine("M12 2 V22") + dsDot(12,9)),
+    horizontalRayLine:      dsSvg(dsLine("M5 12 H22") + dsDot(5,12)),
+    priceChannelLine:       dsSvg(dsLine("M3 17 L15 7") + dsLine("M9 21 L21 11") + dsDot(3,17) + dsDot(15,7) + dsDot(21,11)),
+    fibRetracement:         dsSvg(dsLine("M4 6 H22 M4 11 H22 M4 16 H22 M4 21 H22") + dsDot(4,6) + dsDot(4,21)),
+    fibExtension:           dsSvg(dsLine("M4 13 L11 6 L18 10") + dsLine("M4 17 H22 M4 21 H22") + dsDot(11,6) + dsDot(18,10)),
+    frvp:                   dsSvg(dsLine("M4 5 H13 M4 10 H9 M4 15 H17 M4 20 H7") + dsLine("M21 4 V20")),
+    priceRange:             dsSvg(dsLine("M12 20 V5 M8 9 L12 5 L16 9") + dsLine("M6 20 H18") + dsDot(19,4) + dsDot(5,20)),
+    avwap:                  dsSvg(dsLine("M8 5 V19 M12 3 V21 M16 6 V18") + dsLine("M4 17 L20 7")),
+    dateRange:              dsSvg(dsLine("M4 12 H20 M16 8 L20 12 L16 16") + dsLine("M4 6 V18") + dsDot(21,5) + dsDot(3,19)),
+    rectangle:              dsSvg(dsLine("M5 6 H19 V18 H5 Z") + dsDot(5,6) + dsDot(19,6) + dsDot(5,18) + dsDot(19,18)),
+    polyline:               dsSvg(dsLine("M3 18 L8 11 L13 15 L19 6") + dsLine("M15 5 L20 5 L20 10")),
+    priceLine:              dsSvg(dsLine("M3 10 H17") + `<rect x="18" y="7" width="4" height="6" rx="1" style="fill:currentColor;stroke:none"/>` + dsDot(3,10)),
+    simpleAnnotation:       dsSvg(dsLine("M21 14a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z")),
+    freehand:               dsSvg(dsLine("M17 3.5a2.6 2.6 0 1 1 3.7 3.7L8 20 3 21.5 4.5 16.5 17 3.5z")),
   };
-  // Werkzeugliste kommt aus DRAW_CATEGORIES — derselben Quelle wie die
-  // Desktop-Leiste. So können Blatt und Leiste nie auseinanderlaufen.
-  // (Eine fest verdrahtete Liste hatte fünf Namen, die es gar nicht gibt.)
-  const GLYPH = {};
-  (CONFIG.DRAW_TOOLS || []).forEach(t => { if (t.icon) GLYPH[t.overlay] = t.icon; });
-  Object.assign(GLYPH, { polyline:"⋀", avwap:"⌁", simpleAnnotation:"✎",
-                         freehand:"✐", positionTool:"⇅", frvp:"▦" });
 
-  const tools = [];
-  DRAW_CATEGORIES.forEach(cat => cat.tools.forEach(t => tools.push(t)));
-  tools.push({ overlay: "positionTool", label: "Long / Short" });
+  // EIGENER Mobile-Katalog, absichtlich NICHT aus DRAW_CATEGORIES abgeleitet.
+  // DRAW_CATEGORIES versorgt auch die Desktop-Leiste: würde man dort etwas
+  // entfernen, umsortieren oder ergänzen, änderte sich die Desktop-Fassung
+  // mit. Der Aufbau folgt der TradingView-Zeichnungsliste (Gruppen und
+  // Reihenfolge), damit die Handbewegung dieselbe bleibt.
+  //
+  // Bewusst NICHT enthalten:
+  //   positionTool         — sitzt als eigener Knopf in der Bottom Bar
+  //   parallelStraightLine — vom Parallelkanal abgedeckt
+  const MOBILE_DRAW_GROUPS = [
+    { title: "Trendlinien", tools: [
+      { overlay: "straightLine",           label: "Verlängerte Linie" },
+      { overlay: "segment",                label: "Trendlinie" },
+      { overlay: "rayLine",                label: "Strahl" },
+      { overlay: "horizontalStraightLine", label: "Horizontale Linie" },
+      { overlay: "verticalStraightLine",   label: "Vertikale Linie" },
+      { overlay: "horizontalRayLine",      label: "Horizontaler Strahl" },
+      { overlay: "priceChannelLine",       label: "Paralleler Kanal" },
+    ]},
+    { title: "Gann und Fibonacci", tools: [
+      { overlay: "fibRetracement", label: "Fib-Retracement" },
+      { overlay: "fibExtension",   label: "Fib-Extension" },
+    ]},
+    { title: "Prognosen und Messungen", tools: [
+      { overlay: "frvp",       label: "Fixed Range Vol." },
+      { overlay: "priceRange", label: "Preisspanne" },
+      { overlay: "avwap",      label: "Verankerter VWAP" },
+      { overlay: "dateRange",  label: "Datumsbereich" },
+    ]},
+    { title: "Geometrische Formen", tools: [
+      { overlay: "rectangle", label: "Rechteck" },
+      { overlay: "polyline",  label: "Pfad" },
+    ]},
+    // Vorhandene Werkzeuge, die in den TradingView-Favoriten nicht auftauchen.
+    // Hier gesammelt, damit nichts stillschweigend verschwindet.
+    { title: "Weitere", tools: [
+      { overlay: "priceLine",        label: "Preislinie" },
+      { overlay: "simpleAnnotation", label: "Textfeld" },
+      { overlay: "freehand",         label: "Freihand" },
+    ]},
+  ];
 
-  tools.forEach(t => {
-    const item = document.createElement("div");
-    item.className = "draw-sheet-item";
-    item.dataset.tool = t.overlay;
-    const ico = TOOL_ICONS[t.overlay] || `<span class="ds-glyph">${GLYPH[t.overlay] || "•"}</span>`;
-    item.innerHTML = ico + `<span>${t.label}</span>`;
-    item.addEventListener("click", (e) => {
-      e.stopPropagation();
-      quiet(() => startTool(t.overlay), "draw-sheet " + t.overlay);
-      closeSheet();
+  MOBILE_DRAW_GROUPS.forEach(group => {
+    const head = document.createElement("div");
+    head.className = "draw-sheet-group";
+    head.textContent = group.title;
+    grid.appendChild(head);
+
+    group.tools.forEach(t => {
+      const item = document.createElement("div");
+      item.className = "draw-sheet-item";
+      item.dataset.tool = t.overlay;
+      item.innerHTML = (TOOL_ICONS[t.overlay] || "") + `<span>${t.label}</span>`;
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        quiet(() => startTool(t.overlay), "draw-sheet " + t.overlay);
+        closeSheet();
+      });
+      grid.appendChild(item);
     });
-    grid.appendChild(item);
   });
 
   const openSheet  = () => { sheet.classList.remove("hidden"); backdrop.classList.remove("hidden"); };
@@ -3812,7 +3893,7 @@ function applyFibMenu() {
 
 function closeFibMenu() {
   document.getElementById("fibMenu").classList.add("hidden");
-  document.body.classList.remove("menu-open");
+  syncMenuOpen();
   _fibTargetId = null;
   _fibTargetName = null;
 }
@@ -4629,7 +4710,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m17";
+const TV_BUILD = "m19";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -4699,7 +4780,7 @@ quiet(() => {
   const x = document.getElementById("omClose");
   const m = document.getElementById("overlayMenu");
   if (!x || !m) return;
-  const closeMenu = () => { m.classList.add("hidden"); document.body.classList.remove("menu-open"); };
+  const closeMenu = () => { m.classList.add("hidden"); syncMenuOpen(); };
   x.addEventListener("click", (e) => { e.stopPropagation(); closeMenu(); });
 }, "om close");
 
@@ -4749,6 +4830,10 @@ const TOOL_POINT_COUNT = {
   priceLine: 1, priceChannelLine: 3, parallelStraightLine: 3,
   fibRetracement: 2, fibExtension: 3, rectangle: 2, priceRange: 2,
   dateRange: 2, avwap: 1, simpleAnnotation: 1, positionTool: 3,
+  // Neu auf dem Handy: beide sind KLineCharts-Bordmittel.
+  // straightLine    = Gerade durch zwei Punkte, in BEIDE Richtungen unendlich
+  // horizontalRayLine = Waagrechte ab einem Punkt in eine Richtung
+  straightLine: 2, horizontalRayLine: 2,
   // Polylinie ist unbegrenzt — sie wird über den Bestätigungs-Balken
   // abgeschlossen, nicht über eine feste Punktzahl.
   polyline: Infinity,
@@ -4962,12 +5047,17 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
     finishDrawing();
   }
 
+  // Abstand des Balkens ueber dem Fadenkreuz-Mittelpunkt. 16 px waren zu
+  // wenig: bei der Polylinie sitzt der Balken dann fast auf dem Punkt, den
+  // man gerade setzt, und verdeckt ihn.
+  const CONFIRM_BAR_GAP = 44;
+
   function showConfirmBar() {
     if (!confirmBar) return;
     const rect = host.getBoundingClientRect();
     const barW = 84, barH = 46;
     let left = rect.left + crosshair.x - barW / 2;
-    let top  = rect.top + crosshair.y - barH - 16;
+    let top  = rect.top + crosshair.y - barH - CONFIRM_BAR_GAP;
     left = Math.max(6, Math.min(window.innerWidth - barW - 6, left));
     top  = Math.max(6, top);
     confirmBar.style.left = left + "px";
@@ -5069,10 +5159,15 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
 
 // ── 4b2. Long/Short: Richtung wählen, dann Einstieg mit dem Fadenkreuz ─
 // Statt drei einzelner Klicks (Einstieg, Stop, Ziel) genügt auf dem Handy
-// ein Tap: Stop und Ziel entstehen automatisch aus dem Tages-ATR.
-// Verhältnis 1:2 — Stop 1x ATR, Ziel 2x ATR. ATR statt Prozent, weil BTC
-// je nach Phase sehr unterschiedlich schwankt; ein fester Prozentsatz wäre
-// in ruhigen Phasen zu weit und in volatilen zu eng.
+// ein Tap: Stop und Ziel entstehen automatisch als Prozentsatz des
+// Einstiegs — Stop 1 %, Ziel 2 %, also Verhältnis 1:2.
+//
+// Vorher lief das über den Tages-ATR. Das ist theoretisch sauberer, war in
+// der Praxis aber unbrauchbar: bei weit herausgezoomtem Chart ergab es
+// Ziel +0.01 % und Stop 0.00 % — die Bereiche waren ohne starkes Hineinzoomen
+// gar nicht zu sehen und die Linien nicht einzeln greifbar. Ein fester
+// Prozentsatz ist grob, aber immer sichtbar und liefert nebenbei das
+// gängige Verhältnis gleich mit.
 quiet(() => {
   const menu    = document.getElementById("lsChoice");
   const btnLong = document.getElementById("lsLong");
@@ -5080,39 +5175,26 @@ quiet(() => {
   const host    = document.getElementById("mainChart");
   if (!menu || !btnLong || !btnShort || !host) return;
 
-  function dailyAtr(price) {
-    // Der Grid-Bot rechnet den ATR bereits auf Tageskerzen — denselben
-    // Wert zu nehmen hält Chart und Bot konsistent.
-    const a = state.gbResult?.market?.atr14;
-    if (a && isFinite(a) && a > 0) return a;
-    // Notnagel, falls der Bot noch nicht gerechnet hat: aus den letzten
-    // 14 sichtbaren Kerzen schätzen.
-    try {
-      const d = chart.getDataList();
-      if (d && d.length > 15) {
-        let sum = 0, n = 0;
-        for (let i = d.length - 14; i < d.length; i++) {
-          const p = d[i - 1], k = d[i];
-          if (!p || !k) continue;
-          sum += Math.max(k.high - k.low, Math.abs(k.high - p.close), Math.abs(k.low - p.close));
-          n++;
-        }
-        if (n) return sum / n;
-      }
-    } catch (e) {}
-    return price * 0.02;   // letzter Rückfall: 2 %
-  }
+  // Stop 1 %, Ziel 2 % — das Verhältnis 1:2 steckt damit in den Konstanten.
+  const STOP_PCT = 0.01, TARGET_PCT = 0.02;
 
-  // Der ATR liefert einen sinnvollen Kursabstand — aber kein sinnvolles
-  // Bildschirmmass. Bei weit herausgezoomtem Chart schrumpft 1x ATR auf
-  // wenige Pixel; Stop und Ziel liegen dann so dicht am Einstieg, dass sie
-  // sich mit dem Finger nicht mehr einzeln greifen lassen (POINT_TOL = 20).
-  // Deshalb wird der ATR-Wert gestreckt, bis Einstieg <-> Stop mindestens
-  // MIN_LEG_PX auseinanderliegen. Beide Schenkel nutzen denselben Faktor,
-  // das Verhaeltnis 1:2 bleibt damit exakt erhalten.
-  const MIN_LEG_PX = 48;
+  // Knapp über POINT_TOL (20 px) — das ist die Schwelle, ab der eine Linie
+  // tatsächlich einzeln greifbar ist. Absichtlich NICHT höher: sonst würde
+  // das Sicherheitsnetz die 1 % / 2 % im Normalfall überschreiben und die
+  // Vorgabe wäre wieder unvorhersagbar. Es soll nur bei absurd weit
+  // herausgezoomtem Chart überhaupt anspringen.
+  const MIN_LEG_PX = 24;
 
-  function widenForTouch(entry, atr) {
+  // Sicherheitsnetz für extreme Zoomstufen: liegt Einstieg <-> Stop unter
+  // MIN_LEG_PX, lassen sich die Linien nicht einzeln greifen.
+  //
+  // WICHTIG — hier ist die ATR-Fassung gescheitert: Sie hat den Faktor aus
+  // der Pixeldifferenz zweier Preise gebildet. Bei sehr kleinem Abstand
+  // landen aber beide Preise auf DEMSELBEN Pixel, die Differenz ist 0, und
+  // ein Faktor daraus ist unbrauchbar — genau der Fall, der abgefangen
+  // werden sollte, fiel durch. Darum den Maßstab px-pro-Kurseinheit an einer
+  // grossen Messlatte bestimmen und den nötigen Kursabstand daraus ableiten.
+  function minRiskForTouch(entry, risk) {
     try {
       const toY = (value) => {
         const r = chart.convertToPixel(
@@ -5122,13 +5204,14 @@ quiet(() => {
         const one = Array.isArray(r) ? r[0] : r;
         return one && one.y != null ? one.y : null;
       };
-      const yEntry = toY(entry.value);
-      const yStop  = toY(entry.value + atr);
-      if (yEntry == null || yStop == null) return atr;
-      const gap = Math.abs(yStop - yEntry);
-      if (gap > 0 && gap < MIN_LEG_PX) return atr * (MIN_LEG_PX / gap);
-    } catch (e) {}
-    return atr;
+      const probe = Math.abs(entry.value) * 0.1 || 1;   // 10 % als Messlatte
+      const y0 = toY(entry.value);
+      const yP = toY(entry.value + probe);
+      if (y0 == null || yP == null) return risk;
+      const pxPerUnit = Math.abs(yP - y0) / probe;
+      if (!isFinite(pxPerUnit) || pxPerUnit <= 0) return risk;
+      return Math.max(risk, MIN_LEG_PX / pxPerUnit);
+    } catch (e) { return risk; }
   }
 
   function placePosition(dir) {
@@ -5148,9 +5231,12 @@ quiet(() => {
       // positionTool-Overlay erwartet.
       expandPoints: (pts) => {
         const entry = pts[0];
-        const atr = widenForTouch(entry, dailyAtr(entry.value));
-        const stop   = dir === "long" ? entry.value - atr     : entry.value + atr;
-        const target = dir === "long" ? entry.value + 2 * atr : entry.value - 2 * atr;
+        // Streckt das Sicherheitsnetz das Risiko, wächst die Belohnung im
+        // selben Verhältnis mit — 1:2 bleibt in jedem Fall erhalten.
+        const risk   = minRiskForTouch(entry, Math.abs(entry.value) * STOP_PCT);
+        const reward = risk * (TARGET_PCT / STOP_PCT);
+        const stop   = dir === "long" ? entry.value - risk   : entry.value + risk;
+        const target = dir === "long" ? entry.value + reward : entry.value - reward;
         return [
           entry,
           { timestamp: entry.timestamp, value: stop },
@@ -5327,7 +5413,14 @@ quiet(() => {
         if (!basePx) return;
         const moved = chart.convertFromPixel({ x: basePx.x + dx, y: basePx.y + dy }, { paneId: "candle_pane" });
         if (!moved || moved.timestamp == null) return;
-        newPts = drag.startPts.map((p, i) => i === drag.pointIndex ? { timestamp: moved.timestamp, value: moved.value } : p);
+        // Long/Short: Stop und Ziel duerfen nur SENKRECHT wandern. Alle drei
+        // Punkte teilen denselben Zeitstempel; verrutscht einer zeitlich,
+        // zieht overlays.js den Kasten auf (x1 = maxX + 60) und die
+        // Zuordnung Einstieg/Stop/Ziel bricht auseinander.
+        const keepTs = drag.overlay.name === "positionTool";
+        newPts = drag.startPts.map((p, i) => i === drag.pointIndex
+          ? { timestamp: keepTs ? p.timestamp : moved.timestamp, value: moved.value }
+          : p);
       } else {
         newPts = drag.startPxPts.map(basePx => {
           if (!basePx) return null;
