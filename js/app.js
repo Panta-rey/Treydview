@@ -107,6 +107,41 @@ const state = {
 
 };
 
+// ── Auswahl nach aussen spiegeln ──────────────────────────────────────
+// overlays.js hat keinen Zugriff auf `state`, braucht die aktuelle Auswahl
+// aber, um Beschriftungen und Anfasspunkte nur bei angetippter Zeichnung zu
+// rendern. state.selectedOverlayId wird an ueber einem Dutzend Stellen
+// zugewiesen — statt jede einzeln anzufassen, faengt dieser Setter alle ab.
+//
+// Der Wert wandert nach window.__tvSelectedId, und die betroffenen Overlays
+// (das alte und das neue) werden neu gezeichnet. Ohne dieses Neuzeichnen
+// erschienen die Anfasspunkte erst beim naechsten Chart-Ereignis.
+(function mirrorSelection() {
+  let sel = state.selectedOverlayId;
+  window.__tvSelectedId = sel;
+  Object.defineProperty(state, "selectedOverlayId", {
+    configurable: true,
+    get() { return sel; },
+    set(v) {
+      if (sel === v) return;
+      const prev = sel;
+      sel = v;
+      window.__tvSelectedId = v;
+      // `chart` ist ein spaeter deklariertes const — der Zugriff kann in die
+      // temporale Todeszone fallen, solange die Datei noch ausgewertet wird.
+      // try/catch faengt das ab; zur Laufzeit steht chart laengst.
+      [prev, v].forEach((id) => {
+        if (!id) return;
+        try {
+          const ov = chart.getOverlayById(id);
+          if (ov) chart.overrideOverlay({ id, points: ov.points });
+        } catch (e) {}
+      });
+    },
+  });
+})();
+
+
 // Auf Touch-Geräten Watchlist standardmässig geschlossen (spart 210px Chartbreite).
 // Nur beim allerersten Besuch (kein gespeicherter Workspace).
 if (!_ws && window.matchMedia("(pointer: coarse)").matches) {
@@ -1614,25 +1649,52 @@ function findOverlayNear(x, y, lineTol, pointTol) {
     // Ziel-Schild lag damit rund 56 px neben der Anker-Linie und wurde nie
     // erkannt. Wie beim FRVP zaehlt deshalb die Flaeche, nicht die Linie.
     if (ov.name === "positionTool" && pts.length >= 2) {
-      const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
-      const left  = Math.min(...xs) - lineTol;
-      const right = Math.max(...xs) + 60 + lineTol;   // 60 = Kastenbreite
-      const top   = Math.min(...ys) - lineTol;
-      const bot   = Math.max(...ys) + lineTol;
-      if (x >= left && x <= right && y >= top && y <= bot) {
+      const xs = pts.slice(0, 3).map(p => p.x), ys = pts.slice(0, 3).map(p => p.y);
+      const left  = Math.min(...xs);
+      // Rechter Rand aus dem vierten Punkt, sonst alte feste Breite.
+      const geom  = window.__tvPositionGeom || { MIN_WIDTH: 40, HANDLE_R: 7 };
+      const right = Math.max(left + geom.MIN_WIDTH,
+                             pts[3] ? pts[3].x : Math.max(...xs) + 60);
+
+      // Ist die Zeichnung angetippt, zaehlen NUR die drei Anfasspunkte als
+      // Ziehpunkte: Stop, Ziel und der Breiten-Griff. Der Einstieg bleibt
+      // liegen, und der Kasten laesst sich nicht als Ganzes verschieben.
+      if (state.selectedOverlayId === ov.id && window.__tvPositionHandles) {
+        const h = window.__tvPositionHandles(
+          left, right, pts[0], pts[1], pts[2]
+        );
+        const griff = [[1, h.stop], [2, h.target], [3, h.width]];
+        // Grosszuegiger als der gezeichnete Radius — mit dem Finger trifft
+        // man sonst kaum.
+        const griffTol = Math.max(pointTol, geom.HANDLE_R + 14);
+        let bestGriff = null;
+        for (const [idx, pos] of griff) {
+          if (!pos) continue;
+          const d = Math.hypot(x - pos.x, y - pos.y);
+          if (d <= griffTol && (!bestGriff || d < bestGriff.d)) {
+            bestGriff = { d, idx };
+          }
+        }
+        if (bestGriff) {
+          if (!best || bestGriff.d < best.dist) {
+            best = { overlay: ov, pointIndex: bestGriff.idx, dist: bestGriff.d };
+          }
+          continue;
+        }
+      }
+
+      // Sonst nur Flaechentreffer: waehlt die Zeichnung aus und zeigt den
+      // Schwebebalken, zieht aber nichts.
+      const top = Math.min(...ys) - lineTol, bot = Math.max(...ys) + lineTol;
+      if (x >= left - lineTol && x <= right + lineTol && y >= top && y <= bot) {
         // Als Rangmass dient der senkrechte Abstand zur naechsten der drei
         // waagrechten Linien. So gewinnt bei Ueberschneidung die Zeichnung,
         // auf die tatsaechlich gezielt wurde, und nicht einfach die mit dem
         // groesseren Kasten.
         let dist = Infinity;
-        for (const p of pts) dist = Math.min(dist, Math.abs(y - p.y));
-        let nIdx = -1, nDist = Infinity;
-        pts.forEach((p, i) => {
-          const d = Math.hypot(x - p.x, y - p.y);
-          if (d < nDist) { nDist = d; nIdx = i; }
-        });
+        for (const p of pts.slice(0, 3)) dist = Math.min(dist, Math.abs(y - p.y));
         if (!best || dist < best.dist) {
-          best = { overlay: ov, pointIndex: nDist <= pointTol ? nIdx : -1, dist };
+          best = { overlay: ov, pointIndex: -1, dist };
         }
       }
       continue;
@@ -4710,7 +4772,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m19";
+const TV_BUILD = "m20";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -4829,6 +4891,10 @@ const TOOL_POINT_COUNT = {
   segment: 2, rayLine: 2, horizontalStraightLine: 1, verticalStraightLine: 1,
   priceLine: 1, priceChannelLine: 3, parallelStraightLine: 3,
   fibRetracement: 2, fibExtension: 3, rectangle: 2, priceRange: 2,
+  // positionTool: 3 = Zahl der TIPPS im Desktop-Klickfluss, nicht der Punkte.
+  // Auf dem Handy genuegt ein Tipp; den vierten Punkt (rechter Rand) liefert
+  // expandPoints. totalStep in overlays.js bleibt bei 4 — ein hoeherer Wert
+  // wuerde den Desktop auf vier Klicks umstellen und Regel 1 verletzen.
   dateRange: 2, avwap: 1, simpleAnnotation: 1, positionTool: 3,
   // Neu auf dem Handy: beide sind KLineCharts-Bordmittel.
   // straightLine    = Gerade durch zwei Punkte, in BEIDE Richtungen unendlich
@@ -5237,10 +5303,17 @@ quiet(() => {
         const reward = risk * (TARGET_PCT / STOP_PCT);
         const stop   = dir === "long" ? entry.value - risk   : entry.value + risk;
         const target = dir === "long" ? entry.value + reward : entry.value - reward;
+        // Vierter Punkt: rechter Rand des Kastens auf der Zeitachse. Er
+        // traegt keinen eigenen Kurs, nur den Zeitstempel. Startbreite:
+        // 20 Kerzen des aktiven Zeitrahmens, damit der Kasten auf jedem
+        // Zeitrahmen aehnlich breit aussieht.
+        const tfMs = (state.timeframe && state.timeframe.ms) || 3600e3;
+        const rightTs = entry.timestamp + tfMs * 20;
         return [
           entry,
           { timestamp: entry.timestamp, value: stop },
           { timestamp: entry.timestamp, value: target },
+          { timestamp: rightTs, value: entry.value },
         ];
       },
       done: () => {
@@ -5391,6 +5464,15 @@ quiet(() => {
     if (!drag && dragCandidate && dist > ENGAGE) {
       e.preventDefault(); e.stopPropagation();
       window.__tvChartLock && window.__tvChartLock(true);
+      // Long/Short laesst sich nicht als Ganzes verschieben: ohne Griff
+      // kommt gar kein Zug zustande. Ein "mode: null" haette nicht gereicht
+      // — der Zweig unten faellt sonst in die Alles-Verschieben-Behandlung.
+      if (dragCandidate.pointIndex < 0 &&
+          dragCandidate.overlay.name === "positionTool") {
+        dragCandidate = null;
+        touchMoved = true;
+        return;
+      }
       const startPts = dragCandidate.overlay.points.map(p => ({ timestamp: p.timestamp, value: p.value }));
       drag = {
         overlay: dragCandidate.overlay,
@@ -5417,10 +5499,27 @@ quiet(() => {
         // Punkte teilen denselben Zeitstempel; verrutscht einer zeitlich,
         // zieht overlays.js den Kasten auf (x1 = maxX + 60) und die
         // Zuordnung Einstieg/Stop/Ziel bricht auseinander.
-        const keepTs = drag.overlay.name === "positionTool";
-        newPts = drag.startPts.map((p, i) => i === drag.pointIndex
-          ? { timestamp: keepTs ? p.timestamp : moved.timestamp, value: moved.value }
-          : p);
+        if (drag.overlay.name === "positionTool") {
+          // Index 1 = Stop, 2 = Ziel  -> nur senkrecht (Wert aendert sich)
+          // Index 3 = Breiten-Griff   -> nur waagrecht (Zeitstempel aendert sich)
+          // Index 0 = Einstieg        -> unbeweglich, wird gar nicht erst
+          //                              als Griff angeboten
+          newPts = drag.startPts.map((p, i) => {
+            if (i !== drag.pointIndex) return p;
+            if (i === 3) {
+              // Nicht hinter den Einstieg zurueckwandern lassen.
+              const minTs = drag.startPts[0]?.timestamp;
+              const ts = (minTs != null && moved.timestamp <= minTs)
+                ? minTs : moved.timestamp;
+              return { timestamp: ts, value: p.value };
+            }
+            return { timestamp: p.timestamp, value: moved.value };
+          });
+        } else {
+          newPts = drag.startPts.map((p, i) => i === drag.pointIndex
+            ? { timestamp: moved.timestamp, value: moved.value }
+            : p);
+        }
       } else {
         newPts = drag.startPxPts.map(basePx => {
           if (!basePx) return null;
