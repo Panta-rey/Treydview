@@ -691,15 +691,21 @@
   // und von app.js zur Treffererkennung gebraucht — eine Quelle, damit
   // Gezeichnetes und Antippbares nicht auseinanderlaufen.
   function positionHandles(x0, x1, cEntry, cStop, cTarget) {
-    const midX = (x0 + x1) / 2;
+    // Stop und Ziel sitzen am LINKEN Rand, nicht mittig: die Preis-Schilder
+    // sind rechtsbuendig und fuellen den Kasten fast aus. Mittige Griffe
+    // lagen genau auf den Prozentzahlen und verdeckten sie.
+    const hx = x0 + PT_HANDLE_R + 2;
     const ys = [cEntry, cStop, cTarget].filter(Boolean).map(c => c.y);
     const midY = (Math.min(...ys) + Math.max(...ys)) / 2;
     return {
-      stop:   cStop   ? { x: midX, y: cStop.y }   : null,   // pointIndex 1
-      target: cTarget ? { x: midX, y: cTarget.y } : null,   // pointIndex 2
+      stop:   cStop   ? { x: hx, y: cStop.y }   : null,     // pointIndex 1
+      target: cTarget ? { x: hx, y: cTarget.y } : null,     // pointIndex 2
       width:  { x: x1, y: midY },                           // pointIndex 3
     };
   }
+  // Rechtsbuendige Schilder enden vor dem Breiten-Griff, sonst liegt er auf
+  // der Prozentzahl.
+  const chipRight = (x1) => x1 - PT_HANDLE_R - 8;
   window.__tvPositionHandles = positionHandles;
   window.__tvPositionGeom = { MIN_WIDTH: PT_MIN_WIDTH, HANDLE_R: PT_HANDLE_R };
 
@@ -758,7 +764,7 @@
       });
       const chip = (y, text, color) => ({
         type: "text",
-        attrs: { x: x1 - 4, y, text, align: "right", baseline: "middle" },
+        attrs: { x: chipRight(x1), y, text, align: "right", baseline: "middle" },
         styles: {
           style: "stroke_fill", color, backgroundColor: labelColors().bg,
           borderColor: hexA(color.replace("rgba", "rgb").split(",").slice(0, 3).join(",") + ")", 0.4),
@@ -799,7 +805,7 @@
         lines.forEach((txt, i) => {
           figs.push({
             type: "text",
-            attrs: { x: x0 + 4, y: yTop - (lines.length - 1 - i) * 15, text: txt, align: "left", baseline: "bottom" },
+            attrs: { x: x0 + PT_HANDLE_R * 2 + 6, y: yTop - (lines.length - 1 - i) * 15, text: txt, align: "left", baseline: "bottom" },
             styles: {
               style: "stroke_fill", color: "#e8b64c", backgroundColor: labelColors().bg,
               borderColor: "rgba(232,182,76,0.35)", borderSize: 1, borderRadius: 2,

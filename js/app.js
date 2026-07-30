@@ -1648,6 +1648,40 @@ function findOverlayNear(x, y, lineTol, pointTol) {
     // Preis-Schilder bis x1 = maxX + 60. Ein Tap auf das Stop- oder
     // Ziel-Schild lag damit rund 56 px neben der Anker-Linie und wurde nie
     // erkannt. Wie beim FRVP zaehlt deshalb die Flaeche, nicht die Linie.
+    // Fibonacci: Die Level-Linien ziehen sich waagrecht durch den ganzen
+    // Kasten. Bisher zaehlte nur die Naehe zu den zwei Ankerpunkten, ein
+    // Tipp auf ein Level dazwischen ging ins Leere. Jetzt zaehlt jede
+    // Level-Linie als Treffer.
+    if ((ov.name === "fibRetracement" || ov.name === "fibExtension") && pts.length >= 2) {
+      const levels = (typeof FIB_LEVEL_SETS !== "undefined" && FIB_LEVEL_SETS[ov.name])
+        ? FIB_LEVEL_SETS[ov.name].map(l => l.v) : [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+      // Die Linien liegen zwischen den beiden Ankern; y linear
+      // interpolieren spart das Umrechnen ueber Kurswerte.
+      const yA = pts[0].y, yB = pts[1].y;
+      const xs = pts.map(p => p.x);
+      const left = Math.min(...xs) - lineTol;
+      // Nach rechts laufen die Linien ueber den zweiten Anker hinaus weiter.
+      const right = Math.max(...xs) + 240;
+      if (x >= left && x <= right) {
+        let dist = Infinity;
+        for (const lv of levels) {
+          const ly = yA + (yB - yA) * lv;
+          dist = Math.min(dist, Math.abs(y - ly));
+        }
+        if (dist <= lineTol) {
+          let nIdx = -1, nDist = Infinity;
+          pts.forEach((p, i) => {
+            const d = Math.hypot(x - p.x, y - p.y);
+            if (d < nDist) { nDist = d; nIdx = i; }
+          });
+          if (!best || dist < best.dist) {
+            best = { overlay: ov, pointIndex: nDist <= pointTol ? nIdx : -1, dist };
+          }
+        }
+        continue;
+      }
+    }
+
     if (ov.name === "positionTool" && pts.length >= 2) {
       const xs = pts.slice(0, 3).map(p => p.x), ys = pts.slice(0, 3).map(p => p.y);
       const left  = Math.min(...xs);
@@ -2444,17 +2478,54 @@ function toggleDrawStylePopover() {
 }
 
 // Zeichenwerkzeug-Kategorien
+// Einheitliche Symbolgarnitur im Stil der TradingView-Zeichnungsliste.
+// Auf MODULEBENE, nicht in initDrawSheet: die Desktop-Leiste braucht sie
+// ebenfalls, und initDrawSheet steigt auf dem Desktop frueh aus.
+// Urspruenglich im Stil der TradingView-Zeichnungsliste: dünne
+// Linien, hohle Ankerpunkte. Der Ankerpunkt nimmt die Blattfarbe als
+// Füllung, damit er als Loch wirkt und in beiden Themes stimmt.
+const DS_STROKE = "fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round";
+const DS_DOT    = "fill:var(--bg-raised);stroke:currentColor;stroke-width:1.5";
+const dsSvg = (inner) => `<svg viewBox="0 0 24 24" class="ds-icon" aria-hidden="true">${inner}</svg>`;
+const dsDot = (x, y) => `<circle cx="${x}" cy="${y}" r="2.1" style="${DS_DOT}"/>`;
+const dsLine = (d) => `<path d="${d}" style="${DS_STROKE}"/>`;
+
+const TOOL_ICONS = {
+  straightLine:           dsSvg(dsLine("M2 22 L22 2") + dsDot(8,16) + dsDot(16,8)),
+  segment:                dsSvg(dsLine("M6 18 L18 6") + dsDot(6,18) + dsDot(18,6)),
+  rayLine:                dsSvg(dsLine("M6 18 L22 2") + dsDot(6,18) + dsDot(14,10)),
+  horizontalStraightLine: dsSvg(dsLine("M2 12 H22") + dsDot(9,12)),
+  verticalStraightLine:   dsSvg(dsLine("M12 2 V22") + dsDot(12,9)),
+  horizontalRayLine:      dsSvg(dsLine("M5 12 H22") + dsDot(5,12)),
+  // Nur auf dem Desktop im Katalog (auf dem Handy vom Parallelkanal
+  // abgedeckt) — braucht trotzdem ein Symbol fuer das Fly-Out.
+  parallelStraightLine:   dsSvg(dsLine("M3 15 L14 5") + dsLine("M7 19 L18 9") + dsLine("M11 23 L22 13") + dsDot(3,15) + dsDot(14,5)),
+  priceChannelLine:       dsSvg(dsLine("M3 17 L15 7") + dsLine("M9 21 L21 11") + dsDot(3,17) + dsDot(15,7) + dsDot(21,11)),
+  fibRetracement:         dsSvg(dsLine("M4 6 H22 M4 11 H22 M4 16 H22 M4 21 H22") + dsDot(4,6) + dsDot(4,21)),
+  fibExtension:           dsSvg(dsLine("M4 13 L11 6 L18 10") + dsLine("M4 17 H22 M4 21 H22") + dsDot(11,6) + dsDot(18,10)),
+  frvp:                   dsSvg(dsLine("M4 5 H13 M4 10 H9 M4 15 H17 M4 20 H7") + dsLine("M21 4 V20")),
+  priceRange:             dsSvg(dsLine("M12 20 V5 M8 9 L12 5 L16 9") + dsLine("M6 20 H18") + dsDot(19,4) + dsDot(5,20)),
+  avwap:                  dsSvg(dsLine("M8 5 V19 M12 3 V21 M16 6 V18") + dsLine("M4 17 L20 7")),
+  dateRange:              dsSvg(dsLine("M4 12 H20 M16 8 L20 12 L16 16") + dsLine("M4 6 V18") + dsDot(21,5) + dsDot(3,19)),
+  rectangle:              dsSvg(dsLine("M5 6 H19 V18 H5 Z") + dsDot(5,6) + dsDot(19,6) + dsDot(5,18) + dsDot(19,18)),
+  polyline:               dsSvg(dsLine("M3 18 L8 11 L13 15 L19 6") + dsLine("M15 5 L20 5 L20 10")),
+  priceLine:              dsSvg(dsLine("M3 10 H17") + `<rect x="18" y="7" width="4" height="6" rx="1" style="fill:currentColor;stroke:none"/>` + dsDot(3,10)),
+  simpleAnnotation:       dsSvg(dsLine("M21 14a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z")),
+  freehand:               dsSvg(dsLine("M17 3.5a2.6 2.6 0 1 1 3.7 3.7L8 20 3 21.5 4.5 16.5 17 3.5z")),
+};
 const DRAW_CATEGORIES = [
   {
     id: "lines", title: "Linien",
-    icon: `<svg viewBox="0 0 24 24"><circle cx="4" cy="20" r="2.2" fill="currentColor"/><circle cx="20" cy="4" r="2.2" fill="currentColor"/><line x1="5.6" y1="18.4" x2="18.4" y2="5.6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`,
+    icon: TOOL_ICONS.segment,
     tools: [
+      { overlay: "straightLine",            label: "Verlängerte Linie", desc: "Gerade durch zwei Punkte, endlos in beide Richtungen" },
       { overlay: "segment",                label: "Trendlinie",       desc: "Verbindet Hochs oder Tiefs" },
       { overlay: "horizontalStraightLine",  label: "Horizontale Linie",desc: "Support- und Resistance-Level" },
       { overlay: "verticalStraightLine",    label: "Vertikale Linie",  desc: "Zeitereignis markieren" },
       { overlay: "priceLine",               label: "Preislinie",       desc: "Horizontale mit Preislabel" },
       { overlay: "rectangle",               label: "Rechteck",         desc: "Preiszonen, Orderblöcke" },
       { overlay: "rayLine",                 label: "Strahl",           desc: "Halbgerade ab einem Punkt" },
+      { overlay: "horizontalRayLine",       label: "Horizontaler Strahl", desc: "Waagrechte ab einem Punkt in eine Richtung" },
       { overlay: "priceChannelLine",        label: "Parallelkanal",    desc: "Zwei parallele Trendlinien" },
       { overlay: "parallelStraightLine",    label: "Parallele Linien", desc: "Mehrere parallele Geraden" },
       { overlay: "polyline",                label: "Polylinie",         desc: "Mehrpunkt-Linie, ESC zum Beenden" },
@@ -2462,7 +2533,7 @@ const DRAW_CATEGORIES = [
   },
   {
     id: "zones", title: "Zonen & Profile",
-    icon: `<svg viewBox="0 0 24 24"><rect x="3" y="4" width="6" height="3" rx="1" fill="currentColor"/><rect x="3" y="9" width="12" height="3" rx="1" fill="currentColor"/><rect x="3" y="14" width="9" height="3" rx="1" fill="currentColor"/><rect x="3" y="19" width="5" height="2" rx="1" fill="currentColor"/></svg>`,
+    icon: TOOL_ICONS.frvp,
     tools: [
       { overlay: "frvp",        label: "Fixed Range Vol.",  desc: "Volumen pro Preisstufe" },
       { overlay: "avwap",       label: "Anchored VWAP",     desc: "VWAP ab einem Klick-Punkt" },
@@ -2470,7 +2541,7 @@ const DRAW_CATEGORIES = [
   },
   {
     id: "fib", title: "Fibonacci",
-    icon: `<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="3,2"/><line x1="3" y1="18" x2="21" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`,
+    icon: TOOL_ICONS.fibRetracement,
     tools: [
       { overlay: "fibRetracement", label: "Fib Retracement", desc: "Korrektur-Ziele nach Impuls" },
       { overlay: "fibExtension",   label: "Fib Extension",   desc: "Kursziele projizieren (3 Punkte)" },
@@ -2478,7 +2549,7 @@ const DRAW_CATEGORIES = [
   },
   {
     id: "measure", title: "Messwerkzeuge",
-    icon: `<svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="8" x2="12" y2="16" stroke="currentColor" stroke-width="1.5"/><line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="1.5"/></svg>`,
+    icon: TOOL_ICONS.priceRange,
     tools: [
       { overlay: "priceRange", label: "Preisspanne",  desc: "Prozentuale Preisänderung" },
       { overlay: "dateRange",  label: "Zeitspanne",   desc: "Zeit und Kerzenanzahl" },
@@ -2486,7 +2557,7 @@ const DRAW_CATEGORIES = [
   },
   {
     id: "annot", title: "Annotationen",
-    icon: `<svg viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    icon: TOOL_ICONS.simpleAnnotation,
     tools: [
       { overlay: "simpleAnnotation", label: "Textfeld",  desc: "Notiz an eine Kerze heften" },
       { overlay: "freehand",         label: "Freihand",  desc: "Frei zeichnen mit gedrückter Maus" },
@@ -2552,7 +2623,12 @@ function renderDrawbar() {
     cat.tools.forEach(tool => {
       const item = document.createElement("div");
       item.className = "draw-popup-item" + (state.activeTool === tool.overlay ? " active" : "");
-      item.innerHTML = `<span class="dpi-name">${tool.label}</span><span class="dpi-desc">${tool.desc}</span>`;
+      // Symbol links neben dem Text — dieselbe Garnitur wie auf dem Handy,
+      // nur als Liste statt Kachelraster.
+      item.innerHTML =
+        `<span class="dpi-icon">${TOOL_ICONS[tool.overlay] || ""}</span>` +
+        `<span class="dpi-text"><span class="dpi-name">${tool.label}</span>` +
+        `<span class="dpi-desc">${tool.desc}</span></span>`;
       item.addEventListener("click", () => {
         popup.classList.remove("open");
         startTool(tool.overlay);
@@ -2569,7 +2645,18 @@ function renderDrawbar() {
   const magnet = document.createElement("button");
   magnet.className = "draw-cat-btn small" + (state.magnetMode !== "normal" ? " active" : "");
   magnet.title = state.magnetMode === "normal" ? "Magnet: aus" : state.magnetMode === "weak_magnet" ? "Magnet: schwach" : "Magnet: stark";
-  magnet.innerHTML = `<svg viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M4 8a8 8 0 0 1 16 0" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="4" y1="8" x2="4" y2="14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="20" y1="8" x2="20" y2="14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>`;
+  // Hufeisen mit Blitz, wie auf dem Handy. Farben als Inline-style, weil die
+  // Kerben an den Polen die Leistenfarbe brauchen.
+  magnet.innerHTML = `<svg viewBox="0 0 24 24" style="width:20px;height:20px">
+    <g transform="rotate(-42 11.5 14.5)">
+      <path d="M6.0 8.2 V13.2 a5.4 5.4 0 0 0 10.8 0 V8.2"
+            style="fill:none;stroke:currentColor" stroke-width="3.6" stroke-linecap="butt"/>
+      <path d="M6.0 9.7 H9.6"  style="fill:none;stroke:var(--bg-raised)" stroke-width="1.4"/>
+      <path d="M13.2 9.7 H16.8" style="fill:none;stroke:var(--bg-raised)" stroke-width="1.4"/>
+    </g>
+    <path d="M19.0 1.6 L22.8 1.6 L20.7 4.6 L22.6 4.6 L17.4 9.6 L19.4 5.4 L17.2 5.4 Z"
+          style="fill:currentColor;stroke:none"/>
+  </svg>`;
   magnet.addEventListener("click", () => {
     state.magnetMode = state.magnetMode === "normal" ? "weak_magnet" : state.magnetMode === "weak_magnet" ? "strong_magnet" : "normal";
     renderDrawbar();
@@ -2721,35 +2808,7 @@ quiet(() => {
   // wortgleich direkt hier.
   if (!window.matchMedia("(max-width: 720px), (pointer: coarse)").matches) return;
 
-  // Einheitliche Garnitur im Stil der TradingView-Zeichnungsliste: dünne
-  // Linien, hohle Ankerpunkte. Der Ankerpunkt nimmt die Blattfarbe als
-  // Füllung, damit er als Loch wirkt und in beiden Themes stimmt.
-  const DS_STROKE = "fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round";
-  const DS_DOT    = "fill:var(--bg-raised);stroke:currentColor;stroke-width:1.5";
-  const dsSvg = (inner) => `<svg viewBox="0 0 24 24" class="ds-icon" aria-hidden="true">${inner}</svg>`;
-  const dsDot = (x, y) => `<circle cx="${x}" cy="${y}" r="2.1" style="${DS_DOT}"/>`;
-  const dsLine = (d) => `<path d="${d}" style="${DS_STROKE}"/>`;
 
-  const TOOL_ICONS = {
-    straightLine:           dsSvg(dsLine("M2 22 L22 2") + dsDot(8,16) + dsDot(16,8)),
-    segment:                dsSvg(dsLine("M6 18 L18 6") + dsDot(6,18) + dsDot(18,6)),
-    rayLine:                dsSvg(dsLine("M6 18 L22 2") + dsDot(6,18) + dsDot(14,10)),
-    horizontalStraightLine: dsSvg(dsLine("M2 12 H22") + dsDot(9,12)),
-    verticalStraightLine:   dsSvg(dsLine("M12 2 V22") + dsDot(12,9)),
-    horizontalRayLine:      dsSvg(dsLine("M5 12 H22") + dsDot(5,12)),
-    priceChannelLine:       dsSvg(dsLine("M3 17 L15 7") + dsLine("M9 21 L21 11") + dsDot(3,17) + dsDot(15,7) + dsDot(21,11)),
-    fibRetracement:         dsSvg(dsLine("M4 6 H22 M4 11 H22 M4 16 H22 M4 21 H22") + dsDot(4,6) + dsDot(4,21)),
-    fibExtension:           dsSvg(dsLine("M4 13 L11 6 L18 10") + dsLine("M4 17 H22 M4 21 H22") + dsDot(11,6) + dsDot(18,10)),
-    frvp:                   dsSvg(dsLine("M4 5 H13 M4 10 H9 M4 15 H17 M4 20 H7") + dsLine("M21 4 V20")),
-    priceRange:             dsSvg(dsLine("M12 20 V5 M8 9 L12 5 L16 9") + dsLine("M6 20 H18") + dsDot(19,4) + dsDot(5,20)),
-    avwap:                  dsSvg(dsLine("M8 5 V19 M12 3 V21 M16 6 V18") + dsLine("M4 17 L20 7")),
-    dateRange:              dsSvg(dsLine("M4 12 H20 M16 8 L20 12 L16 16") + dsLine("M4 6 V18") + dsDot(21,5) + dsDot(3,19)),
-    rectangle:              dsSvg(dsLine("M5 6 H19 V18 H5 Z") + dsDot(5,6) + dsDot(19,6) + dsDot(5,18) + dsDot(19,18)),
-    polyline:               dsSvg(dsLine("M3 18 L8 11 L13 15 L19 6") + dsLine("M15 5 L20 5 L20 10")),
-    priceLine:              dsSvg(dsLine("M3 10 H17") + `<rect x="18" y="7" width="4" height="6" rx="1" style="fill:currentColor;stroke:none"/>` + dsDot(3,10)),
-    simpleAnnotation:       dsSvg(dsLine("M21 14a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z")),
-    freehand:               dsSvg(dsLine("M17 3.5a2.6 2.6 0 1 1 3.7 3.7L8 20 3 21.5 4.5 16.5 17 3.5z")),
-  };
 
   // EIGENER Mobile-Katalog, absichtlich NICHT aus DRAW_CATEGORIES abgeleitet.
   // DRAW_CATEGORIES versorgt auch die Desktop-Leiste: würde man dort etwas
@@ -4792,7 +4851,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m21";
+const TV_BUILD = "m22";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

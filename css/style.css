@@ -88,7 +88,14 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 .draw-sep{width:22px;height:1px;background:var(--border);margin:5px 0;}
 .draw-popup{display:none;position:fixed;background:var(--bg-raised);border:1px solid var(--border);border-radius:8px;padding:6px;min-width:240px;max-width:280px;z-index:500;box-shadow:0 8px 32px rgba(0,0,0,.6);}
 .draw-popup.open{display:flex;flex-direction:column;gap:2px;}
-.draw-popup-item{display:flex;flex-direction:column;gap:1px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background .1s;}
+/* Symbol links, Text rechts — Garnitur aus der Handy-Fassung uebernommen.
+   Dies ist eine BEABSICHTIGTE Desktop-Aenderung (ausdruecklich beauftragt),
+   deshalb steht sie hier in der Basis und nicht in einem @media-Block. */
+.draw-popup-item{display:flex;flex-direction:row;align-items:flex-start;gap:9px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background .1s;}
+.dpi-icon{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:22px;height:22px;color:var(--text-dim);margin-top:1px;}
+.dpi-icon svg.ds-icon{width:20px;height:20px;}
+.draw-popup-item:hover .dpi-icon,.draw-popup-item.active .dpi-icon{color:var(--accent);}
+.dpi-text{display:flex;flex-direction:column;gap:1px;min-width:0;}
 .draw-popup-item:hover{background:var(--bg-hover);}
 .draw-popup-item.active{background:rgba(232,182,76,.1);}
 .dpi-name{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;}
@@ -779,7 +786,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
    Desktop läuft dieser Code nie, das DOM bleibt dort unverändert.
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root { --tv-build: "m21"; }
+:root { --tv-build: "m22"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1126,6 +1133,13 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
      Genau deshalb schien der Chart durch das Blatt. Es gibt nur
      --bg-raised und --bg-hover. Die Basisregel bleibt unangetastet
      (Regel 1), hier wird sie fuer das Handy ueberschrieben. */
+  /* Ohne touch-action reklamiert der Browser die Geste selbst (Seite
+     schieben, Zuruecknavigieren per Wischen) und feuert touchcancel — der
+     laufende Zug bricht ab und man muss nachfassen. Waagrechte Zuege wie
+     der Breiten-Griff wurden sofort geschluckt, senkrechte stotterten.
+     KLineCharts scrollt und zoomt per JavaScript, das bleibt unberuehrt. */
+  .main-chart, .main-chart canvas { touch-action: none; }
+
   .draw-sheet { background: var(--bg-raised); }
   .draw-sheet-grid { grid-template-columns: repeat(5, 1fr); gap: 6px; }
   .draw-sheet-item {

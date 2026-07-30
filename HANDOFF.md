@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 29. Juli 2026 · Build m21**
+**Stand: 29. Juli 2026 · Build m22**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -77,7 +77,7 @@ Top-Level-`const` verwirft und `CONFIG` dann unsichtbar bleibt),
 `t-desktop3.js` (Prüfung 2, ohne mobile-only-Zweige), `t-selectors.js`
 (Prüfung 3), `t-mobile.js` (Prüfung 4 + Zieltests, 44 Prüfpunkte), `t-m18.js` (18),
 `t-m19.js` (23), `t-m20.js` (31), `t-m21.js` (27, asynchron),
-`t-tokens.js` (Prüfung 5).
+`t-tokens.js` (Prüfung 5), `t-m22.js` (26, asynchron).
 Rückwärtskompatibilität der Drei-Punkt-Zeichnungen: eigener Lauf, 5 Punkte.
 Der Canvas-Stub protokolliert `moveTo`/`lineTo`, damit Tests das gezeichnete
 Fadenkreuz auslesen können. `chart.setLoadDataCallback` muss im Stub stehen.
@@ -104,13 +104,14 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m21)
+## Datei-MD5 (Build m22)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | 47c3818c879156b6ffc7c329090e98f8 | 1073 |
-| style.css | 911784b09ae1bc1ba7a669bf825d6956 | 1320 |
-| app.js | 026939502179b0e164b7fc62b456df5c | 5824 |
+| index.html | c2d1b5eb729e08d87bd3689d6dab4f08 | 1073 |
+| style.css | 1dca220bd5daf9780dbb9795b6cc259e | 1334 |
+| app.js | e61b03f4dca3991218d2c9c7991a77f7 | 5883 |
+| overlays.js | c5536fae85ea0af2668be6a06e7695a3 | 1081 |
 | overlays.js | 41863e842e40478db3326d46156c2b89 | 1075 |
 | manifest.webmanifest | f00d4e5b6341e6400f7b5dfb48b2e667 | 11 |
 | config.js | fc6cff7fab290a246c255349f13a8fd8 | 384 |
@@ -123,9 +124,9 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 
 ## Build-Abgleich — zuerst prüfen, wenn etwas „nicht wirkt"
 
-- `style.css`: `:root { --tv-build: "m21" }`
-- `app.js`: `const TV_BUILD = "m21"`
-- `index.html`: alle Verweise mit `?v=m21`
+- `style.css`: `:root { --tv-build: "m22" }`
+- `app.js`: `const TV_BUILD = "m22"`
+- `index.html`: alle Verweise mit `?v=m22`
 
 Beim Start liest das JS die CSS-Kennung aus und meldet grün oder warnt.
 **Bei jeder Auslieferung an allen drei Stellen erhöhen.**
@@ -209,7 +210,51 @@ neben der Ankerlinie und wurde nie erkannt. Als Rangmass dient der
 senkrechte Abstand zur nächsten der drei waagrechten Linien — sonst würde
 bei Überschneidung immer die Zeichnung mit dem grösseren Kasten gewinnen.
 
-## Prüfung 5 — CSS-Token  (neu in m21)
+## touch-action — die Ursache abbrechender Zuege  (m22)
+
+Ohne `touch-action: none` reklamiert der Browser die Geste selbst (Seite
+schieben, Zurueck-Wischen) und feuert **`touchcancel`** — der laufende Zug
+stirbt mitten in der Bewegung und man muss nachfassen. Waagrechte Zuege wie
+der Breiten-Griff wurden sofort geschluckt und schienen gar nicht zu
+funktionieren; senkrechte stotterten nur.
+
+`.main-chart, .main-chart canvas { touch-action: none }` in der
+Mobil-Schicht. KLineCharts scrollt und zoomt per JavaScript — davon bleibt
+das unberuehrt.
+
+> Dieser Fehler sah wie drei verschiedene Fehler aus (Breiten-Griff kaputt,
+> Ziehen stockt, Nachfassen noetig) und war einer.
+
+## Desktop hat die Symbolgarnitur uebernommen  (m22)
+
+**Ausdruecklich beauftragte Desktop-Aenderung — Regel 1 gilt hier NICHT.**
+Betroffen ist ausschliesslich `#drawbar`; Pruefung 2 klammert den Zweig
+seither aus (`BEABSICHTIGT`) und weist den Rest weiter als knotengleich nach.
+
+- `TOOL_ICONS` liegt jetzt auf **Modulebene**, nicht mehr in `initDrawSheet`
+  — das steigt auf dem Desktop frueh aus, die Leiste braucht die Symbole aber.
+- Kategorie-Knoepfe zeigen das repraesentativste Werkzeugsymbol der Gruppe.
+- Fly-Out bleibt **Liste** (Label + Beschreibung), bekommt links ein
+  `ds-icon`. Kein Kachelraster: mit der Maus waere das ineffizienter.
+- `straightLine` und `horizontalRayLine` sind jetzt auch im Desktop-Katalog
+  (17 → 19 Werkzeuge).
+- `parallelStraightLine` **bleibt** auf dem Desktop — das Entfernen war nie
+  beauftragt.
+- Referenzstand fuer Pruefung 1 und 2 ist seit m22 `ref-m21`, nicht mehr m16.
+
+## Fibonacci-Trefferzone  (m22)
+
+Ein Tipp zaehlt auf **jedem Level**, nicht nur nahe der zwei Anker. Die
+Level-y werden linear zwischen den Ankern interpoliert (spart das Umrechnen
+ueber Kurswerte), Levels aus `FIB_LEVEL_SETS`. Nach rechts laufen die Linien
+240 px ueber den zweiten Anker hinaus weiter.
+
+> **Testfalle:** Bei einem grossen Fib liegen die mittleren Levels nur
+> ~35 px auseinander, die Fingertoleranz ist 26 px. Ein "dazwischen"-Punkt
+> muss in die groesste Luecke gelegt werden (zwischen 0 und 0.236), sonst
+> trifft er legitim ein Nachbarlevel.
+
+## Pruefung 5 — CSS-Token  (neu in m21)
 
 `node t-tokens.js`. Jeder benutzte `var(--x)` muss auch definiert sein.
 `--bg-panel` stand seit jeher in `.draw-sheet`, war aber **nie definiert** —
@@ -286,6 +331,13 @@ Schwebebalken bei Long/Short: **oben links** über dem Kasten, um
 den Kennzahlen-Block noch die Preis-Schilder (rechts) noch die Griffe
 verdeckt. Linksbündig statt mittig. Während des Ziehens ausgeblendet,
 danach neu gesetzt.
+
+**Stop und Ziel sitzen seit m22 am LINKEN Rand** (`x0 + HANDLE_R + 2`), nicht
+mittig: die Preis-Schilder sind rechtsbuendig und fuellen den Kasten fast
+aus — mittige Griffe lagen genau auf den Prozentzahlen. Die Schilder enden
+jetzt bei `chipRight(x1) = x1 - HANDLE_R - 8`, damit der Breiten-Griff nicht
+auf der Prozentzahl sitzt; der Kennzahlen-Block rueckt um `2*HANDLE_R + 6`
+nach rechts.
 
 Griffe erscheinen nur bei ausgewählter Zeichnung. Fingertoleranz 21 px; bei
 1 %/2 % liegen sie rund 45 px auseinander, überlappen also nicht.
