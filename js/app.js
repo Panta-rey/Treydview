@@ -1782,6 +1782,7 @@ function restoreDrawings(list) {
   list.forEach(d => {
     try {
       const id = chart.createOverlay({
+        ...mobileDragGuards(),
         name: d.name,
         points: d.points,
         extendData: d.extendData ?? undefined,
@@ -2063,8 +2064,27 @@ function currentOverlayStyles() {
 
 // Baut die Overlay-Konfiguration. Ausgelagert, damit auch der
 // Long/Short-Weg auf dem Handy dieselbe Konfiguration bekommt.
+// KLineCharts zieht ein beruehrtes Overlay von sich aus und verschiebt dabei
+// ALLE Punkte — auf dem Handy wanderte der Long/Short-Kasten deshalb mit,
+// statt sich am Breiten-Griff zu verbreitern. Ein true aus diesen Handlern
+// bedeutet "verarbeitet, kein Standardverhalten".
+//
+// Bewusst NICHT ueber lock:true geloest: lock wird beim Speichern nicht
+// mitgeschrieben, nach einem Neuladen waere das Verhalten also ein anderes.
+// Und bewusst NICHT in der Overlay-Registrierung (overlays.js), weil das den
+// Desktop mitaendern wuerde — Regel 1.
+function mobileDragGuards() {
+  if (!window.matchMedia("(max-width: 720px), (pointer: coarse)").matches) return {};
+  return {
+    onPressedMoveStart: () => true,
+    onPressedMoving:    () => true,
+    onPressedMoveEnd:   () => true,
+  };
+}
+
 function buildOverlayConfig(overlayName) {
   return {
+    ...mobileDragGuards(),
     name: overlayName,
     mode: state.magnetMode,
     // KLineCharts snappt im Magnet-Modus an alle vier OHLC-Werte (High, Low,
@@ -4772,7 +4792,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m20";
+const TV_BUILD = "m21";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -5317,6 +5337,10 @@ quiet(() => {
         ];
       },
       done: () => {
+        // Frisch gezeichnet heisst NICHT ausgewaehlt: sonst stehen
+        // Beschriftungen, Kennzahlen und Griffe sofort im Bild, obwohl noch
+        // niemand die Position angetippt hat.
+        state.selectedOverlayId = null;
         setStatus(dir === "long"
           ? "Long gesetzt — Position antippen, dann Stop oder Ziel ziehen"
           : "Short gesetzt — Position antippen, dann Stop oder Ziel ziehen");
@@ -5356,8 +5380,20 @@ quiet(() => {
 
   const AXIS_W = 80, TAP_TOL = 26, POINT_TOL = 20, ENGAGE = 8;
   let touchStart = null, touchMoved = false, dragCandidate = null, drag = null;
+  // Merkt, dass wir den Chart fuer einen moeglichen Zug festgestellt haben —
+  // auch wenn daraus am Ende gar kein Zug wurde (blosses Antippen).
+  let lockedForDrag = false;
+  const releaseChart = () => {
+    if (!lockedForDrag) return;
+    lockedForDrag = false;
+    window.__tvChartLock && window.__tvChartLock(false);
+  };
 
   const hideBar = () => bar.classList.add("hidden");
+
+  // Hoehe des Kennzahlen-Blocks bei Long/Short: drei Zeilen a 15 px plus
+  // der Abstand von 8 px, den overlays.js ueber dem Kasten laesst.
+  const POS_INFO_H = 3 * 15 + 8;
 
   function showBarFor(overlay) {
     let px = null, py = null;
@@ -5369,6 +5405,19 @@ quiet(() => {
         const b = chart.convertToPixel({ timestamp: overlay.points[1].timestamp, value: overlay.points[1].value }, { paneId: "candle_pane" });
         const oneA = Array.isArray(a) ? a[0] : a, oneB = Array.isArray(b) ? b[0] : b;
         if (oneA && oneB) { px = (oneA.x + oneB.x) / 2; py = Math.min(oneA.y, oneB.y); }
+      } else if (overlay.name === "positionTool" && overlay.points.length >= 3) {
+        // Long/Short: Balken oben LINKS ueber dem Kasten. Weder die
+        // Preis-Schilder (rechts) noch die Griffe (mittig und rechts) noch
+        // der Kennzahlen-Block (oben links, bis zu drei Zeilen) duerfen
+        // darunter geraten — sonst tippt man beim Ziehen daneben.
+        const cs = overlay.points.slice(0, 3).map(p => {
+          const r = chart.convertToPixel({ timestamp: p.timestamp, value: p.value }, { paneId: "candle_pane" });
+          return Array.isArray(r) ? r[0] : r;
+        }).filter(Boolean);
+        if (cs.length) {
+          px = Math.min(...cs.map(o => o.x));
+          py = Math.min(...cs.map(o => o.y)) - POS_INFO_H;
+        }
       } else {
         const p0 = overlay.points[0];
         const r = chart.convertToPixel({ timestamp: p0.timestamp, value: p0.value }, { paneId: "candle_pane" });
@@ -5379,7 +5428,8 @@ quiet(() => {
     if (px == null) { hideBar(); return; }
     const rect = host.getBoundingClientRect();
     const barW = 84, barH = 46;
-    let left = rect.left + px - barW / 2;
+    // Long/Short linksbuendig, alles andere mittig ueber dem Ankerpunkt.
+    let left = rect.left + (overlay.name === "positionTool" ? px : px - barW / 2);
     let top  = rect.top + py - barH - 14;
     left = Math.max(6, Math.min(window.innerWidth - barW - 6, left));
     top  = Math.max(6, top);
@@ -5452,6 +5502,18 @@ quiet(() => {
     } else {
       dragCandidate = null;
     }
+
+    if (dragCandidate) {
+      // KLineCharts startet bei einer Beruehrung auf einem Overlay seinen
+      // EIGENEN Zug und horcht danach auf Dokumentebene weiter — ein
+      // stopPropagation erst beim Bewegen kommt zu spaet, der Kasten wandert
+      // dann als Ganzes mit. Deshalb schon hier abfangen.
+      e.preventDefault(); e.stopPropagation();
+      // Chart sofort feststellen, nicht erst nach den ersten 8 px. Sonst
+      // verschieben sich X- und Y-Achse waehrend des Anfassens.
+      lockedForDrag = true;
+      window.__tvChartLock && window.__tvChartLock(true);
+    }
   }, { capture: true, passive: false });
 
   host.addEventListener("touchmove", (e) => {
@@ -5463,7 +5525,6 @@ quiet(() => {
 
     if (!drag && dragCandidate && dist > ENGAGE) {
       e.preventDefault(); e.stopPropagation();
-      window.__tvChartLock && window.__tvChartLock(true);
       // Long/Short laesst sich nicht als Ganzes verschieben: ohne Griff
       // kommt gar kein Zug zustande. Ein "mode: null" haette nicht gereicht
       // — der Zweig unten faellt sonst in die Alles-Verschieben-Behandlung.
@@ -5541,7 +5602,7 @@ quiet(() => {
     if (drag) {
       e.preventDefault(); e.stopPropagation();
       const id = drag.overlay.id;
-      window.__tvChartLock && window.__tvChartLock(false);
+      releaseChart();
       quiet(() => {
         const ov = chart.getOverlayById(id);
         if (!ov) return;
@@ -5562,11 +5623,12 @@ quiet(() => {
         deselect();
       }
     }
+    releaseChart();
     touchStart = null; touchMoved = false; dragCandidate = null;
   }, { capture: true, passive: false });
 
   host.addEventListener("touchcancel", () => {
-    if (drag) window.__tvChartLock && window.__tvChartLock(false);
+    releaseChart();
     touchStart = null; touchMoved = false; dragCandidate = null; drag = null;
   }, { capture: true, passive: false });
 

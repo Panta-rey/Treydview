@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 29. Juli 2026 · Build m20**
+**Stand: 29. Juli 2026 · Build m21**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -76,7 +76,8 @@ KLineCharts-Stub; lädt Module über **`vm.runInContext`**, weil `eval()`
 Top-Level-`const` verwirft und `CONFIG` dann unsichtbar bleibt),
 `t-desktop3.js` (Prüfung 2, ohne mobile-only-Zweige), `t-selectors.js`
 (Prüfung 3), `t-mobile.js` (Prüfung 4 + Zieltests, 44 Prüfpunkte), `t-m18.js` (18),
-`t-m19.js` (23), `t-m20.js` (31).
+`t-m19.js` (23), `t-m20.js` (31), `t-m21.js` (27, asynchron),
+`t-tokens.js` (Prüfung 5).
 Rückwärtskompatibilität der Drei-Punkt-Zeichnungen: eigener Lauf, 5 Punkte.
 Der Canvas-Stub protokolliert `moveTo`/`lineTo`, damit Tests das gezeichnete
 Fadenkreuz auslesen können. `chart.setLoadDataCallback` muss im Stub stehen.
@@ -103,13 +104,13 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m20)
+## Datei-MD5 (Build m21)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | 8bc8c2390b2e226c494ffedf98641953 | 1073 |
-| style.css | 6dedd7a23243ff80fb90ad2b356fbff8 | 1307 |
-| app.js | c6ffbaef01966d727a276f5f4f10a2df | 5762 |
+| index.html | 47c3818c879156b6ffc7c329090e98f8 | 1073 |
+| style.css | 911784b09ae1bc1ba7a669bf825d6956 | 1320 |
+| app.js | 026939502179b0e164b7fc62b456df5c | 5824 |
 | overlays.js | 41863e842e40478db3326d46156c2b89 | 1075 |
 | manifest.webmanifest | f00d4e5b6341e6400f7b5dfb48b2e667 | 11 |
 | config.js | fc6cff7fab290a246c255349f13a8fd8 | 384 |
@@ -122,9 +123,9 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 
 ## Build-Abgleich — zuerst prüfen, wenn etwas „nicht wirkt"
 
-- `style.css`: `:root { --tv-build: "m20" }`
-- `app.js`: `const TV_BUILD = "m20"`
-- `index.html`: alle Verweise mit `?v=m20`
+- `style.css`: `:root { --tv-build: "m21" }`
+- `app.js`: `const TV_BUILD = "m21"`
+- `index.html`: alle Verweise mit `?v=m21`
 
 Beim Start liest das JS die CSS-Kennung aus und meldet grün oder warnt.
 **Bei jeder Auslieferung an allen drei Stellen erhöhen.**
@@ -208,7 +209,47 @@ neben der Ankerlinie und wurde nie erkannt. Als Rangmass dient der
 senkrechte Abstand zur nächsten der drei waagrechten Linien — sonst würde
 bei Überschneidung immer die Zeichnung mit dem grösseren Kasten gewinnen.
 
-## Long/Short-Bedienung  (m20)
+## Prüfung 5 — CSS-Token  (neu in m21)
+
+`node t-tokens.js`. Jeder benutzte `var(--x)` muss auch definiert sein.
+`--bg-panel` stand seit jeher in `.draw-sheet`, war aber **nie definiert** —
+`var(--bg-panel)` löst zu nichts auf, der Grund blieb durchsichtig. Weder
+Prüfung 1 noch 3 konnten das sehen; der Fehler ist zweimal durchgerutscht
+(einmal in der Basis, einmal von mir in m19 bei den Kacheln).
+
+Es gibt nur **`--bg-raised`** und **`--bg-hover`**. Der Scanner blendet
+Kommentare aus und akzeptiert `var(--x, ersatz)`. Die Basisregel Zeile 242
+bleibt geduldet und dokumentiert: sie ist auf dem Desktop unerreichbar und
+wird in der Mobil-Schicht überschrieben.
+
+## KLineCharts zieht Overlays selbst  (m21)
+
+Bei einer Berührung auf einem Overlay startet KLineCharts seinen **eigenen**
+Zug und verschiebt ALLE Punkte — der Long/Short-Kasten wanderte deshalb mit,
+statt sich am Breiten-Griff zu verbreitern. `stopPropagation` erst beim
+Bewegen kommt zu spät, und KLC horcht nach dem Zugbeginn auf Dokumentebene
+weiter.
+
+Lösung: `mobileDragGuards()` liefert `onPressedMoveStart/Moving/MoveEnd`,
+die `true` zurückgeben (= "verarbeitet, kein Standardverhalten"). Wird in
+`buildOverlayConfig` **und** in `restoreDrawings` eingemischt, jeweils hinter
+`matchMedia` — in der Registrierung (`overlays.js`) wäre es eine
+Desktop-Änderung.
+
+> **`lock: true` ist der falsche Hebel.** Es wird beim Speichern nicht
+> mitgeschrieben; nach einem Neuladen wäre das Verhalten ein anderes.
+
+**Chart-Sperre schon bei `touchstart`**, nicht erst nach den 8 px `ENGAGE` —
+sonst verschieben sich X- und Y-Achse während des Anfassens. `lockedForDrag`
+merkt sich das, `releaseChart()` löst bei `touchend` und `touchcancel`, auch
+wenn gar kein Zug zustande kam.
+
+> **Prüfstand-Falle:** `captureDrawing` registriert erst nach
+> `setTimeout(…, 30)`. Ein synchroner Test sieht `state.drawings` leer und
+> `findOverlayNear` findet nichts. Tests, die auf gezeichnete Overlays
+> tippen, müssen warten.
+
+## Long/Short-Bedienung  (m20, erweitert in m21)
 
 **Vier Punkte.** `[Einstieg, Stop, Ziel, rechter Rand]`. Der vierte trägt nur
 einen Zeitstempel; sein Kurswert ist Beiwerk. Startbreite: 20 Kerzen des
@@ -235,6 +276,16 @@ auseinanderlaufen.
 | Ziel (mittig, auf der Ziel-Linie) | 2 | nur senkrecht |
 | Breite (rechts, senkrecht mittig) | 3 | nur waagrecht, nie hinter den Einstieg |
 | Einstieg | — | **kein Griff**, bleibt liegen |
+
+Frisch gezeichnet heisst **nicht** ausgewählt (`done()` setzt
+`selectedOverlayId = null`) — sonst stehen Beschriftungen, Kennzahlen und
+Griffe sofort im Bild, obwohl niemand die Position angetippt hat.
+
+Schwebebalken bei Long/Short: **oben links** über dem Kasten, um
+`POS_INFO_H` (3 Zeilen à 15 px + 8 px) nach oben versetzt, damit er weder
+den Kennzahlen-Block noch die Preis-Schilder (rechts) noch die Griffe
+verdeckt. Linksbündig statt mittig. Während des Ziehens ausgeblendet,
+danach neu gesetzt.
 
 Griffe erscheinen nur bei ausgewählter Zeichnung. Fingertoleranz 21 px; bei
 1 %/2 % liegen sie rund 45 px auseinander, überlappen also nicht.

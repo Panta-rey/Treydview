@@ -779,7 +779,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
    Desktop läuft dieser Code nie, das DOM bleibt dort unverändert.
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root { --tv-build: "m20"; }
+:root { --tv-build: "m21"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1118,13 +1118,26 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
   /* Kompakter und mit gefuelltem Grund wie die uebrigen Menues. Fuenf
      Spalten statt vier, damit die Liste bei 18 Werkzeugen nicht so weit
-     nach unten laeuft. */
+     nach unten laeuft.
+
+     ACHTUNG: --bg-panel ist NICHT definiert. Der Token steht seit jeher in
+     der Desktop-Basis (.draw-sheet, Zeile ~242), existiert aber nirgends —
+     var(--bg-panel) loest zu nichts auf und laesst den Grund durchsichtig.
+     Genau deshalb schien der Chart durch das Blatt. Es gibt nur
+     --bg-raised und --bg-hover. Die Basisregel bleibt unangetastet
+     (Regel 1), hier wird sie fuer das Handy ueberschrieben. */
+  .draw-sheet { background: var(--bg-raised); }
   .draw-sheet-grid { grid-template-columns: repeat(5, 1fr); gap: 6px; }
   .draw-sheet-item {
     padding: 7px 2px; gap: 3px; font-size: 9px; border-radius: 7px;
-    background: var(--bg-panel);
+    background: var(--bg-hover);
+    border-color: var(--border);
   }
-  .draw-sheet-item:hover, .draw-sheet-item.active { background: var(--bg-hover); }
+  .draw-sheet-item:hover, .draw-sheet-item.active {
+    background: var(--bg-raised); border-color: var(--accent);
+  }
+  /* Der Abdunkler dahinter darf nicht durchscheinen lassen. */
+  .draw-sheet-backdrop { background: rgba(0, 0, 0, .55); }
 
   /* Legende: Einklapp-Knopf groesser und UNTER den Text statt daneben. */
   .chart-legend { flex-direction: column; align-items: flex-start; gap: 2px; }
