@@ -795,7 +795,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m26"; }
+:root { --tv-build: "m27"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1085,7 +1085,12 @@ input, textarea, select, [contenteditable="true"] {
   /* Schwebender Aktionsbalken über einer ausgewählten Zeichnung */
   .draw-action-bar {
     display: flex;
-    position: fixed; z-index: 660; gap: 2px;
+    /* 668: UEBER dem Abdunkler (665), damit der Muelleimer auch bei offenem
+       Stilmenue erreichbar bleibt — genau darauf stuetzt sich das Entfernen
+       der doppelten Loeschknoepfe aus den Menues. Weiterhin UNTER den Menues
+       (670), die duerfen den Balken ueberdecken. Kehrt die Entscheidung aus
+       m21 um, wo der Balken bewusst unter dem Abdunkler lag. */
+    position: fixed; z-index: 668; gap: 2px;
     background: var(--bg-raised); border: 1px solid var(--border);
     border-radius: 10px; padding: 4px; box-shadow: 0 4px 16px rgba(0,0,0,.5);
   }

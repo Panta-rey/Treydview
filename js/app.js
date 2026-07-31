@@ -371,6 +371,18 @@ function buildCreate(ind) {
 }
 
 
+// Auf dem Handy sitzt der Muelleimer schon im Schwebebalken, der neben dem
+// offenen Stilmenue stehen bleibt. Der zusaetzliche Loeschknopf IM Menue ist
+// dort doppelt gemoppelt und kostet nur Platz. Am Desktop gibt es keinen
+// Schwebebalken (er ist mobile-only), dort bleiben die Knoepfe.
+quiet(() => {
+  if (!window.matchMedia("(max-width: 720px), (pointer: coarse)").matches) return;
+  ["overlayDelete", "posDelete", "fibDelete", "frvpDelete"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  });
+}, "mobile delete buttons");
+
 // ---------- Globale M2-Zeitreihe ----------
 // Wird einmal geladen und in window.__tvM2Series abgelegt; der Indikator in
 // indicators.js liest von dort. Bewusst NICHT bei jedem Neuzeichnen laden —
@@ -1982,7 +1994,7 @@ function restoreDrawings(list) {
   list.forEach(d => {
     try {
       const id = chart.createOverlay({
-        ...mobileDragGuards(),
+        ...dragGuardsFor(d.name),
         name: d.name,
         points: d.points,
         extendData: d.extendData ?? undefined,
@@ -2273,18 +2285,29 @@ function currentOverlayStyles() {
 // mitgeschrieben, nach einem Neuladen waere das Verhalten also ein anderes.
 // Und bewusst NICHT in der Overlay-Registrierung (overlays.js), weil das den
 // Desktop mitaendern wuerde — Regel 1.
+const DRAG_GUARDS = {
+  onPressedMoveStart: () => true,
+  onPressedMoving:    () => true,
+  onPressedMoveEnd:   () => true,
+};
+
 function mobileDragGuards() {
   if (!window.matchMedia("(max-width: 720px), (pointer: coarse)").matches) return {};
-  return {
-    onPressedMoveStart: () => true,
-    onPressedMoving:    () => true,
-    onPressedMoveEnd:   () => true,
-  };
+  return { ...DRAG_GUARDS };
+}
+
+// Long/Short wird IMMER selbst gezogen — auch am Desktop. KLineCharts wuerde
+// sonst alle drei Punkte gemeinsam verschieben, statt Stop, Ziel und Breite
+// einzeln zu behandeln. Fuer alle anderen Werkzeuge bleibt der
+// Desktop-Zug von KLineCharts unveraendert (Regel 1).
+function dragGuardsFor(overlayName) {
+  if (overlayName === "positionTool") return { ...DRAG_GUARDS };
+  return mobileDragGuards();
 }
 
 function buildOverlayConfig(overlayName) {
   return {
-    ...mobileDragGuards(),
+    ...dragGuardsFor(overlayName),
     name: overlayName,
     mode: state.magnetMode,
     // KLineCharts snappt im Magnet-Modus an alle vier OHLC-Werte (High, Low,
@@ -2493,6 +2516,19 @@ function openPositionMenu(overlay, event) {
   stopEl.oninput = apply;
   tgtEl.oninput  = apply;
   opEl.oninput   = apply;
+
+  const del = document.getElementById("posDelete");
+  if (del) del.onclick = (e) => {
+    e.stopPropagation();
+    quiet(() => {
+      chart.removeOverlay(overlay.id);
+      state.drawings = (state.drawings || []).filter(d => d.id !== overlay.id);
+      state.selectedOverlayId = null;
+      saveWorkspace();
+    }, "posMenu delete");
+    menu.classList.add("hidden");
+    syncMenuOpen();
+  };
 }
 
 quiet(() => {
@@ -5116,7 +5152,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m26";
+const TV_BUILD = "m27";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -5761,6 +5797,110 @@ quiet(() => {
     menu.classList.add("hidden");
   }, { passive: true });
 }, "ls choice init");
+
+// ── 4b4. Desktop: Long/Short-Griffe mit der Maus ziehen ───────────────
+// Der Schwebebalken und der ganze Zug-Handler aus 4c sind mobile-only
+// (tvIsMobile-Riegel). Am Desktop zog deshalb KLineCharts selbst — und
+// verschob den ganzen Kasten, statt Stop, Ziel und Breite einzeln zu
+// bewegen. Dieser Handler macht dasselbe wie der Finger-Zug, nur mit der
+// Maus, und ausschliesslich fuer positionTool.
+quiet(() => {
+  const host = document.getElementById("mainChart");
+  if (!host || tvIsMobile()) return;
+
+  const AXIS_W = 80, TAP_TOL = 26, POINT_TOL = 20, ENGAGE = 4;
+  let start = null, drag = null, gesperrt = false;
+
+  const toPx = (p) => {
+    try {
+      const r = chart.convertToPixel({ timestamp: p.timestamp, value: p.value }, { paneId: "candle_pane" });
+      return Array.isArray(r) ? r[0] : r;
+    } catch (e) { return null; }
+  };
+  const freigeben = () => {
+    if (!gesperrt) return;
+    gesperrt = false;
+    window.__tvChartLock && window.__tvChartLock(false);
+  };
+
+  host.addEventListener("mousedown", (e) => {
+    if (e.button !== 0 || state.activeTool) return;
+    const rect = host.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    if (x > rect.width - AXIS_W) return;
+
+    const hit = findOverlayNear(x, y, TAP_TOL, POINT_TOL);
+    // Nur Long/Short, nur echte Griffe. Alles andere laeuft weiter ueber
+    // KLineCharts, damit sich der Desktop sonst nicht veraendert.
+    if (!hit || hit.overlay.name !== "positionTool" || hit.pointIndex < 1) return;
+
+    e.preventDefault(); e.stopPropagation();
+    state.selectedOverlayId = hit.overlay.id;
+    const startPts = hit.overlay.points.map(p => ({ timestamp: p.timestamp, value: p.value }));
+    start = { x, y };
+    drag = {
+      id: hit.overlay.id,
+      pointIndex: hit.pointIndex,
+      startPts,
+      startPxPts: startPts.map(toPx),
+      startWidthPx: (window.__tvPositionWidthPx
+        ? window.__tvPositionWidthPx(hit.overlay) : 160),
+      bewegt: false,
+    };
+    gesperrt = true;
+    window.__tvChartLock && window.__tvChartLock(true);
+  }, true);
+
+  window.addEventListener("mousemove", (e) => {
+    if (!drag) return;
+    const rect = host.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    const dx = x - start.x, dy = y - start.y;
+    if (!drag.bewegt && Math.hypot(dx, dy) < ENGAGE) return;
+    drag.bewegt = true;
+    e.preventDefault();
+
+    quiet(() => {
+      if (drag.pointIndex === 3) {
+        // Breite: nur die Kerzenanzahl, kein Punkt wird angefasst.
+        const bar = (window.__tvBarSpace && window.__tvBarSpace()) || 8;
+        const g = window.__tvPositionBars || { MIN: 3 };
+        const bars = Math.max(g.MIN, Math.round((drag.startWidthPx + dx) / bar));
+        const ov = chart.getOverlayById(drag.id);
+        const ext = { ...(ov && ov.extendData ? ov.extendData : {}), widthBars: bars };
+        chart.overrideOverlay({ id: drag.id, extendData: ext });
+        return;
+      }
+      // Stop und Ziel: nur senkrecht. Der Zeitstempel bleibt, sonst reisst
+      // die Zuordnung Einstieg/Stop/Ziel auseinander.
+      const basePx = drag.startPxPts[drag.pointIndex];
+      if (!basePx) return;
+      const moved = chart.convertFromPixel({ x: basePx.x, y: basePx.y + dy }, { paneId: "candle_pane" });
+      if (!moved || moved.value == null) return;
+      const pts = drag.startPts.map((p, i) => i === drag.pointIndex
+        ? { timestamp: p.timestamp, value: moved.value }
+        : p);
+      chart.overrideOverlay({ id: drag.id, points: pts });
+    }, "desktop pos drag");
+  }, true);
+
+  window.addEventListener("mouseup", () => {
+    if (!drag) { freigeben(); return; }
+    const id = drag.id;
+    freigeben();
+    quiet(() => {
+      const ov = chart.getOverlayById(id);
+      if (!ov) return;
+      const idx = (state.drawings || []).findIndex(d => d.id === id);
+      if (idx >= 0) {
+        state.drawings[idx].points = ov.points.map(p => ({ timestamp: p.timestamp, value: p.value }));
+        state.drawings[idx].extendData = ov.extendData ?? null;
+        saveWorkspace();
+      }
+    }, "desktop pos persist");
+    drag = null; start = null;
+  }, true);
+}, "desktop position drag");
 
 // ── 4c. Bestehende Zeichnung: antippen wählt aus, zweiter Griff verschiebt ─
 // Genau wie in TradingView: ein Tap wählt aus und zeigt einen kleinen

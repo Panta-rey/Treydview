@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 29. Juli 2026 · Build m26**
+**Stand: 29. Juli 2026 · Build m27**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -78,7 +78,7 @@ Top-Level-`const` verwirft und `CONFIG` dann unsichtbar bleibt),
 (Prüfung 3), `t-mobile.js` (Prüfung 4 + Zieltests, 44 Prüfpunkte), `t-m18.js` (18),
 `t-m19.js` (23), `t-m20.js` (31), `t-m21.js` (27, asynchron),
 `t-tokens.js` (Prüfung 5), `t-m22.js` (26), `t-m23.js` (26), `t-m24.js` (24), asynchron.
-`t-m25.js` (47), `t-m26.js` (43). `t-compat.js` prueft alte Drei-Punkt-Zeichnungen (6).
+`t-m25.js` (47), `t-m26.js` (43), `t-m27.js` (30). `t-compat.js` prueft alte Drei-Punkt-Zeichnungen (6).
 Rückwärtskompatibilität der Drei-Punkt-Zeichnungen: eigener Lauf, 5 Punkte.
 Der Canvas-Stub protokolliert `moveTo`/`lineTo`, damit Tests das gezeichnete
 Fadenkreuz auslesen können. `chart.setLoadDataCallback` muss im Stub stehen.
@@ -105,13 +105,13 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m26)
+## Datei-MD5 (Build m27)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | 6aa8fab453b8faeef3215aec63df5c68 | 1113 |
-| style.css | ed0ed5a69c403f6d6f8bc9ca05d148c7 | 1384 |
-| app.js | 698821b0809814e87adf0edb3e9a8c25 | 6244 |
+| index.html | c1509988364d3b5bd157c013bb7eca41 | 1114 |
+| style.css | 3864288cd171d08b580d88124a32032d | 1389 |
+| app.js | 87e4b83f0719f0fa64a6c72e168a23fe | 6384 |
 | overlays.js | 6b3d89df6b0963cd948987e32209253a | 1152 |
 | config.js | d4c842c5979f3679bbfa4db1b7dbae71 | 409 |
 | data.js | e83756ed019760ae3a34c955e6df1f8a | 420 |
@@ -130,9 +130,9 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 
 ## Build-Abgleich — zuerst prüfen, wenn etwas „nicht wirkt"
 
-- `style.css`: `:root { --tv-build: "m26" }`
-- `app.js`: `const TV_BUILD = "m26"`
-- `index.html`: alle Verweise mit `?v=m26`
+- `style.css`: `:root { --tv-build: "m27" }`
+- `app.js`: `const TV_BUILD = "m27"`
+- `index.html`: alle Verweise mit `?v=m27`
 
 Beim Start liest das JS die CSS-Kennung aus und meldet grün oder warnt.
 **Bei jeder Auslieferung an allen drei Stellen erhöhen.**
@@ -215,6 +215,55 @@ Anker auf demselben Zeitstempel, also auf einer einzigen senkrechten Linie.
 neben der Ankerlinie und wurde nie erkannt. Als Rangmass dient der
 senkrechte Abstand zur nächsten der drei waagrechten Linien — sonst würde
 bei Überschneidung immer die Zeichnung mit dem grösseren Kasten gewinnen.
+
+## Desktop zieht Long/Short-Griffe selbst  (m27)
+
+Der komplette Zug-Handler aus Abschnitt 4c ist **mobile-only**
+(`if (!host || !bar || !tvIsMobile()) return;`), ebenso der Schwebebalken
+(`.draw-action-bar { display:none }` in der Basis). Am Desktop zog deshalb
+KLineCharts — und verschiebt dabei grundsaetzlich ALLE Punkte gemeinsam.
+
+Zwei Teile:
+1. **`dragGuardsFor(name)`** haengt die Zug-Sperren (`onPressedMove*` → `true`)
+   an `positionTool` auf **jeder** Plattform, an alle anderen Werkzeuge nur
+   auf dem Handy. Der Desktop-Zug aller uebrigen Zeichnungen bleibt damit
+   unveraendert (Regel 1).
+2. **Abschnitt 4b4**: eigener `mousedown`/`mousemove`/`mouseup`-Handler,
+   ausschliesslich fuer `positionTool`, mit derselben Aufteilung wie am
+   Finger — Stop und Ziel nur senkrecht, Breite nur waagrecht (Kerzenanzahl
+   in `extendData`), Einstieg fix, Flaeche zieht nichts. `ENGAGE = 4`
+   statt 8: die Maus ist praeziser als der Finger.
+
+## Loeschen: einmal statt zweimal  (m27)
+
+`#posDelete` im L/S-Stilmenue **ergaenzt** (das Menue bleibt).
+
+Auf dem **Handy** werden `overlayDelete`, `posDelete`, `fibDelete` und
+`frvpDelete` ausgeblendet — der Muelleimer im Schwebebalken deckt das ab.
+Am **Desktop** bleiben sie: dort gibt es keinen Schwebebalken.
+
+> **Voraussetzung, die vorher nicht erfuellt war:** Der Balken lag bei
+> `z-index: 660`, der Abdunkler bei `665` — bei offenem Stilmenue war der
+> Muelleimer also verdeckt und nicht antippbar. Der Balken steht jetzt auf
+> **668**: ueber dem Abdunkler, weiterhin unter den Menues (670). Das kehrt
+> die Entscheidung aus m21 bewusst um.
+
+## Worker-Routen fuer Indizes und M2  (m27)
+
+`worker-routen.js` — **nicht Teil der Auslieferung**, sondern zum Einfuegen
+in den Cloudflare-Worker neben `/goldhistory`.
+
+- **`/stooq?s=<symbol>`** — Weissliste `^spx`, `^ndq`, `^dji`; ohne sie waere
+  die Route ein offener Proxy. Faengt Stooqs Limitmeldung ab, die mit
+  HTTP 200 als Text kommt und sonst als leere CSV durchginge.
+- **`/m2`** — summiert vier FRED-Reihen (USA, Euroraum, Japan, China) in
+  USD. Umrechnungskurse **fest**, nicht tagesaktuell: M2 ist eine
+  Monatsreihe, ein aktueller Kurs erzeugte rueckwirkend Schwankungen, die es
+  nie gab. Nur Monate, fuer die ALLE vier Reihen vorliegen — sonst sehen
+  fehlende Veroeffentlichungen wie Einbrueche aus. Braucht
+  `FRED_API_KEY` als Secret.
+
+Beide liefern CSV; `data.js` versteht das bereits.
 
 ## Trefferzonen: die ganze Zeichnung  (m26)
 
