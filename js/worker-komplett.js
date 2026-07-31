@@ -56,7 +56,7 @@ export default {
     try {
       if (url.pathname === "/macro"       && request.method === "GET")  return await getMacro(env);
       if (url.pathname === "/goldhistory" && request.method === "GET")  return await getGoldHistory(env);
-      if (url.pathname === "/stooq"       && request.method === "GET")  return await getStooq(request);
+      if (url.pathname === "/stooq"       && request.method === "GET")  return await getStooq(request, env);
       if (url.pathname === "/m2"          && request.method === "GET")  return await getM2(env);
       if (url.pathname === "/history"     && request.method === "GET")  return await getHistory(env);
       if (url.pathname === "/snapshot"    && request.method === "POST") return await postSnapshot(request, env);
@@ -224,74 +224,73 @@ async function getGoldHistory(env) {
    weitergeleitet statt in ein JSON-Array umgewandelt — data.js
    (parseStooqCsv) versteht beide Formate.
    ============================================================ */
-// ── Verlaufsentscheidung (zweiter Anlauf) ────────────────────────────────
-// Erster Versuch: diese Route an stooqSeries() (fuer /macro) angleichen —
-// Datumsbereich statt Vollhistorie, kein kuenstlicher User-Agent. Schlug
-// TROTZDEM fehl. Die tatsaechliche Antwort war keine Ratenbegrenzung
-// (kein Text wie "Exceeded the daily hits limit"), sondern eine waschechte
-// JavaScript-Challenge-Seite: <meta name="robots" content="noindex,nofollow">
-// plus <noscript>-Hinweis. Stooq verlangt an diesem Endpunkt inzwischen
-// einen echten Browser, der JS ausfuehrt — das kann ein Server-Fetch
-// grundsaetzlich NICHT loesen, unabhaengig von Kopfzeilen oder Parametern.
+// ── Dritter und letzter Anlauf: FRED statt Stooq/Yahoo ──────────────────
+// Zwei Fehlschlaege der Reihe nach:
+//   1. Stooq (wie /goldhistory): JavaScript-Challenge-Seite, kein Server-
+//      Fetch kann das umgehen.
+//   2. Yahoo Finance: HTTP 429 bereits beim ERSTEN Versuch mit leerem
+//      Cache — keine kurze Spitze, die ein Nachversuch abfaengt.
 //
-// Deshalb Quelle gewechselt: Yahoo Finance liefert Index-Tageskerzen ueber
-// eine JSON-Chart-API, die ohne Browser/JS abrufbar ist — der uebliche Weg,
-// den auch verbreitete Bibliotheken (z. B. yfinance) dafuer nutzen.
+// Beide Versuche beruhten auf der Annahme "wird schon gehen", ohne einen
+// Beleg dafuer, dass die gewaehlte Quelle aus DIESEM Worker heraus
+// tatsaechlich zuverlaessig ist. Diesmal nicht: /macro fragt seit jeher
+// fredSeries("SP500", ...) ab, und das ist der EINZIGE Stooq/FRED-
+// verwandte Pfad im ganzen Worker, der in drei Fehlerrunden nie gemeldet
+// wurde. Also FRED — dieselbe fredSeries()-Funktion, die schon nachweislich
+// laeuft, nicht eine neu geratene Quelle.
 //
-// Der Rueckgabewert bleibt CSV im GLEICHEN Format wie zuvor
-// (Date,Open,High,Low,Close,Volume) — data.js und config.js muessen sich
-// dadurch NICHT aendern, nur die Quelle hinter der Route ist neu.
+// FRED fuehrt Aktienindizes nur als reine Schlusskurs-Reihe, kein
+// OHLC/Volumen. Das reicht hier vollstaendig: drawCompare() in app.js
+// liest fuer Vergleichslinien AUSSCHLIESSLICH .close, nie Hoch/Tief/Volumen
+// (geprueft, nicht angenommen). Die CSV bekommt trotzdem alle sechs Spalten,
+// mit Open=High=Low=Close und Volume=0 — data.js erwartet dieses Format
+// und Close ist ueberall der einzige Wert, der tatsaechlich verwendet wird.
 //
-// ACHTUNG — Annahme, die noch bestaetigt werden sollte: "Nasdaq" ist ohne
-// Zusatz mehrdeutig. ^NDX ist der Nasdaq-100 (das schon in config.js
-// verwendete Label). ^IXIC waere stattdessen der breitere Nasdaq
-// Composite. Falls der Composite gemeint war, in YAHOO_SYMBOLE unten
-// austauschen — sonst nichts weiter noetig.
-const YAHOO_SYMBOLE = {
-  "^spx": "^GSPC",   // S&P 500
-  "^ndq": "^NDX",    // Nasdaq-100 — ^IXIC waere der Composite
-  "^dji": "^DJI",    // Dow Jones Industrial Average
+// KEIN eigener User-Agent, KEIN kuenstlicher Rate-Limit-Umgang noetig:
+// FRED ist eine oeffentliche US-Regierungs-API mit registriertem
+// Schluessel, kein Scraping-Ziel wie Stooq oder Yahoo.
+const FRED_INDEX_SERIEN = {
+  "^spx": "SP500",      // S&P 500 — bereits in buildMacro() erprobt
+  "^ndq": "NASDAQCOM",  // Nasdaq Composite (FRED fuehrt nur diese Variante,
+                         // keinen separaten Nasdaq-100-Index)
+  "^dji": "DJIA",        // Dow Jones Industrial Average
 };
 
-async function getStooq(request) {
+const STOOQ_TTL_MS = 24 * 60 * 60 * 1000;   // Tagesdaten, 24h Cache reicht
+
+async function buildIndexReihe(seriesId, key) {
+  const obs = await fredSeries(seriesId, key, "2010-01-01");
+  if (!obs.length) throw new Error(`FRED ${seriesId}: keine Daten`);
+  const zeilen = obs.map(({ d, v }) => `${d},${v.toFixed(2)},${v.toFixed(2)},${v.toFixed(2)},${v.toFixed(2)},0`);
+  return "Date,Open,High,Low,Close,Volume\n" + zeilen.join("\n");
+}
+
+async function getStooq(request, env) {
   const url = new URL(request.url);
   const s   = (url.searchParams.get("s") || "").toLowerCase();
-  const yahooSym = YAHOO_SYMBOLE[s];
+  const seriesId = FRED_INDEX_SERIEN[s];
 
-  if (!yahooSym)
-    return err(`Symbol nicht erlaubt: ${s}. Erlaubt: ${Object.keys(YAHOO_SYMBOLE).join(", ")}`, 400);
+  if (!seriesId)
+    return err(`Symbol nicht erlaubt: ${s}. Erlaubt: ${Object.keys(FRED_INDEX_SERIEN).join(", ")}`, 400);
 
-  const quelle = `https://query1.finance.yahoo.com/v8/finance/chart/`
-    + `${encodeURIComponent(yahooSym)}?range=10y&interval=1d`;
+  const key = env.FRED_API_KEY || env.FRED_KEY;
+  if (!key) return err("FRED_KEY/FRED_API_KEY fehlt", 500);
 
-  const r = await fetch(quelle, { cf: { cacheTtl: 21600 } });
-  if (!r.ok) return err(`Yahoo Finance HTTP ${r.status} für ${s}`, 502);
+  const kvKey = `stooq_${s}`;
+  let cached = null;
+  try { cached = JSON.parse(await env.PANTA.get(kvKey)); } catch (_) {}
+  if (cached && cached.csv && (Date.now() - cached.ts) < STOOQ_TTL_MS) return csv(cached.csv);
 
-  let json;
-  try { json = await r.json(); }
-  catch (e) { return err(`Yahoo Finance: ungültiges JSON für ${s}`, 502); }
-
-  const result = json?.chart?.result?.[0];
-  if (!result) {
-    const grund = json?.chart?.error?.description || "unbekannter Fehler";
-    return err(`Yahoo Finance lieferte keine Daten für ${s}: ${grund}`, 502);
+  let text;
+  try {
+    text = await buildIndexReihe(seriesId, key);
+  } catch (e) {
+    if (cached && cached.csv) return csv(cached.csv);
+    return err(String(e && e.message || e), 502);
   }
 
-  const zeitstempel = result.timestamp || [];
-  const q = result.indicators?.quote?.[0] || {};
-  const zeilen = [];
-  for (let i = 0; i < zeitstempel.length; i++) {
-    const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i];
-    // Feiertage und Luecken liefern null statt einer Zahl — auslassen statt
-    // eine erfundene Kerze einzufuegen.
-    if (o == null || h == null || l == null || c == null) continue;
-    const datum = new Date(zeitstempel[i] * 1000).toISOString().slice(0, 10);
-    const v = q.volume?.[i] ?? 0;
-    zeilen.push(`${datum},${o.toFixed(2)},${h.toFixed(2)},${l.toFixed(2)},${c.toFixed(2)},${v}`);
-  }
-  if (!zeilen.length) return err(`Yahoo Finance: 0 Kerzen für ${s}`, 502);
-
-  return csv("Date,Open,High,Low,Close,Volume\n" + zeilen.join("\n"));
+  try { await env.PANTA.put(kvKey, JSON.stringify({ ts: Date.now(), csv: text })); } catch (_) {}
+  return csv(text);
 }
 
 /* ============================================================

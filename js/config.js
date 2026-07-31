@@ -28,7 +28,10 @@ const CONFIG = {
     // Aktienindizes ueber den Worker (Stooq). Nur Tageskerzen — Stooq
     // liefert fuer Indizes keine Intraday-Daten.
     { id: "^SPX", label: "S&P 500",   type: "stooq", stooqSymbol: "^spx" },
-    { id: "^NDQ", label: "Nasdaq 100", type: "stooq", stooqSymbol: "^ndq" },
+    // Label korrigiert: FRED fuehrt fuer Nasdaq nur den Composite
+    // (Serie NASDAQCOM), keinen separaten Nasdaq-100-Index. Andere
+    // Beschriftung waere falsche Information unter richtigem Chart.
+    { id: "^NDQ", label: "Nasdaq Composite", type: "stooq", stooqSymbol: "^ndq" },
     { id: "^DJI", label: "Dow Jones",  type: "stooq", stooqSymbol: "^dji" },
     // Kraken: längere Geschichte (BTC seit 2013, ETH seit 2016)
     { id: "XBTUSD_KR",  label: "BTC/USD (Kraken)",  type: "kraken", krakenPair: "XXBTZUSD" },
