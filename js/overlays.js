@@ -730,13 +730,28 @@
   // Bildschirmlage der drei Anfasspunkte. Wird von overlays.js zum Zeichnen
   // und von app.js zur Treffererkennung gebraucht — eine Quelle, damit
   // Gezeichnetes und Antippbares nicht auseinanderlaufen.
+  // Breite in KERZEN, nicht als vierter Punkt. Ein Zeitstempel 20 Kerzen in
+  // der Zukunft laesst sich von KLineCharts nicht auf einen Datenindex
+  // abbilden — convertToPixel gab null zurueck, der Zug brach lautlos ab.
+  // Eine blosse Zahl in extendData braucht ueberhaupt keine Umrechnung.
+  const PT_DEFAULT_BARS = 20;
+  const PT_MIN_BARS = 3;
+  function positionWidthPx(overlay) {
+    const bars = Math.max(PT_MIN_BARS,
+      (overlay && overlay.extendData && overlay.extendData.widthBars) || PT_DEFAULT_BARS);
+    const bar = (window.__tvBarSpace && window.__tvBarSpace()) || 8;
+    return Math.max(PT_MIN_WIDTH, bars * bar);
+  }
+  window.__tvPositionWidthPx = positionWidthPx;
+  window.__tvPositionBars = { DEFAULT: PT_DEFAULT_BARS, MIN: PT_MIN_BARS };
+
   function positionHandles(x0, x1, cEntry, cStop, cTarget) {
-    // Stop und Ziel sitzen AUSSERHALB des Kastens, links davor. Innerhalb
-    // gibt es keinen freien Platz: die Preis-Schilder sind rechtsbuendig und
-    // fuellen den Kasten fast aus, der Kennzahlen-Block sitzt oben links.
-    // Mittig lagen die Griffe auf den Prozentzahlen, am linken Innenrand auf
-    // dem Schildanfang. Draussen ueberlagert sich nichts mehr.
-    const hx = x0 - PT_HANDLE_R - 3;
+    // Stop und Ziel sitzen in den LINKEN ECKEN des Kastens, jeder auf seiner
+    // eigenen Linie. Bei einem Long ist das Ziel oben und der Stop unten,
+    // beim Short umgekehrt — das ergibt sich von selbst aus den Kurswerten.
+    // Die Schilder schliessen rechts daran an und laufen nach rechts, es
+    // kann sich also nichts mehr ueberlagern.
+    const hx = x0;
     const ys = [cEntry, cStop, cTarget].filter(Boolean).map(c => c.y);
     const midY = (Math.min(...ys) + Math.max(...ys)) / 2;
     return {
@@ -745,9 +760,8 @@
       width:  { x: x1 + PT_HANDLE_R + 3, y: midY },         // pointIndex 3
     };
   }
-  // Der Breiten-Griff liegt ausserhalb des Kastens, die Schilder duerfen
-  // deshalb bis kurz an den rechten Rand.
-  const chipRight = (x1) => x1 - 4;
+  // Schilder beginnen rechts NEBEN den Eckgriffen und laufen nach rechts.
+  const chipLeft = (x0) => x0 + PT_HANDLE_R + 6;
   window.__tvPositionHandles = positionHandles;
   window.__tvPositionGeom = { MIN_WIDTH: PT_MIN_WIDTH, HANDLE_R: PT_HANDLE_R };
 
@@ -770,12 +784,10 @@
 
       const isLong = stop != null && stop < entry;
       const x0 = Math.min(...coordinates.slice(0, 3).filter(Boolean).map(c => c.x));
-      // Rechter Rand aus dem vierten Punkt, sonst alte feste Breite.
-      const cRight = coordinates[3];
-      const x1 = Math.max(
-        x0 + PT_MIN_WIDTH,
-        cRight ? cRight.x : Math.max(...coordinates.slice(0, 3).filter(Boolean).map(c => c.x)) + 60
-      );
+      // Rechter Rand aus der Kerzenanzahl. Keine Umrechnung eines
+      // Zukunfts-Zeitstempels mehr noetig — genau daran ist der
+      // Breiten-Griff dreimal gescheitert.
+      const x1 = x0 + positionWidthPx(overlay);
       const figs = [];
 
       const risk = stop != null ? Math.abs(entry - stop) : null;
@@ -806,7 +818,7 @@
       });
       const chip = (y, text, color) => ({
         type: "text",
-        attrs: { x: chipRight(x1), y, text, align: "right", baseline: "middle" },
+        attrs: { x: chipLeft(x0), y, text, align: "left", baseline: "middle" },
         styles: {
           style: "stroke_fill", color, backgroundColor: labelColors().bg,
           borderColor: hexA(color.replace("rgba", "rgb").split(",").slice(0, 3).join(",") + ")", 0.4),
@@ -843,7 +855,9 @@
           lines.push(`Size ${size.toLocaleString("de-CH")} USDT  (${sizing.riskPct}% von ${sizing.capital.toLocaleString("de-CH")})`);
           lines.push(`Risiko ${Math.round(sizing.capital * sizing.riskPct / 100)} USDT  =  1R`);
         }
-        const yTop = Math.min(...coordinates.slice(0, 3).filter(Boolean).map(c => c.y)) - 8;
+        // Zusaetzlich um den Griffradius hoeher, sonst beruehrt die unterste
+        // Zeile den Eckgriff auf der oberen Kastenlinie.
+        const yTop = Math.min(...coordinates.slice(0, 3).filter(Boolean).map(c => c.y)) - 8 - PT_HANDLE_R;
         lines.forEach((txt, i) => {
           figs.push({
             type: "text",

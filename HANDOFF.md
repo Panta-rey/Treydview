@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 29. Juli 2026 · Build m23**
+**Stand: 29. Juli 2026 · Build m24**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -77,7 +77,8 @@ Top-Level-`const` verwirft und `CONFIG` dann unsichtbar bleibt),
 `t-desktop3.js` (Prüfung 2, ohne mobile-only-Zweige), `t-selectors.js`
 (Prüfung 3), `t-mobile.js` (Prüfung 4 + Zieltests, 44 Prüfpunkte), `t-m18.js` (18),
 `t-m19.js` (23), `t-m20.js` (31), `t-m21.js` (27, asynchron),
-`t-tokens.js` (Prüfung 5), `t-m22.js` (26), `t-m23.js` (26), beide asynchron.
+`t-tokens.js` (Prüfung 5), `t-m22.js` (26), `t-m23.js` (26), `t-m24.js` (24), asynchron.
+`t-compat.js` prueft alte Drei-Punkt-Zeichnungen (6).
 Rückwärtskompatibilität der Drei-Punkt-Zeichnungen: eigener Lauf, 5 Punkte.
 Der Canvas-Stub protokolliert `moveTo`/`lineTo`, damit Tests das gezeichnete
 Fadenkreuz auslesen können. `chart.setLoadDataCallback` muss im Stub stehen.
@@ -104,14 +105,14 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m23)
+## Datei-MD5 (Build m24)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | def02115f7db6c72dcfdec4f1a3da6bd | 1073 |
-| style.css | 2df3b0ae6413adf3e79152bd94c092e4 | 1348 |
-| app.js | 22326b56ed7938d8e32ead72bdce9ae1 | 5912 |
-| overlays.js | 616c8944e2f8e8e16d87597d920b9ce0 | 1131 |
+| index.html | 56710281c600fd75c8f2aec3e10f7259 | 1073 |
+| style.css | 6e94e7ca5c9faed861bb46edf39f41f6 | 1348 |
+| app.js | e1af30e78983a778e18d05feff869034 | 5959 |
+| overlays.js | dacf9bb22d9e56d2ad2857f5a20e4e2c | 1145 |
 | overlays.js | 41863e842e40478db3326d46156c2b89 | 1075 |
 | manifest.webmanifest | f00d4e5b6341e6400f7b5dfb48b2e667 | 11 |
 | config.js | fc6cff7fab290a246c255349f13a8fd8 | 384 |
@@ -124,9 +125,9 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 
 ## Build-Abgleich — zuerst prüfen, wenn etwas „nicht wirkt"
 
-- `style.css`: `:root { --tv-build: "m23" }`
-- `app.js`: `const TV_BUILD = "m23"`
-- `index.html`: alle Verweise mit `?v=m23`
+- `style.css`: `:root { --tv-build: "m24" }`
+- `app.js`: `const TV_BUILD = "m24"`
+- `index.html`: alle Verweise mit `?v=m24`
 
 Beim Start liest das JS die CSS-Kennung aus und meldet grün oder warnt.
 **Bei jeder Auslieferung an allen drei Stellen erhöhen.**
@@ -209,6 +210,54 @@ Anker auf demselben Zeitstempel, also auf einer einzigen senkrechten Linie.
 neben der Ankerlinie und wurde nie erkannt. Als Rangmass dient der
 senkrechte Abstand zur nächsten der drei waagrechten Linien — sonst würde
 bei Überschneidung immer die Zeichnung mit dem grösseren Kasten gewinnen.
+
+## Kastenbreite: KEIN vierter Punkt  (m24 — Neubau)
+
+Der Breiten-Griff ist dreimal gescheitert. Der Grund war konstruktiv, nicht
+ein Flüchtigkeitsfehler:
+
+> **Ein Zeitstempel in der Zukunft laesst sich nicht in Pixel umrechnen.**
+> Der vierte Punkt lag 20 Kerzen rechts vom Einstieg, also ausserhalb der
+> geladenen Daten. `chart.convertToPixel` gibt dort `null` zurueck, damit ist
+> `drag.startPxPts[3]` null, und `if (!basePx) return;` beendete den Zug
+> **lautlos**. Kein Fehler im Log, keine Wirkung.
+
+Seit m24 traegt **`extendData.widthBars`** die Breite — eine blosse Zahl, die
+keine Umrechnung braucht:
+
+- `positionWidthPx(overlay)` = `widthBars x __tvBarSpace()`, Untergrenze
+  `PT_MIN_BARS = 3`, Vorgabe 20.
+- `overlays.js` rechnet `x1 = x0 + positionWidthPx(overlay)`.
+- Der Zug auf Griff 3 schreibt nur `widthBars` per `overrideOverlay`; die
+  Punkte werden nicht angefasst.
+- `drag.startWidthPx` haelt die Ausgangsbreite fest.
+- Die Persistenz schreibt `extendData` mit — sonst geht die Breite beim
+  Neuladen verloren.
+
+**positionTool hat wieder DREI Punkte.** Alte Zeichnungen ohne `extendData`
+bekommen die Standardbreite von 20 Kerzen (frueher ein 60-px-Stummel).
+
+> **Pruefstand-Luecke, die das drei Builds lang verdeckt hat:**
+> `overrideOverlay` im Stub verarbeitete nur `points` und `styles` — nicht
+> `extendData`. Jede Breitenaenderung verpuffte im Test unbemerkt.
+> Und: `chart.getOverlayById` liefert eine LEBENDE Referenz, kein Abbild.
+> Wer den Vorher-Wert nicht kopiert, vergleicht ihn mit sich selbst.
+
+## Griffe in den linken Ecken  (m24)
+
+Stop und Ziel sitzen bei `x0` auf ihrer eigenen Linie — bei einem Long also
+Ziel oben links, Stop unten links; beim Short ergibt es sich umgekehrt von
+selbst. Die Schilder sind **linksbuendig** und beginnen bei
+`chipLeft(x0) = x0 + HANDLE_R + 6`, laufen also nach rechts vom Griff weg.
+Damit kann sich nichts mehr ueberlagern. Der Kennzahlen-Block rueckt um
+`HANDLE_R` hoeher, damit seine unterste Zeile den oberen Eckgriff nicht
+beruehrt.
+
+## Zyklus-Pill schaltet um  (m24)
+
+`openFor` merkt sich, zu welcher Pill das Popover offen ist. Zweiter Tipp auf
+dieselbe Pill schliesst; Wechsel auf eine andere Pill haelt offen; Klick
+daneben und die 5-Sekunden-Uhr wirken weiter.
 
 ## .filter(Boolean) verschiebt Indizes  (m23 — schwerwiegend)
 

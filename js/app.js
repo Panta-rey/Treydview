@@ -1704,8 +1704,9 @@ function findOverlayNear(x, y, lineTol, pointTol) {
         const xs = ptsIdx.slice(0, 3).filter(Boolean).map(p => p.x);
         if (!xs.length) continue;
         left  = Math.min(...xs);
-        right = Math.max(left + geom.MIN_WIDTH,
-                         ptsIdx[3] ? ptsIdx[3].x : Math.max(...xs) + 60);
+        // Breite aus der Kerzenanzahl — dieselbe Rechnung wie in overlays.js.
+        right = left + (window.__tvPositionWidthPx
+          ? window.__tvPositionWidthPx(ov) : geom.MIN_WIDTH);
         cE = ptsIdx[0]; cS = ptsIdx[1]; cT = ptsIdx[2];
       }
 
@@ -3646,8 +3647,13 @@ function updateCycleBar(r) {
   if (!popover) return;
   let closeTimer = null;
 
+  // Merkt, zu welcher Pill das Popover gerade offen ist — nur so kann ein
+  // erneuter Tipp auf dieselbe Pill wieder schliessen.
+  let openFor = null;
+
   const closePopover = () => {
     popover.classList.add("hidden");
+    openFor = null;
     if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
   };
 
@@ -3656,6 +3662,15 @@ function updateCycleBar(r) {
       e.stopPropagation();
       const data = pill._cycleData;
       if (!data) return;
+
+      // Zweiter Tipp auf dieselbe Pill schliesst wieder. Vorher liess sich
+      // das Popover nur durch Antippen des Popovers selbst schliessen —
+      // oder man wartete die fuenf Sekunden ab.
+      if (openFor === pill && !popover.classList.contains("hidden")) {
+        closePopover();
+        return;
+      }
+      openFor = pill;
 
       // Popover befüllen
       document.getElementById("cyclePopoverLabel").textContent = data.label;
@@ -4865,7 +4880,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m23";
+const TV_BUILD = "m24";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -4961,6 +4976,15 @@ quiet(() => {
 
   // Kerze zu einem Zeitstempel — overlays.js braucht sie fuer den
   // Desktop-Magneten, hat aber keinen Zugriff auf chart.
+  // Kerzenbreite in Pixeln — overlays.js rechnet damit die Kastenbreite aus.
+  window.__tvBarSpace = () => {
+    try {
+      const b = chart.getBarSpace();
+      const v = (b && (b.bar ?? b.barSpace)) || 0;
+      return v > 0 ? v : 8;
+    } catch (e) { return 8; }
+  };
+
   window.__tvCandleAt = (timestamp) => {
     try {
       const data = chart.getDataList();
@@ -5391,6 +5415,9 @@ quiet(() => {
   function placePosition(dir) {
     menu.classList.add("hidden");
     const cfg = buildOverlayConfig("positionTool");
+    // Startbreite des Kastens in Kerzen. Steckt in extendData, wird also
+    // mitgespeichert und ueberlebt das Neuladen.
+    cfg.extendData = { widthBars: (window.__tvPositionBars || {}).DEFAULT || 20 };
     // Zwingend: ohne aktives Werkzeug würde der Auswahl-Handler parallel
     // mitlaufen und die Chart-Sperre nicht greifen.
     state.activeTool = "positionTool";
@@ -5411,17 +5438,14 @@ quiet(() => {
         const reward = risk * (TARGET_PCT / STOP_PCT);
         const stop   = dir === "long" ? entry.value - risk   : entry.value + risk;
         const target = dir === "long" ? entry.value + reward : entry.value - reward;
-        // Vierter Punkt: rechter Rand des Kastens auf der Zeitachse. Er
-        // traegt keinen eigenen Kurs, nur den Zeitstempel. Startbreite:
-        // 20 Kerzen des aktiven Zeitrahmens, damit der Kasten auf jedem
-        // Zeitrahmen aehnlich breit aussieht.
-        const tfMs = (state.timeframe && state.timeframe.ms) || 3600e3;
-        const rightTs = entry.timestamp + tfMs * 20;
+
+        // Nur drei Punkte. Die Breite steckt als Kerzenanzahl in
+        // extendData — ein vierter Punkt mit Zukunfts-Zeitstempel liess
+        // sich nicht zuverlaessig in Pixel umrechnen.
         return [
           entry,
           { timestamp: entry.timestamp, value: stop },
           { timestamp: entry.timestamp, value: target },
-          { timestamp: rightTs, value: entry.value },
         ];
       },
       done: () => {
@@ -5628,6 +5652,9 @@ quiet(() => {
         mode: dragCandidate.pointIndex >= 0 ? "point" : "all",
         pointIndex: dragCandidate.pointIndex,
         startPts, startPxPts: startPts.map(toPx),
+        // Ausgangsbreite in Pixeln — Grundlage fuer den Breiten-Griff.
+        startWidthPx: (window.__tvPositionWidthPx
+          ? window.__tvPositionWidthPx(dragCandidate.overlay) : 160),
         touchStart: { x: touchStart.x, y: touchStart.y },
       };
       hideBar();
@@ -5639,6 +5666,21 @@ quiet(() => {
     const dx = x - drag.touchStart.x, dy = y - drag.touchStart.y;
     quiet(() => {
       let newPts;
+      if (drag.mode === "point" && drag.pointIndex === 3) {
+        // Breiten-Griff: veraendert NUR die Kerzenanzahl in extendData.
+        // Hier wird bewusst nichts mehr in Zeitstempel zurueckgerechnet —
+        // der frueher dafuer benutzte vierte Punkt lag oft ausserhalb der
+        // geladenen Daten, convertToPixel gab null, und der Zug endete
+        // schweigend an `if (!basePx) return`.
+        const bar = (window.__tvBarSpace && window.__tvBarSpace()) || 8;
+        const grenzen = window.__tvPositionBars || { MIN: 3, DEFAULT: 20 };
+        const bars = Math.max(grenzen.MIN,
+          Math.round((drag.startWidthPx + dx) / bar));
+        const ov = chart.getOverlayById(drag.overlay.id);
+        const ext = { ...(ov && ov.extendData ? ov.extendData : {}), widthBars: bars };
+        chart.overrideOverlay({ id: drag.overlay.id, extendData: ext });
+        return;
+      }
       if (drag.mode === "point") {
         const basePx = drag.startPxPts[drag.pointIndex];
         if (!basePx) return;
@@ -5695,7 +5737,12 @@ quiet(() => {
         const ov = chart.getOverlayById(id);
         if (!ov) return;
         const idx = (state.drawings || []).findIndex(d => d.id === id);
-        if (idx >= 0) { state.drawings[idx].points = ov.points.map(p => ({ timestamp: p.timestamp, value: p.value })); saveWorkspace(); }
+        if (idx >= 0) {
+          state.drawings[idx].points = ov.points.map(p => ({ timestamp: p.timestamp, value: p.value }));
+          // Ohne das geht die gezogene Kastenbreite beim Neuladen verloren.
+          state.drawings[idx].extendData = ov.extendData ?? null;
+          saveWorkspace();
+        }
         showBarFor(ov);
       }, "drag persist");
       drag = null; dragCandidate = null; touchStart = null; touchMoved = false;
