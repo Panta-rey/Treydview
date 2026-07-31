@@ -169,33 +169,53 @@ async function getMacro(env) {
    ============================================================ */
 const GOLD_HISTORY_TTL_MS = 24 * 60 * 60 * 1000;
 
+// ── Gold: von Stooq auf Yahoo Finance umgestellt ─────────────────────────
+// Derselbe Stooq-Bulk-CSV-Endpunkt, der bei den Indizes eine JavaScript-
+// Challenge-Seite ausgeliefert hat, liegt auch hier dahinter — mit hoher
+// Wahrscheinlichkeit dieselbe Ursache fuer die 500er.
+//
+// GC=F (Gold-Futures, COMEX) statt eines Spot-Tickers: Yahoo fuehrt dafuer
+// durchgehende Tagesdaten. "range=max" gibt alles, was Yahoo hat — das
+// sind schaetzungsweise 20-25 Jahre, nicht die 46+ Jahre der bisherigen
+// Stooq/LBMA-Historie. Falls ein anderes Projekt auf dieser Route explizit
+// die lange Historie braucht, muesste das separat geloest werden.
+//
+// Antwortform bewusst UNVERAENDERT: { series:[[ms,close],...], from, to,
+// n, _fetchedAt } — falls ein anderer Verbraucher dieses Format erwartet,
+// bleibt er unberuehrt. Nur die Quelle dahinter ist neu.
 async function buildGoldHistory() {
-  const u = "https://stooq.com/q/d/l/?s=xauusd&i=d";
-  const r = await fetch(u, {
-    cf: { cacheTtl: 3600 },
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; PantaRey/1.0)" },
-  });
-  if (!r.ok) throw new Error(`Stooq xauusd HTTP ${r.status}`);
-  const text  = await r.text();
-  const lines = text.trim().split("\n");
-  if (!lines.length) throw new Error("Stooq: leere Antwort");
+  const quelle = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=max&interval=1d";
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                + "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  };
+  let r = await fetch(quelle, { headers, cf: { cacheTtl: 21600 } });
+  if (r.status === 429) {
+    await new Promise(res => setTimeout(res, 400));
+    r = await fetch(quelle, { headers, cf: { cacheTtl: 21600 } });
+  }
+  if (!r.ok) throw new Error(`Yahoo Finance HTTP ${r.status} für Gold`);
 
-  const header = lines[0].toLowerCase();
-  const cols   = header.split(",");
-  const iDate  = cols.findIndex(c => c.includes("date"));
-  const iClose = cols.findIndex(c => c.includes("close"));
-  if (iDate < 0 || iClose < 0)
-    throw new Error(`Stooq: unbekanntes Format. Erste Zeile: ${lines[0].slice(0, 120)}`);
+  let json2;
+  try { json2 = await r.json(); }
+  catch (e) { throw new Error("Yahoo Finance: ungültiges JSON für Gold"); }
 
-  const rows = lines.slice(1)
-    .map(l => l.split(","))
-    .filter(c => c.length > iClose && c[iClose] && isFinite(parseFloat(c[iClose])))
-    .map(c => [Date.parse(c[iDate].trim()), Math.round(parseFloat(c[iClose]) * 100) / 100])
-    .filter(([ms]) => !isNaN(ms) && ms > 0)
-    .sort((a, b) => a[0] - b[0]);
+  const result = json2?.chart?.result?.[0];
+  if (!result) {
+    const grund = json2?.chart?.error?.description || "unbekannter Fehler";
+    throw new Error(`Yahoo Finance lieferte keine Gold-Daten: ${grund}`);
+  }
 
-  if (!rows.length)
-    throw new Error(`Stooq: 0 Zeilen geparsed. Header: ${lines[0].slice(0, 80)} | Beispiel: ${lines[1] || "—"}`);
+  const zeitstempel = result.timestamp || [];
+  const q = result.indicators?.quote?.[0] || {};
+  const rows = [];
+  for (let i = 0; i < zeitstempel.length; i++) {
+    const c = q.close?.[i];
+    if (c == null) continue;   // Feiertage/Luecken auslassen
+    rows.push([zeitstempel[i] * 1000, Math.round(c * 100) / 100]);
+  }
+  if (!rows.length) throw new Error("Yahoo Finance: 0 Gold-Kerzen erhalten");
+  rows.sort((a, b) => a[0] - b[0]);
 
   const from = new Date(rows[0][0]).toISOString().slice(0, 10);
   const to   = new Date(rows[rows.length - 1][0]).toISOString().slice(0, 10);
@@ -206,7 +226,17 @@ async function getGoldHistory(env) {
   let cached = null;
   try { cached = JSON.parse(await env.PANTA.get("goldhistory")); } catch (_) {}
   if (cached && cached.data && (Date.now() - cached.ts) < GOLD_HISTORY_TTL_MS) return json(cached.data);
-  const data = await buildGoldHistory();
+
+  let data;
+  try {
+    data = await buildGoldHistory();
+  } catch (e) {
+    // Wie bei den Indizes: lieber ein Tag alte Daten als ein Fehler,
+    // sofern schon einmal ein erfolgreicher Abruf vorliegt.
+    if (cached && cached.data) return json(cached.data);
+    return json({ error: String(e && e.message || e) }, 500);
+  }
+
   try { await env.PANTA.put("goldhistory", JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
   return json(data);
 }
@@ -318,12 +348,34 @@ async function getStooq(request, env) {
    ============================================================ */
 const M2_TTL_MS = 24 * 60 * 60 * 1000;   // 24h — erscheint monatlich
 
+// KORRIGIERT — urspruengliche Faktoren gingen faelschlich davon aus, dass
+// alle vier Serien bereits "in Milliarden" gemeldet werden. Nur M2SL (USA)
+// stimmt das: FRED fuehrt es explizit als "Billions of Dollars".
+//
+// Die drei IWF-Serien (Euroraum, Japan, China) melden dagegen die ROHE
+// Landeswaehrung, nicht Milliarden. Beleg direkt von FRED: M2 fuer den
+// Euroraum stand im Maerz 2017 bei 10'876'141'000'000 mit der Einheit
+// "Euros" — nicht 10'876 wie bei einer Milliarden-Skalierung. Dieselbe
+// IWF-Quelle ("International Financial Statistics") und dasselbe
+// Namensschema gelten fuer Japan und China, deshalb hier ebenfalls durch
+// 1e9 geteilt, bevor der Wechselkurs angewendet wird.
+//
+// Symptom des Fehlers: eine einzelne, extrem grosse und vollkommen flache
+// Linie (z. B. 39'860'906'812'499) — der Fehlbetrag war durchgehend um den
+// Faktor ~1e9 zu gross, weil roh statt in Milliarden gerechnet wurde.
 const M2_REIHEN = [
-  { id: "M2SL",           faktor: 1        },   // USA,      Mrd. USD
-  { id: "MYAGM2EZM196N",  faktor: 1.08     },   // Euroraum, Mrd. EUR → USD
-  { id: "MYAGM2JPM189S",  faktor: 1 / 155  },   // Japan,    Mrd. JPY → USD
-  { id: "MYAGM2CNM189N",  faktor: 1 / 7.2  },   // China,    Mrd. CNY → USD
+  { id: "M2SL",           faktor: 1              },   // USA — bereits Mrd. USD
+  { id: "MYAGM2EZM196N",  faktor: 1.08     / 1e9 },   // Euroraum — rohe EUR
+  { id: "MYAGM2JPM189S",  faktor: (1/155)  / 1e9 },   // Japan — rohe JPY
+  { id: "MYAGM2CNM189N",  faktor: (1/7.2)  / 1e9 },   // China — rohe CNY
 ];
+
+// Ergebnis muss in einer plausiblen Groessenordnung liegen (Mrd. USD).
+// Verhindert, dass ein kuenftiger, noch unbekannter Einheiten-Fehler
+// erneut eine absurde Zahl aufs Chart bringt — lieber eine Zeile
+// auslassen als eine Zahl zu zeigen, die niemand ernst nehmen kann.
+const M2_PLAUSIBEL_MIN = 1000;      // < $1 Billion waere garantiert falsch
+const M2_PLAUSIBEL_MAX = 1000000;   // > $1000 Billionen ebenso
 
 async function buildM2(key) {
   // Alle vier Reihen parallel holen, dann nach Datum zusammenführen.
@@ -349,7 +401,7 @@ async function buildM2(key) {
       if (w == null) { ok = false; break; }
       summe += w * faktor;
     }
-    if (ok) zeilen.push([d, summe]);
+    if (ok && summe >= M2_PLAUSIBEL_MIN && summe <= M2_PLAUSIBEL_MAX) zeilen.push([d, summe]);
   }
   zeilen.sort((a, b) => (a[0] < b[0] ? -1 : 1));
   if (!zeilen.length) throw new Error("Keine gemeinsamen M2-Monate gefunden");

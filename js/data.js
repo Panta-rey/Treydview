@@ -317,16 +317,31 @@ const DataLayer = {
     let rows;
     try {
       const json = JSON.parse(text);
-      rows = Array.isArray(json) ? json
-           : Array.isArray(json.data) ? json.data
-           : Array.isArray(json.history) ? json.history
-           : null;
-      if (!rows) throw new Error("Unbekannte JSON-Struktur");
-      rows = rows.map(r => this.normalizeGoldRow(r)).filter(Boolean);
+      if (Array.isArray(json.series)) {
+        // Das tatsächliche Format von /goldhistory: { series:[[ms,close],...] }.
+        // Tupel, keine benannten Felder — normalizeGoldRow passt hier nicht,
+        // das erwartet ein Objekt mit date/close. Ohne diesen Zweig kam
+        // json.data und json.history als undefined zurück, rows wurde null,
+        // und die Funktion gab am Ende STILLSCHWEIGEND ein leeres Array
+        // zurück statt eines Fehlers oder echter Daten.
+        rows = json.series
+          .map(([ts, close]) => (isFinite(ts) && isFinite(close))
+            ? { timestamp: ts, open: close, high: close, low: close, close, volume: 0 }
+            : null)
+          .filter(Boolean);
+      } else {
+        rows = Array.isArray(json) ? json
+             : Array.isArray(json.data) ? json.data
+             : Array.isArray(json.history) ? json.history
+             : null;
+        if (!rows) throw new Error("Unbekannte JSON-Struktur");
+        rows = rows.map(r => this.normalizeGoldRow(r)).filter(Boolean);
+      }
     } catch (_) {
       rows = this.parseStooqCsv(text);
     }
 
+    if (!rows.length) throw new Error("Keine Gold-Daten erhalten");
     rows.sort((a, b) => a.timestamp - b.timestamp);
     return rows.filter((r, i) => i === 0 || r.timestamp !== rows[i - 1].timestamp);
   },
