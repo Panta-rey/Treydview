@@ -6,6 +6,16 @@ const CONFIG = {
   // >>> HIER deine Cloudflare-Worker-Basis-URL eintragen <<<
   WORKER_BASE_URL: "https://pantarey.rey-gafner.workers.dev",
   GOLD_ENDPOINT:   "/goldhistory",
+  // Allgemeine Stooq-Zeitreihe ueber denselben Worker. Erwartet
+  //   GET <WORKER_BASE_URL>/stooq?s=<symbol>
+  // und liefert entweder Stooq-CSV (date,open,high,low,close,volume) oder
+  // JSON in derselben Form. Stooq selbst erlaubt keinen Direktabruf aus dem
+  // Browser (CORS) — deshalb der Umweg, genau wie beim Gold.
+  STOOQ_ENDPOINT:  "/stooq",
+  // Globale M2-Geldmenge, aggregiert. Erwartet
+  //   GET <WORKER_BASE_URL>/m2
+  // und liefert [{ date, value }, ...] oder CSV date,value.
+  M2_ENDPOINT:     "/m2",
   BINANCE_REST:    "https://api.binance.com/api/v3",
   BINANCE_WS:      "wss://stream.binance.com:9443/ws",
 
@@ -15,6 +25,11 @@ const CONFIG = {
     { id: "SOLUSDT",  label: "SOL/USDT (Binance)",  type: "binance" },
     { id: "AEROUSDT", label: "AERO/USDT (Binance)", type: "binance" },
     { id: "XAUUSD",   label: "Gold XAU/USD", type: "worker" },
+    // Aktienindizes ueber den Worker (Stooq). Nur Tageskerzen — Stooq
+    // liefert fuer Indizes keine Intraday-Daten.
+    { id: "^SPX", label: "S&P 500",   type: "stooq", stooqSymbol: "^spx" },
+    { id: "^NDQ", label: "Nasdaq 100", type: "stooq", stooqSymbol: "^ndq" },
+    { id: "^DJI", label: "Dow Jones",  type: "stooq", stooqSymbol: "^dji" },
     // Kraken: längere Geschichte (BTC seit 2013, ETH seit 2016)
     { id: "XBTUSD_KR",  label: "BTC/USD (Kraken)",  type: "kraken", krakenPair: "XXBTZUSD" },
     { id: "ETHUSD_KR",  label: "ETH/USD (Kraken)",  type: "kraken", krakenPair: "XETHZUSD" },
@@ -193,6 +208,16 @@ const CONFIG = {
         { key: "maLine",  label: "RSI-MA",      color: "#e8b64c", opacity: 100, width: 1, visible: true },
         { key: "bbUpper", label: "BB Oben",     color: "#3fb68b", opacity: 80,  width: 1, visible: true },
         { key: "bbLower", label: "BB Unten",    color: "#3fb68b", opacity: 80,  width: 1, visible: true },
+      ],
+    },
+    {
+      // Globale M2-Geldmenge. Eigenes Fenster unterhalb, wie StochRSI.
+      // Die Zeitreihe kommt ueber den Worker (CONFIG.M2_ENDPOINT), nicht
+      // aus den Kerzen — siehe indicators.js.
+      key: "globalm2", name: "GLOBALM2", pane: "sub", label: "Global M2",
+      inputs: [],
+      plots: [
+        { key: "m2", label: "M2", color: "#e8b64c", opacity: 100, width: 2, visible: true },
       ],
     },
     {

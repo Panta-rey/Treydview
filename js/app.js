@@ -371,8 +371,33 @@ function buildCreate(ind) {
 }
 
 
+// ---------- Globale M2-Zeitreihe ----------
+// Wird einmal geladen und in window.__tvM2Series abgelegt; der Indikator in
+// indicators.js liest von dort. Bewusst NICHT bei jedem Neuzeichnen laden —
+// M2 aendert sich monatlich, nicht im Sekundentakt.
+let _m2Laden = null;
+function ensureM2Series() {
+  if (window.__tvM2Series || _m2Laden) return _m2Laden || Promise.resolve();
+  _m2Laden = DataLayer.fetchGlobalM2()
+    .then(serie => {
+      window.__tvM2Series = serie;
+      // Der Indikator wurde womoeglich schon ohne Daten berechnet.
+      quiet(() => chart.overrideIndicator({ name: "GLOBALM2" }), "M2 nachrechnen");
+    })
+    .catch(err => {
+      // Ohne Worker-Route bleibt die Linie leer. Das ist kein stiller
+      // Fehler — der Grund gehoert in die Statuszeile.
+      setStatus(`Global M2 nicht verfügbar: ${err && err.message ? err.message : err}`);
+      console.warn("[TreydView] M2", err);
+    })
+    .finally(() => { _m2Laden = null; });
+  return _m2Laden;
+}
+
 // ---------- Indikatoren anwenden ----------
 function applyIndicator(ind) {
+  // M2 braucht seine eigene Zeitreihe, bevor der Indikator etwas rechnen kann.
+  if (ind && ind.name === "GLOBALM2") { try { ensureM2Series(); } catch (e) {} }
   // Im Vergleichsmodus keine Indikatoren auf den Chart — state.active wird
   // vom Aufrufer (Checkbox) gesetzt, gezeichnet wird erst beim Verlassen.
   if (state.compareAssets && state.compareAssets.length > 0) return;
@@ -569,6 +594,10 @@ async function loadData() {
       candles = await DataLayer.fetchKrakenKlines(state.symbol.krakenPair, state.timeframe.krakenInterval, CONFIG.CANDLE_LIMIT);
     } else if (state.symbol.type === "coinbase") {
       candles = await DataLayer.fetchCoinbaseKlines(state.symbol.coinbaseProduct, state.timeframe.coinbaseInterval, CONFIG.CANDLE_LIMIT);
+    } else if (state.symbol.type === "stooq") {
+      // Indizes kommen als Tageskerzen ueber den Worker (Stooq erlaubt
+      // keinen Direktabruf aus dem Browser).
+      candles = await DataLayer.fetchStooqHistory(state.symbol.stooqSymbol);
     } else if (state.symbol.type === "bybit") {
       candles = await DataLayer.fetchBybitKlines(state.symbol.bybitSymbol, state.timeframe.bybitInterval, CONFIG.CANDLE_LIMIT);
       if (!candles || candles.length === 0) throw new Error(`Bybit: keine Kerzen für ${state.symbol.bybitSymbol} / ${state.timeframe.bybitInterval}`);
@@ -579,7 +608,7 @@ async function loadData() {
     if (seq !== _loadSeq) return;   // inzwischen wurde neu geladen
     // HTTP 500 heisst: der Worker ist erreichbar und wirft einen Fehler.
     // Die URL zu prüfen führt dann in die Irre — sie stimmt ja.
-    const isWorker = state.symbol.type === "worker";
+    const isWorker = state.symbol.type === "worker" || state.symbol.type === "stooq";
     // Binance HTTP 400 = "Invalid symbol": das Paar existiert dort nicht.
     // Ohne diesen Hinweis sieht es wie ein Netzwerkfehler aus (AERO-Fall).
     if (!isWorker && /HTTP 4\d\d/.test(err.message)) {
@@ -805,7 +834,7 @@ function renderCompareList(filter = "") {
     .find(q => state.symbol.label.includes("/" + q)) || "").toUpperCase();
 
   const items = state.allSymbols.filter(s => {
-    if (s.type === "worker") return false;   // Gold nie vergleichbar
+    if (s.type === "worker" || s.type === "stooq") return false;   // Gold und Indizes nie vergleichbar
     if (s.id === state.symbol.id) return false;
     if (state.compareAssets.some(c => c.id === s.id)) return false;
     // Gleiche Quote-Währung wie aktives Symbol
@@ -1231,7 +1260,7 @@ if (_compareSearchEl) _compareSearchEl.addEventListener("input", e => renderComp
 function renderTfList() {
   const list = document.getElementById("tfList");
   list.innerHTML = "";
-  const goldMode     = state.symbol.type === "worker";
+  const goldMode     = state.symbol.type === "worker" || state.symbol.type === "stooq";
   const krakenMode   = state.symbol.type === "kraken";
   const coinbaseMode = state.symbol.type === "coinbase";
   const bybitMode    = state.symbol.type === "bybit";
@@ -1630,6 +1659,18 @@ function unregisterDrawing(id) {
 // Gibt { overlay, pointIndex, dist } zurück oder null.
 // pointIndex ist der Index des nächsten Punktes, wenn er innerhalb von
 // pointTol liegt — sonst -1 (Treffer war auf der Linie, kein Einzelpunkt).
+// Naechster Ankerpunkt, oder -1 wenn keiner in Greifweite liegt. Mehrfach
+// gebraucht — vorher stand dieselbe Schleife in jedem Zweig.
+function naechsterPunkt(ptsIdx, x, y, pointTol) {
+  let idx = -1, best = Infinity;
+  ptsIdx.forEach((p, i) => {
+    if (!p) return;
+    const d = Math.hypot(x - p.x, y - p.y);
+    if (d < best) { best = d; idx = i; }
+  });
+  return best <= pointTol ? idx : -1;
+}
+
 function findOverlayNear(x, y, lineTol, pointTol) {
   pointTol = pointTol != null ? pointTol : lineTol;
   const ids = []
@@ -1808,6 +1849,60 @@ function findOverlayNear(x, y, lineTol, pointTol) {
       if (dist <= lineTol && (!best || dist < best.dist)) {
         const onPoint = Math.hypot(x - pts[0].x, y - pts[0].y) <= pointTol;
         best = { overlay: ov, pointIndex: onPoint ? 0 : -1, dist };
+      }
+      continue;
+    }
+
+    // Gerade durch zwei Punkte, in BEIDE Richtungen unendlich. Fiel bisher
+    // in die Strecken-Pruefung und war nur zwischen den Ankern antippbar.
+    if (ov.name === "straightLine" && pts.length >= 2) {
+      const dx = pts[1].x - pts[0].x, dy = pts[1].y - pts[0].y;
+      const len = Math.hypot(dx, dy);
+      if (len > 0) {
+        // Abstand Punkt <-> unendliche Gerade
+        const dist = Math.abs(dy * (x - pts[0].x) - dx * (y - pts[0].y)) / len;
+        if (dist <= lineTol && (!best || dist < best.dist)) {
+          best = { overlay: ov, pointIndex: naechsterPunkt(ptsIdx, x, y, pointTol), dist };
+        }
+      }
+      continue;
+    }
+
+    // Mehrlinige Werkzeuge: jede Parallele zaehlt, nicht nur die erste.
+    if ((ov.name === "priceChannelLine" || ov.name === "parallelStraightLine") && pts.length >= 2) {
+      const dx = pts[1].x - pts[0].x, dy = pts[1].y - pts[0].y;
+      const len = Math.hypot(dx, dy);
+      if (len > 0) {
+        // Alle Anker liegen auf je einer Parallelen — Abstand zur Geraden
+        // durch JEDEN Anker mit derselben Richtung pruefen.
+        let dist = Infinity;
+        for (const p of pts) {
+          const d = Math.abs(dy * (x - p.x) - dx * (y - p.y)) / len;
+          if (d < dist) dist = d;
+        }
+        if (dist <= lineTol && (!best || dist < best.dist)) {
+          best = { overlay: ov, pointIndex: naechsterPunkt(ptsIdx, x, y, pointTol), dist };
+        }
+      }
+      continue;
+    }
+
+    // Flaechige Werkzeuge: der ganze aufgezogene Kasten zaehlt, nicht nur
+    // seine Kanten.
+    const FLAECHIG = { rectangle: 1, priceRange: 1, dateRange: 1 };
+    if (FLAECHIG[ov.name] && pts.length >= 2) {
+      const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+      const l = Math.min(...xs) - lineTol, r = Math.max(...xs) + lineTol;
+      const t = Math.min(...ys) - lineTol, b = Math.max(...ys) + lineTol;
+      if (x >= l && x <= r && y >= t && y <= b) {
+        // Naehe zur naechsten Kante als Rangmass — ein kleineres Overlay
+        // darueber gewinnt so weiterhin.
+        const dist = Math.min(
+          Math.abs(x - Math.min(...xs)), Math.abs(x - Math.max(...xs)),
+          Math.abs(y - Math.min(...ys)), Math.abs(y - Math.max(...ys)));
+        if (!best || dist < best.dist) {
+          best = { overlay: ov, pointIndex: naechsterPunkt(ptsIdx, x, y, pointTol), dist };
+        }
       }
       continue;
     }
@@ -2363,6 +2458,9 @@ function openPositionMenu(overlay, event) {
   const menu = document.getElementById("posMenu");
   if (!menu) return;
   const { x, y } = menuPosition(event, 210, 190);
+  // placeMenu positioniert nur — es blendet NICHT ein. Ohne diese Zeile
+  // blieb das Menue unsichtbar, obwohl alles andere richtig lief.
+  menu.classList.remove("hidden");
   placeMenu(menu, x, y);
   syncMenuOpen();
 
@@ -2779,12 +2877,16 @@ function renderDrawbar() {
   // Hufeisen mit Blitz, wie auf dem Handy. Farben als Inline-style, weil die
   // Kerben an den Polen die Leistenfarbe brauchen.
   // Gleiches Hufeisen mit Blitz wie auf dem Handy.
+  // Gleiches Symbol wie auf dem Handy: 45 Grad gedrehtes Hufeisen mit
+  // abgesetzten Pol-Enden und freiem Blitz darueber.
   magnet.innerHTML = `<svg viewBox="0 0 24 24" style="width:20px;height:20px">
-    <path d="M4 3 L9.5 3 L9.5 13 Q9.5 18.5 12 18.5 Q14.5 18.5 14.5 13 L14.5 3 L20 3 L20 13
-             Q20 22 12 22 Q4 22 4 13 Z" style="fill:currentColor;stroke:none"/>
-    <rect x="4" y="2" width="5.5" height="3.6" style="fill:var(--bg-raised);stroke:none"/>
-    <rect x="14.5" y="2" width="5.5" height="3.6" style="fill:var(--bg-raised);stroke:none"/>
-    <path d="M15.5 0 L21 0 L18.5 4.5 L21.5 4.5 L14.5 11.5 L17.5 6 L14 6 Z"
+    <g transform="rotate(45 11 13.5)">
+      <path d="M4.5 6 L8.8 6 L8.8 13.6 Q8.8 16.6 11 16.6 Q13.2 16.6 13.2 13.6 L13.2 6 L17.5 6 L17.5 13.6
+               Q17.5 20.2 11 20.2 Q4.5 20.2 4.5 13.6 Z" style="fill:currentColor;stroke:none"/>
+      <rect x="4.7" y="6.2" width="3.9" height="3.4" style="fill:var(--bg-raised);stroke:none"/>
+      <rect x="13.4" y="6.2" width="3.9" height="3.4" style="fill:var(--bg-raised);stroke:none"/>
+    </g>
+    <path d="M16.2 0.6 L22.4 0.6 L19.6 5.2 L23 5.2 L15.4 12.4 L18.2 6.6 L14.6 6.6 Z"
           style="fill:currentColor;stroke:none"/>
   </svg>`;
   magnet.addEventListener("click", () => {
@@ -3395,7 +3497,7 @@ function switchSymbol(sym) {
   saveWorkspace();
   document.getElementById("assetLabel").textContent = sym.label;
   document.getElementById("assetPanel").classList.remove("open");
-  if (sym.type === "worker") state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
+  if (sym.type === "worker" || sym.type === "stooq") state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
   // Kraken: Falls aktives TF kein krakenInterval hat (z.B. 1M), auf 1D wechseln
   if (sym.type === "kraken" && !state.timeframe.krakenInterval) {
     state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
@@ -5014,7 +5116,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m25";
+const TV_BUILD = "m26";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

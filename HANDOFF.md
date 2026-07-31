@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 29. Juli 2026 · Build m25**
+**Stand: 29. Juli 2026 · Build m26**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -78,7 +78,7 @@ Top-Level-`const` verwirft und `CONFIG` dann unsichtbar bleibt),
 (Prüfung 3), `t-mobile.js` (Prüfung 4 + Zieltests, 44 Prüfpunkte), `t-m18.js` (18),
 `t-m19.js` (23), `t-m20.js` (31), `t-m21.js` (27, asynchron),
 `t-tokens.js` (Prüfung 5), `t-m22.js` (26), `t-m23.js` (26), `t-m24.js` (24), asynchron.
-`t-m25.js` (47). `t-compat.js` prueft alte Drei-Punkt-Zeichnungen (6).
+`t-m25.js` (47), `t-m26.js` (43). `t-compat.js` prueft alte Drei-Punkt-Zeichnungen (6).
 Rückwärtskompatibilität der Drei-Punkt-Zeichnungen: eigener Lauf, 5 Punkte.
 Der Canvas-Stub protokolliert `moveTo`/`lineTo`, damit Tests das gezeichnete
 Fadenkreuz auslesen können. `chart.setLoadDataCallback` muss im Stub stehen.
@@ -105,14 +105,19 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m25)
+## Datei-MD5 (Build m26)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | e20eedd40a89e97a512858abcd7c3641 | 1110 |
-| style.css | 46ba5981ec07324f412884c2192d6a14 | 1355 |
-| app.js | 1ca5bb6854945d1b23d0435d8c84bbf4 | 6142 |
+| index.html | 6aa8fab453b8faeef3215aec63df5c68 | 1113 |
+| style.css | ed0ed5a69c403f6d6f8bc9ca05d148c7 | 1384 |
+| app.js | 698821b0809814e87adf0edb3e9a8c25 | 6244 |
 | overlays.js | 6b3d89df6b0963cd948987e32209253a | 1152 |
+| config.js | d4c842c5979f3679bbfa4db1b7dbae71 | 409 |
+| data.js | e83756ed019760ae3a34c955e6df1f8a | 420 |
+| indicators.js | b03959e571421be134a3504fbd68cf00 | 1050 |
+
+`overlays.js` ist seit m25 unveraendert (gleiche Pruefsumme).
 | overlays.js | 41863e842e40478db3326d46156c2b89 | 1075 |
 | manifest.webmanifest | f00d4e5b6341e6400f7b5dfb48b2e667 | 11 |
 | config.js | fc6cff7fab290a246c255349f13a8fd8 | 384 |
@@ -125,9 +130,9 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 
 ## Build-Abgleich — zuerst prüfen, wenn etwas „nicht wirkt"
 
-- `style.css`: `:root { --tv-build: "m25" }`
-- `app.js`: `const TV_BUILD = "m25"`
-- `index.html`: alle Verweise mit `?v=m25`
+- `style.css`: `:root { --tv-build: "m26" }`
+- `app.js`: `const TV_BUILD = "m26"`
+- `index.html`: alle Verweise mit `?v=m26`
 
 Beim Start liest das JS die CSS-Kennung aus und meldet grün oder warnt.
 **Bei jeder Auslieferung an allen drei Stellen erhöhen.**
@@ -210,6 +215,77 @@ Anker auf demselben Zeitstempel, also auf einer einzigen senkrechten Linie.
 neben der Ankerlinie und wurde nie erkannt. Als Rangmass dient der
 senkrechte Abstand zur nächsten der drei waagrechten Linien — sonst würde
 bei Überschneidung immer die Zeichnung mit dem grösseren Kasten gewinnen.
+
+## Trefferzonen: die ganze Zeichnung  (m26)
+
+Ein Tipp zaehlt jetzt ueberall auf der Zeichnung, nicht nur nahe den Ankern:
+
+| Werkzeug | Trefferzone |
+|---|---|
+| `segment`, `polyline` | ganze Strecke (war schon so) |
+| `straightLine` | unendliche Gerade in BEIDE Richtungen — fiel vorher in die Strecken-Pruefung und war nur zwischen den Ankern antippbar |
+| `rayLine` | ab Punkt 0 nach vorn |
+| `priceChannelLine`, `parallelStraightLine` | JEDE Parallele, nicht nur die erste |
+| `rectangle`, `priceRange`, `dateRange` | ganze Flaeche |
+| `fibRetracement`, `fibExtension` | jede Level-Linie (m22) |
+| `positionTool` | ganzer Kasten (m20) |
+| waagrechte/senkrechte Unendliche | ueber die volle Breite/Hoehe |
+
+`naechsterPunkt(ptsIdx, x, y, pointTol)` ist die gemeinsame Hilfsfunktion —
+vorher stand dieselbe Schleife in jedem Zweig.
+
+## Textauswahl gesperrt  (m26)
+
+`html, body { user-select: none }` in der **Basis**, damit es auch am Desktop
+gilt. `input, textarea, select, [contenteditable]` sind ausgenommen, sonst
+liesse sich dort nichts mehr markieren.
+
+> **Pruefstand-Falle:** Ob eine Regel "in der Basis" steht, laesst sich NICHT
+> an ihrer Position im Text ablesen — es gibt schon vor Zeile 205 einen
+> @media-Block. Massgeblich ist die Klammertiefe, nicht die Reihenfolge.
+
+## Indizes und Global M2  (m26)
+
+**Beide brauchen eine Worker-Route.** Stooq und die Notenbank-Quellen
+erlauben keinen Direktabruf aus dem Browser (CORS) — derselbe Grund, aus dem
+Gold schon ueber den Worker laeuft.
+
+| Endpunkt | Erwartet | Antwort |
+|---|---|---|
+| `GET /stooq?s=<symbol>` | `^spx`, `^ndq`, `^dji` | Stooq-CSV `date,open,high,low,close,volume` oder JSON gleicher Form |
+| `GET /m2` | — | `[{date, value}, ...]` oder CSV `date,value` |
+
+Solange die Routen fehlen, erscheint eine klare Meldung in der Statuszeile —
+kein stiller Fehler. Symbole: `type: "stooq"` mit `stooqSymbol`; nur
+Tageskerzen, kein Live-Strom, nicht vergleichbar (andere Skala).
+
+**M2-Indikator** (`GLOBALM2`, eigenes Fenster wie StochRSI): die Werte kommen
+NICHT aus den Kerzen, sondern aus `window.__tvM2Series`, das `ensureM2Series()`
+einmal laedt. `calc()` schreibt den zuletzt bekannten Wert fort (**Treppe**) —
+M2 erscheint monatlich, eine gerade Linie zwischen zwei Monatswerten waere
+eine Erfindung.
+
+## Kleinere Korrekturen  (m26)
+
+- **`placeMenu` blendet NICHT ein.** Es positioniert nur. `openPositionMenu`
+  fehlte das `classList.remove("hidden")` — das L/S-Stilmenue blieb deshalb
+  unsichtbar, obwohl alles andere lief.
+- **`.ls-choice { display: none }`** stand in der Desktop-Basis und wurde nur
+  im Mobil-`@media` sichtbar gemacht. Der Desktop-Knopf tat scheinbar nichts.
+- **`#tbRow2`** hat rechts jetzt denselben Abstand wie links, inklusive
+  Notch-Bereich.
+- **Magnet-Symbol** nach Vorlage: 45 Grad gedrehtes Hufeisen, Pol-Enden in
+  `var(--bg-raised)` abgesetzt, Blitz frei darueber.
+
+> **Ohne Bildanzeige pruefbar:** SVG bei ~34 px rendern und als ASCII
+> ausgeben. So laesst sich die Form beurteilen, wenn das Betrachten der
+> PNG-Datei nicht moeglich ist.
+
+## Pruefung 2: fuenf beabsichtigt geaenderte Zweige
+
+`#drawbar` (m22), `#smcTrigger`, `#posMenu` (m25), `#assetPanel`, `#indPanel`
+(m26 — datengetrieben, Inhalte prueft `t-m26` gegen CONFIG). Ausserhalb
+davon: 1249 Knoten, unveraendert.
 
 ## Vergleichsmodus  (m25)
 

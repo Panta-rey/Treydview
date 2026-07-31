@@ -14,11 +14,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m25">
-  <link rel="stylesheet" href="css/style.css?v=m25">
+  <link rel="manifest" href="manifest.webmanifest?v=m26">
+  <link rel="stylesheet" href="css/style.css?v=m26">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m25"></script>
+  <script src="js/lib/klinecharts.min.js?v=m26"></script>
 </head>
 <body>
 
@@ -125,15 +125,18 @@
            Praesentations-Attribut am Element schlaegt. Die Kerben an den Polen
            nehmen die Leistenfarbe und funktionieren so in beiden Themes. -->
       <svg viewBox="0 0 24 24" class="ab-icon" aria-hidden="true">
-        <!-- Hufeisen mit Blitz. Gefuellt, deshalb Inline-style: die CSS-Regel
-             .ab-icon { fill:none; stroke:currentColor } schlaegt sonst jedes
-             Praesentations-Attribut. Die Pol-Kerben nehmen die Leistenfarbe
-             und wirken so als Aussparung — in beiden Themes richtig. -->
-        <path d="M4 3 L9.5 3 L9.5 13 Q9.5 18.5 12 18.5 Q14.5 18.5 14.5 13 L14.5 3 L20 3 L20 13
-                 Q20 22 12 22 Q4 22 4 13 Z" style="fill:currentColor;stroke:none"/>
-        <rect x="4" y="2" width="5.5" height="3.6" style="fill:var(--bg-raised);stroke:none"/>
-        <rect x="14.5" y="2" width="5.5" height="3.6" style="fill:var(--bg-raised);stroke:none"/>
-        <path d="M15.5 0 L21 0 L18.5 4.5 L21.5 4.5 L14.5 11.5 L17.5 6 L14 6 Z"
+        <!-- Hufeisen um 45 Grad gedreht, Oeffnung nach oben rechts, Pol-Enden
+             kontrastierend abgesetzt, Blitz frei darueber. Gefuellt, deshalb
+             Inline-style: .ab-icon { fill:none; stroke:currentColor } als
+             CSS-Regel schlaegt jedes Praesentations-Attribut. Die Kerben
+             nehmen die Leistenfarbe und wirken so als Aussparung. -->
+        <g transform="rotate(45 11 13.5)">
+          <path d="M4.5 6 L8.8 6 L8.8 13.6 Q8.8 16.6 11 16.6 Q13.2 16.6 13.2 13.6 L13.2 6 L17.5 6 L17.5 13.6
+                   Q17.5 20.2 11 20.2 Q4.5 20.2 4.5 13.6 Z" style="fill:currentColor;stroke:none"/>
+          <rect x="4.7" y="6.2" width="3.9" height="3.4" style="fill:var(--bg-raised);stroke:none"/>
+          <rect x="13.4" y="6.2" width="3.9" height="3.4" style="fill:var(--bg-raised);stroke:none"/>
+        </g>
+        <path d="M16.2 0.6 L22.4 0.6 L19.6 5.2 L23 5.2 L15.4 12.4 L18.2 6.6 L14.6 6.6 Z"
               style="fill:currentColor;stroke:none"/>
       </svg>
     </button>
@@ -1096,15 +1099,15 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m25"></script>
-<script src="js/indicators.js?v=m25"></script>
-<script src="js/overlays.js?v=m25"></script>
-<script src="js/data.js?v=m25"></script>
-<script src="js/settings.js?v=m25"></script>
-<script src="js/derivatives.js?v=m25"></script>
-<script src="js/gridbot.js?v=m25"></script>
-<script src="js/patterns.js?v=m25"></script>
-<script src="js/smc.js?v=m25"></script>
-<script src="js/app.js?v=m25"></script>
+<script src="js/config.js?v=m26"></script>
+<script src="js/indicators.js?v=m26"></script>
+<script src="js/overlays.js?v=m26"></script>
+<script src="js/data.js?v=m26"></script>
+<script src="js/settings.js?v=m26"></script>
+<script src="js/derivatives.js?v=m26"></script>
+<script src="js/gridbot.js?v=m26"></script>
+<script src="js/patterns.js?v=m26"></script>
+<script src="js/smc.js?v=m26"></script>
+<script src="js/app.js?v=m26"></script>
 </body>
 </html>

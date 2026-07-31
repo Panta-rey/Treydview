@@ -518,6 +518,44 @@ klinecharts.registerIndicator({
   },
 });
 
+// ---------- GLOBALE M2-GELDMENGE ----------
+// Eigenes Fenster unterhalb des Charts, wie StochRSI — nur als einfache
+// Linie. Die Werte kommen NICHT aus den Kerzen, sondern aus einer eigenen
+// Zeitreihe (DataLayer.fetchGlobalM2), die app.js einmal laedt und unter
+// window.__tvM2Series ablegt. calc() ordnet sie den Kerzen zu.
+//
+// M2 wird monatlich veroeffentlicht, der Chart laeuft aber taeglich oder
+// feiner. Deshalb wird der zuletzt bekannte Wert fortgeschrieben (Treppe)
+// statt interpoliert — eine gerade Linie zwischen zwei Monatswerten waere
+// eine Erfindung, die es so nie gab.
+klinecharts.registerIndicator({
+  name: "GLOBALM2",
+  shortName: "Global M2",
+  precision: 2,
+  calcParams: [],
+  figures: [
+    { key: "m2", title: "M2: ", type: "line", styles: (d, ind) => plotStyle(ind, "m2", "#e8b64c", 2) },
+  ],
+  calc: (dataList) => {
+    const serie = window.__tvM2Series;
+    if (!Array.isArray(serie) || !serie.length) {
+      return dataList.map(() => ({ m2: null }));
+    }
+    const out = new Array(dataList.length);
+    let i = 0, letzter = null;
+    for (let k = 0; k < dataList.length; k++) {
+      const ts = dataList[k].timestamp;
+      // Alle M2-Werte bis zu dieser Kerze abarbeiten — die Serie ist
+      // sortiert, ein Zeiger genuegt.
+      while (i < serie.length && serie[i].timestamp <= ts) {
+        letzter = serie[i].value; i++;
+      }
+      out[k] = { m2: letzter };
+    }
+    return out;
+  },
+});
+
 // ---------- STOCHASTIC RSI ----------
 // Pine-Referenz: rsi -> stoch(rsi) -> SMA(K) -> SMA(D)
 klinecharts.registerIndicator({

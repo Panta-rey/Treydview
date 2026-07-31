@@ -351,6 +351,58 @@ const DataLayer = {
     return { timestamp: ts, open, high, low, close, volume: isFinite(volume) ? volume : 0 };
   },
 
+  // Allgemeine Stooq-Zeitreihe ueber den Worker. Gleiche Verarbeitung wie
+  // beim Gold — nur mit frei waehlbarem Symbol.
+  async fetchStooqHistory(stooqSymbol) {
+    const base = CONFIG.WORKER_BASE_URL.replace(/\/$/, "");
+    const url = `${base}${CONFIG.STOOQ_ENDPOINT}?s=${encodeURIComponent(stooqSymbol)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Worker HTTP ${res.status} für ${stooqSymbol}`);
+    const text = await res.text();
+    let rows;
+    try {
+      const json = JSON.parse(text);
+      rows = Array.isArray(json) ? json
+           : Array.isArray(json.data) ? json.data
+           : Array.isArray(json.history) ? json.history : null;
+      if (!rows) throw new Error("Unbekannte JSON-Struktur");
+      rows = rows.map(r => this.normalizeGoldRow(r)).filter(Boolean);
+    } catch (_) {
+      rows = this.parseStooqCsv(text);
+    }
+    if (!rows.length) throw new Error(`Keine Daten für ${stooqSymbol}`);
+    rows.sort((a, b) => a.timestamp - b.timestamp);
+    return rows.filter((r, i) => i === 0 || r.timestamp !== rows[i - 1].timestamp);
+  },
+
+  // Globale M2-Geldmenge. Erwartet [{date, value}] oder CSV date,value.
+  // Wird als Linie in einem eigenen Indikator-Fenster gezeichnet.
+  async fetchGlobalM2() {
+    const base = CONFIG.WORKER_BASE_URL.replace(/\/$/, "");
+    const res = await fetch(base + CONFIG.M2_ENDPOINT);
+    if (!res.ok) throw new Error(`Worker HTTP ${res.status} für M2`);
+    const text = await res.text();
+    const out = [];
+    const push = (d, v) => {
+      const ts = Date.parse(String(d).length <= 10 ? String(d) + "T00:00:00Z" : d);
+      const num = parseFloat(v);
+      if (isFinite(ts) && isFinite(num)) out.push({ timestamp: ts, value: num });
+    };
+    try {
+      const json = JSON.parse(text);
+      const rows = Array.isArray(json) ? json : (json.data || json.history || []);
+      rows.forEach(r => push(r.date ?? r.d ?? r[0], r.value ?? r.v ?? r.close ?? r[1]));
+    } catch (_) {
+      text.trim().split(/\r?\n/).forEach(line => {
+        const p = line.split(",");
+        if (p.length >= 2 && p[0].toLowerCase() !== "date") push(p[0], p[1]);
+      });
+    }
+    if (!out.length) throw new Error("Keine M2-Daten erhalten");
+    out.sort((a, b) => a.timestamp - b.timestamp);
+    return out;
+  },
+
   parseStooqCsv(text) {
     const lines = text.trim().split(/\r?\n/);
     const out = [];
