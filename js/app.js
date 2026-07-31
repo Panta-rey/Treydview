@@ -3534,6 +3534,14 @@ function switchSymbol(sym) {
   document.getElementById("assetLabel").textContent = sym.label;
   document.getElementById("assetPanel").classList.remove("open");
   if (sym.type === "worker" || sym.type === "stooq") state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
+  // Indizes: Kerzen als Standard waeren irrefuehrend. FRED liefert nur den
+  // Schlusskurs; Open/High/Low sind im Worker gleich Close gesetzt, damit
+  // das Datenformat stimmt — als Kerzen dargestellt saehe das ausschliesslich
+  // wie flache Doji-Kerzen aus. Linie ist hier nicht nur Geschmackssache,
+  // sondern die einzige Darstellung, die zur tatsaechlichen Datenlage passt.
+  // Wirkt nur beim WECHSEL auf ein Index-Symbol — waehlt der Nutzer waehrend
+  // der Sitzung bewusst Kerzen, bleibt das bis zum naechsten Symbolwechsel.
+  if (sym.type === "stooq") state.chartType = "area";
   // Kraken: Falls aktives TF kein krakenInterval hat (z.B. 1M), auf 1D wechseln
   if (sym.type === "kraken" && !state.timeframe.krakenInterval) {
     state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
@@ -5152,7 +5160,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m28";
+const TV_BUILD = "m29";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

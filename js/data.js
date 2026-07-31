@@ -382,23 +382,39 @@ const DataLayer = {
     const res = await fetch(base + CONFIG.M2_ENDPOINT);
     if (!res.ok) throw new Error(`Worker HTTP ${res.status} für M2`);
     const text = await res.text();
+    // Zweite Verteidigungslinie gegen einen Fehler wie im Juli 2026: falsche
+    // Einheiten im Worker liessen eine einzelne, absurd grosse Zahl als
+    // flache Linie im Chart landen. Diese Grenze faengt JEDE zukuenftige
+    // Fehlrechnung ab, unabhaengig von ihrer Ursache — realistisches
+    // globales M2 liegt zwischen 1'000 und 1'000'000 Mrd. USD.
+    const M2_PLAUSIBEL_MIN = 1000, M2_PLAUSIBEL_MAX = 1000000;
     const out = [];
     const push = (d, v) => {
       const ts = Date.parse(String(d).length <= 10 ? String(d) + "T00:00:00Z" : d);
       const num = parseFloat(v);
-      if (isFinite(ts) && isFinite(num)) out.push({ timestamp: ts, value: num });
+      if (isFinite(ts) && isFinite(num) && num >= M2_PLAUSIBEL_MIN && num <= M2_PLAUSIBEL_MAX) {
+        out.push({ timestamp: ts, value: num });
+      }
     };
     try {
       const json = JSON.parse(text);
       const rows = Array.isArray(json) ? json : (json.data || json.history || []);
       rows.forEach(r => push(r.date ?? r.d ?? r[0], r.value ?? r.v ?? r.close ?? r[1]));
     } catch (_) {
+      // Nur echte CSV verarbeiten. Ohne diese Pruefung wurde bei einer
+      // HTML-Fehlerseite (z.B. eine Bot-Challenge oder ein generischer
+      // Server-Fehler) versucht, JEDE Zeile als "Datum,Wert" zu lesen —
+      // parseFloat kann aus beliebigem Text eine Zahl herausschneiden,
+      // ohne dass diese irgendeine Bedeutung haette.
+      if (!/^date,value/i.test(text.trim())) {
+        throw new Error(`M2: keine CSV erhalten (${text.slice(0, 100)})`);
+      }
       text.trim().split(/\r?\n/).forEach(line => {
         const p = line.split(",");
         if (p.length >= 2 && p[0].toLowerCase() !== "date") push(p[0], p[1]);
       });
     }
-    if (!out.length) throw new Error("Keine M2-Daten erhalten");
+    if (!out.length) throw new Error("Keine plausiblen M2-Daten erhalten");
     out.sort((a, b) => a.timestamp - b.timestamp);
     return out;
   },
