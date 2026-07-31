@@ -786,7 +786,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
    Desktop läuft dieser Code nie, das DOM bleibt dort unverändert.
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root { --tv-build: "m24"; }
+:root { --tv-build: "m25"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -902,12 +902,19 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   }
   .tb-row {
     display: flex !important; align-items: center; gap: 5px;
-    padding: 5px 8px; min-height: 38px;
+    /* Rechts denselben Abstand wie links — inklusive Notch-Bereich. Der
+       Innenabstand rechts geht in einem waagrecht scrollenden Flex-Container
+       am Ende verloren; ::after haelt ihn als echtes Element offen. */
+    padding: 5px calc(8px + env(safe-area-inset-right)) 5px calc(8px + env(safe-area-inset-left));
+    min-height: 38px;
     overflow-x: auto; overflow-y: visible;
     scrollbar-width: none; -webkit-overflow-scrolling: touch;
   }
   .tb-row::-webkit-scrollbar { display: none; }
   .tb-row > * { flex-shrink: 0; }
+  .tb-row::after {
+    content: ""; flex: 0 0 calc(8px + env(safe-area-inset-right)); align-self: stretch;
+  }
   #tbRow2 { border-top: 1px solid rgba(143,163,184,.12); }
   .tb-gap { flex: 1 1 auto; min-width: 8px; }
 

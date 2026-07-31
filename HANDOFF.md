@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 29. Juli 2026 · Build m24**
+**Stand: 29. Juli 2026 · Build m25**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -78,7 +78,7 @@ Top-Level-`const` verwirft und `CONFIG` dann unsichtbar bleibt),
 (Prüfung 3), `t-mobile.js` (Prüfung 4 + Zieltests, 44 Prüfpunkte), `t-m18.js` (18),
 `t-m19.js` (23), `t-m20.js` (31), `t-m21.js` (27, asynchron),
 `t-tokens.js` (Prüfung 5), `t-m22.js` (26), `t-m23.js` (26), `t-m24.js` (24), asynchron.
-`t-compat.js` prueft alte Drei-Punkt-Zeichnungen (6).
+`t-m25.js` (47). `t-compat.js` prueft alte Drei-Punkt-Zeichnungen (6).
 Rückwärtskompatibilität der Drei-Punkt-Zeichnungen: eigener Lauf, 5 Punkte.
 Der Canvas-Stub protokolliert `moveTo`/`lineTo`, damit Tests das gezeichnete
 Fadenkreuz auslesen können. `chart.setLoadDataCallback` muss im Stub stehen.
@@ -105,14 +105,14 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m24)
+## Datei-MD5 (Build m25)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | 56710281c600fd75c8f2aec3e10f7259 | 1073 |
-| style.css | 6e94e7ca5c9faed861bb46edf39f41f6 | 1348 |
-| app.js | e1af30e78983a778e18d05feff869034 | 5959 |
-| overlays.js | dacf9bb22d9e56d2ad2857f5a20e4e2c | 1145 |
+| index.html | e20eedd40a89e97a512858abcd7c3641 | 1110 |
+| style.css | 46ba5981ec07324f412884c2192d6a14 | 1355 |
+| app.js | 1ca5bb6854945d1b23d0435d8c84bbf4 | 6142 |
+| overlays.js | 6b3d89df6b0963cd948987e32209253a | 1152 |
 | overlays.js | 41863e842e40478db3326d46156c2b89 | 1075 |
 | manifest.webmanifest | f00d4e5b6341e6400f7b5dfb48b2e667 | 11 |
 | config.js | fc6cff7fab290a246c255349f13a8fd8 | 384 |
@@ -125,9 +125,9 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 
 ## Build-Abgleich — zuerst prüfen, wenn etwas „nicht wirkt"
 
-- `style.css`: `:root { --tv-build: "m24" }`
-- `app.js`: `const TV_BUILD = "m24"`
-- `index.html`: alle Verweise mit `?v=m24`
+- `style.css`: `:root { --tv-build: "m25" }`
+- `app.js`: `const TV_BUILD = "m25"`
+- `index.html`: alle Verweise mit `?v=m25`
 
 Beim Start liest das JS die CSS-Kennung aus und meldet grün oder warnt.
 **Bei jeder Auslieferung an allen drei Stellen erhöhen.**
@@ -210,6 +210,75 @@ Anker auf demselben Zeitstempel, also auf einer einzigen senkrechten Linie.
 neben der Ankerlinie und wurde nie erkannt. Als Rangmass dient der
 senkrechte Abstand zur nächsten der drei waagrechten Linien — sonst würde
 bei Überschneidung immer die Zeichnung mit dem grösseren Kasten gewinnen.
+
+## Vergleichsmodus  (m25)
+
+**Boersen-Metadaten gingen verloren.** `addCompareAsset` baute den Eintrag als
+`{ id, label, color, data, hidden }` — ohne `type`, `bybitSymbol`,
+`krakenPair`, `coinbaseProduct`. `refreshCompareData` fand kein
+`entry.type === "bybit"`, fiel in den Binance-Zweig und fragte dort eine id
+wie `AEROUSDT_BY` ab, die es nicht gibt. Betraf **alle** Nicht-Binance-Paare,
+nicht nur AERO. Jetzt `{ ...sym, color, data, hidden }`.
+Die Fehlermeldung nennt seither den Grund statt nur "fehlgeschlagen".
+
+**Zeichnungen blieben sichtbar.** Zwei Lecks:
+1. `restoreDrawings` lief auch im Vergleichsmodus — beim Start nach
+   `loadData()` und beim Laden eines Layouts — und holte zurueck, was
+   `applyCompareIndicator` eben entfernt hatte.
+2. WAEHREND des Vergleichs gezeichnete Overlays wurden nie versteckt:
+   `_hiddenDrawingIds` erfasst nur den Bestand BEIM EINTRITT.
+
+Jetzt steigt `restoreDrawings` im Vergleichsmodus aus (merkt die Liste nur
+vor) und `registerDrawing` nimmt eine neue Zeichnung sofort vom Chart. Der
+Merker heisst `state._drawingsHidden` — eine Id-Liste taugt nicht, weil
+Zeichnungen aus Fall 2 nie eine Chart-Id bekommen.
+
+**Senkrechter Zoom.** Die Prozent-Skala wird bei jedem Neuzeichnen frisch aus
+den sichtbaren Werten berechnet — ein Y-Zug bewegte deshalb nur das Raster im
+Hintergrund. `state.compareScale` haelt den Nutzer-Zoom fest, `drawCompare`
+wendet ihn um die Mitte an, und der Y-Zug schreibt ihn relativ zum Startwert
+(`base.__cmpScale`), sonst driftet er pro Frame. Doppeltipp auf die Achse
+setzt beides zurueck.
+
+## Long/Short: eigenes Stilmenue  (m25)
+
+`#posMenu`, bewusst **nicht** eine Erweiterung von `#overlayMenu`: das ist auf
+Linien zugeschnitten (Farbe, Breite, gestrichelt) und gilt fuer ALLE
+Zeichnungen — eine Aenderung dort haette jedes andere Werkzeug mitverdreht.
+Inhalt: Farbe Stop-Bereich, Farbe Ziel-Bereich, Sichtbarkeitsregler.
+`openOverlayMenu` leitet `positionTool` um. Werte landen in `extendData`
+(`stopColor`, `targetColor`, `zoneOpacity`) und werden mitgespeichert;
+`renderPosition` liest sie ueber `hexA()`.
+
+## Desktop zeichnet Long/Short wie das Handy  (m25)
+
+> **`startMobilePointTool` hoert ausschliesslich auf Beruehrungen** — null
+> Maus-Listener. Die Richtungswahl auf dem Desktop haette in ein Werkzeug
+> gefuehrt, das nie eine Eingabe bekommt.
+
+Deshalb `placePositionByClick()`: einmaliger `mousedown` auf dem Chart setzt
+den Einstieg, Escape bricht ab, die Preisskala ist ausgenommen. Beide Wege
+teilen sich `expandPositionPoints(dir, entry)` — sonst laufen 1 % / 2 %
+zwischen Handy und Desktop auseinander. Die Richtungswahl erscheint auf dem
+Handy ueber dem Knopf, auf dem Desktop als Dropdown darunter.
+
+## Magnet: nur noch aus/ein  (m25)
+
+Drei Stufen waren mit dem Finger nicht unterscheidbar. `state.magnetMode`
+kennt nur `"normal"` und `"strong_magnet"` (Name bleibt, KLineCharts erwartet
+ihn so), Fangbereich immer 40 px. Gespeicherte Arbeitsflaechen mit
+`"weak_magnet"` werden beim Start migriert.
+
+Symbole: Magnet ist ein aufrechtes gefuelltes Hufeisen mit Blitz, Pol-Kerben
+in `var(--bg-raised)`. Smart Money ist ein **Geldsack** (angesammelte
+Liquiditaet) statt der frueheren zwei Rechtecke.
+
+## Pruefung 2 kennt drei beabsichtigt geaenderte Zweige
+
+`#drawbar` (m22), `#smcTrigger` und `#posMenu` (m25). Sie werden **ganz
+ausgelassen**, nicht durch einen Platzhalter ersetzt: ein neu eingefuegtes
+Element verschiebt sonst die gesamte Restliste und erzeugt Hunderte
+Scheinabweichungen. Ausserhalb davon: 1337 Knoten, unveraendert.
 
 ## Kastenbreite: KEIN vierter Punkt  (m24 — Neubau)
 

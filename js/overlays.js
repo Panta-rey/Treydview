@@ -794,12 +794,19 @@
       const reward = target != null ? Math.abs(target - entry) : null;
       const rr = (risk && reward) ? reward / risk : null;
 
+      // Flaechenfarben und Deckkraft kommen aus extendData, damit das
+      // eigene Stilmenue sie aendern kann. Ohne Angabe die bisherigen Werte.
+      const ed = overlay.extendData || {};
+      const stopCol   = ed.stopColor   || "#d05e5e";
+      const targetCol = ed.targetColor || "#3fb68b";
+      const zoneAlpha = (ed.zoneOpacity != null ? ed.zoneOpacity : 10) / 100;
+
       // Risiko-Zone (Einstieg -> Stop)
       if (cStop) {
         figs.push({
           type: "rect",
           attrs: { x: x0, y: Math.min(cEntry.y, cStop.y), width: x1 - x0, height: Math.abs(cStop.y - cEntry.y) },
-          styles: { style: "fill", color: "rgba(208,94,94,0.10)" },
+          styles: { style: "fill", color: hexA(stopCol, zoneAlpha) },
         });
       }
       // Gewinn-Zone (Einstieg -> Ziel)
@@ -807,7 +814,7 @@
         figs.push({
           type: "rect",
           attrs: { x: x0, y: Math.min(cEntry.y, cTarget.y), width: x1 - x0, height: Math.abs(cTarget.y - cEntry.y) },
-          styles: { style: "fill", color: "rgba(63,182,139,0.10)" },
+          styles: { style: "fill", color: hexA(targetCol, zoneAlpha) },
         });
       }
 
@@ -831,17 +838,17 @@
       if (selected) figs.push(chip(cEntry.y, `Einstieg ${fmtPrice(entry)}`, "#9aa5b1"));
 
       if (cStop) {
-        figs.push(line(cStop.y, "rgba(208,94,94,0.9)"));
+        figs.push(line(cStop.y, hexA(stopCol, 0.9)));
         if (selected) {
           const rPct = ((Math.abs(entry - stop) / entry) * 100).toFixed(2);
-          figs.push(chip(cStop.y, `Stop ${fmtPrice(stop)}  \u2212${rPct}%`, "#d05e5e"));
+          figs.push(chip(cStop.y, `Stop ${fmtPrice(stop)}  \u2212${rPct}%`, stopCol));
         }
       }
       if (cTarget) {
-        figs.push(line(cTarget.y, "rgba(63,182,139,0.9)"));
+        figs.push(line(cTarget.y, hexA(targetCol, 0.9)));
         if (selected) {
           const gPct = ((Math.abs(target - entry) / entry) * 100).toFixed(2);
-          figs.push(chip(cTarget.y, `Ziel ${fmtPrice(target)}  +${gPct}%`, "#3fb68b"));
+          figs.push(chip(cTarget.y, `Ziel ${fmtPrice(target)}  +${gPct}%`, targetCol));
         }
       }
 
@@ -895,8 +902,8 @@
             borderSize: 2,
           },
         });
-        dot(h.stop,   "#d05e5e");
-        dot(h.target, "#3fb68b");
+        dot(h.stop,   stopCol);
+        dot(h.target, targetCol);
         dot(h.width,  "#e8b64c");
       }
 

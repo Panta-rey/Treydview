@@ -14,11 +14,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m24">
-  <link rel="stylesheet" href="css/style.css?v=m24">
+  <link rel="manifest" href="manifest.webmanifest?v=m25">
+  <link rel="stylesheet" href="css/style.css?v=m25">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m24"></script>
+  <script src="js/lib/klinecharts.min.js?v=m25"></script>
 </head>
 <body>
 
@@ -125,13 +125,15 @@
            Praesentations-Attribut am Element schlaegt. Die Kerben an den Polen
            nehmen die Leistenfarbe und funktionieren so in beiden Themes. -->
       <svg viewBox="0 0 24 24" class="ab-icon" aria-hidden="true">
-        <g transform="rotate(-42 11.5 14.5)">
-          <path d="M6.0 8.2 V13.2 a5.4 5.4 0 0 0 10.8 0 V8.2"
-                style="fill:none;stroke:currentColor" stroke-width="3.6" stroke-linecap="butt"/>
-          <path d="M6.0 9.7 H9.6"  style="fill:none;stroke:var(--bg-raised)" stroke-width="1.4"/>
-          <path d="M13.2 9.7 H16.8" style="fill:none;stroke:var(--bg-raised)" stroke-width="1.4"/>
-        </g>
-        <path d="M19.0 1.6 L22.8 1.6 L20.7 4.6 L22.6 4.6 L17.4 9.6 L19.4 5.4 L17.2 5.4 Z"
+        <!-- Hufeisen mit Blitz. Gefuellt, deshalb Inline-style: die CSS-Regel
+             .ab-icon { fill:none; stroke:currentColor } schlaegt sonst jedes
+             Praesentations-Attribut. Die Pol-Kerben nehmen die Leistenfarbe
+             und wirken so als Aussparung — in beiden Themes richtig. -->
+        <path d="M4 3 L9.5 3 L9.5 13 Q9.5 18.5 12 18.5 Q14.5 18.5 14.5 13 L14.5 3 L20 3 L20 13
+                 Q20 22 12 22 Q4 22 4 13 Z" style="fill:currentColor;stroke:none"/>
+        <rect x="4" y="2" width="5.5" height="3.6" style="fill:var(--bg-raised);stroke:none"/>
+        <rect x="14.5" y="2" width="5.5" height="3.6" style="fill:var(--bg-raised);stroke:none"/>
+        <path d="M15.5 0 L21 0 L18.5 4.5 L21.5 4.5 L14.5 11.5 L17.5 6 L14 6 Z"
               style="fill:currentColor;stroke:none"/>
       </svg>
     </button>
@@ -198,10 +200,20 @@
     <!-- Smart Money Concepts: FVG / Order Blocks -->
     <div class="dropdown" id="smcDropdown">
       <button class="action-btn" id="smcTrigger" title="Fair Value Gaps &amp; Order Blocks">
-        <svg viewBox="0 0 24 24" class="ab-icon">
-          <rect x="3" y="4" width="7" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="2"/>
-          <rect x="13" y="14" width="8" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="2"/>
-          <line x1="6.5" y1="9" x2="6.5" y2="14" stroke="currentColor" stroke-width="2" stroke-dasharray="2,2"/>
+        <svg viewBox="0 0 24 24" class="ab-icon" aria-hidden="true">
+          <!-- Geldsack: Smart Money ist angesammelte Liquiditaet. Linienfassung
+               passend zur uebrigen Garnitur. -->
+          <path d="M9 2.2 L15 2.2 L13.6 5.4 L10.4 5.4 Z"
+                fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+          <path d="M10.4 5.6 C6.5 7.4 3.6 11 3.6 14.6 C3.6 18.6 7.3 21.4 12 21.4
+                   C16.7 21.4 20.4 18.6 20.4 14.6 C20.4 11 17.5 7.4 13.6 5.6 Z"
+                fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+          <path d="M13.6 11.4 C13.6 10.5 12.9 10 12 10 C11.1 10 10.4 10.6 10.4 11.4
+                   C10.4 13.3 13.8 12.7 13.8 14.8 C13.8 15.7 13 16.3 12 16.3
+                   C11 16.3 10.2 15.8 10.2 14.9"
+                fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M12 8.9 V10 M12 16.3 V17.4"
+                fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
         </svg>
       </button>
       <div class="dd-panel dd-panel--right" id="smcPanel">
@@ -1007,6 +1019,31 @@
 </div>
 
 <!-- FRVP-Kontextmenü -->
+<!-- Eigenes Stilmenü für Long/Short. Bewusst NICHT das gemeinsame
+     #overlayMenu: das ist auf Linien zugeschnitten (Farbe, Breite,
+     gestrichelt) und gilt für alle Zeichnungen — eine Anpassung dort
+     würde jedes andere Werkzeug mitverändern. Die Position hat keine
+     Linie im üblichen Sinn, sondern zwei Flächen. -->
+<div class="frvp-menu hidden" id="posMenu">
+  <div class="frvp-menu-header">Long / Short</div>
+  <button class="fib-close" id="posMenuClose" title="Schliessen">&times;</button>
+  <div class="frvp-row">
+    <label>Stop-Bereich</label>
+    <input type="color" id="posStopColor" value="#d05e5e">
+  </div>
+  <div class="frvp-row">
+    <label>Ziel-Bereich</label>
+    <input type="color" id="posTargetColor" value="#3fb68b">
+  </div>
+  <div class="frvp-row">
+    <label>Sichtbarkeit</label>
+    <div class="frvp-opacity">
+      <input type="range" id="posOpacity" min="0" max="60" value="10">
+      <span id="posOpacityVal">10%</span>
+    </div>
+  </div>
+</div>
+
 <div class="frvp-menu hidden" id="frvpMenu">
   <div class="frvp-menu-header">FRVP Einstellungen</div>
   <div class="frvp-row">
@@ -1059,15 +1096,15 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m24"></script>
-<script src="js/indicators.js?v=m24"></script>
-<script src="js/overlays.js?v=m24"></script>
-<script src="js/data.js?v=m24"></script>
-<script src="js/settings.js?v=m24"></script>
-<script src="js/derivatives.js?v=m24"></script>
-<script src="js/gridbot.js?v=m24"></script>
-<script src="js/patterns.js?v=m24"></script>
-<script src="js/smc.js?v=m24"></script>
-<script src="js/app.js?v=m24"></script>
+<script src="js/config.js?v=m25"></script>
+<script src="js/indicators.js?v=m25"></script>
+<script src="js/overlays.js?v=m25"></script>
+<script src="js/data.js?v=m25"></script>
+<script src="js/settings.js?v=m25"></script>
+<script src="js/derivatives.js?v=m25"></script>
+<script src="js/gridbot.js?v=m25"></script>
+<script src="js/patterns.js?v=m25"></script>
+<script src="js/smc.js?v=m25"></script>
+<script src="js/app.js?v=m25"></script>
 </body>
 </html>

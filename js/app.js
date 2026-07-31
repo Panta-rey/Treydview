@@ -32,7 +32,11 @@ const state = {
   vrvpCanvas:  null,
   tooltipsVisible: true,
   subPaneIds:  {},   // indKey -> paneId (von createIndicator zurückgegeben)
-  magnetMode:  "normal",   // normal | weak_magnet | strong_magnet
+  // Nur zwei Zustaende: "normal" (aus) und "strong_magnet" (ein). Die
+  // frueheren drei Stufen (aus/schwach/stark) waren beim Zeichnen mit dem
+  // Finger nicht unterscheidbar. Der Name "strong_magnet" bleibt, weil
+  // KLineCharts ihn im Overlay-Modus so erwartet.
+  magnetMode:  "normal",   // normal | strong_magnet
   pinTool:     false,      // Werkzeug nach Zeichnung aktiv lassen
   drawingId:   null,       // Overlay-ID während des Zeichnens (für ESC)
   selectedOverlayId: null, // zuletzt selektiertes Overlay (für Entf)
@@ -40,6 +44,10 @@ const state = {
   legendCollapsed: _ws?.legendCollapsed || false,
   drawStyle:   _ws?.drawStyle || { color: "#e8b64c", lineStyle: "solid", opacity: 100, width: 1 },
   compareAssets: [],   // [{ id, label, color, data: [{timestamp, close}] }]
+  // Senkrechter Zoom im Vergleichsmodus. Die Prozent-Skala wird bei jedem
+  // Neuzeichnen automatisch berechnet — ohne diesen Faktor haette ein
+  // Y-Zug am Chart nur das Raster bewegt, die Linien aber nicht.
+  compareScale: 1,
 
   // Watchlist
   // Mehrere Watchlisten. Migration: ein altes flaches Array wird zur
@@ -853,7 +861,13 @@ async function addCompareAsset(sym) {
     return;
   }
   const color = COMPARE_COLORS[state.compareAssets.length];
-  const entry = { id: sym.id, label: sym.label, color, data: [], hidden: false };
+  // WICHTIG: das ganze Symbol uebernehmen, nicht nur id und label.
+  // refreshCompareData entscheidet ueber entry.type, welche Boerse gefragt
+  // wird, und braucht dazu bybitSymbol / krakenPair / coinbaseProduct.
+  // Vorher enthielt entry nur id+label — jede Nicht-Binance-Boerse landete
+  // im Binance-Zweig und wurde mit einer id wie "AEROUSDT_BY" abgefragt,
+  // die es dort nicht gibt. Ergebnis: "Vergleichsdaten ... fehlgeschlagen".
+  const entry = { ...sym, color, data: [], hidden: false };
   state.compareAssets.push(entry);
   renderCompareActive();
   renderCompareList(document.getElementById("compareSearch")?.value || "");
@@ -893,12 +907,18 @@ async function refreshCompareData(entry) {
     } else if (entry.type === "bybit") {
       candles = await DataLayer.fetchBybitKlines(entry.bybitSymbol, tf.bybitInterval || "D", CONFIG.CANDLE_LIMIT);
     } else {
-      candles = await DataLayer.fetchBinanceKlines(entry.id, tf.binanceInterval, CONFIG.CANDLE_LIMIT);
+      // Binance nutzt das reine Symbol. Sicherheitsnetz: sollte der Typ
+      // einmal fehlen, wird nicht blind die interne id verschickt.
+      const sym = entry.binanceSymbol || entry.id;
+      candles = await DataLayer.fetchBinanceKlines(sym, tf.binanceInterval, CONFIG.CANDLE_LIMIT);
     }
+    if (!candles || !candles.length) throw new Error("keine Kerzen erhalten");
     entry.data = candles.map(c => ({ timestamp: c.timestamp, close: c.close }));
     window.__tvCompareAssets = state.compareAssets;
   } catch (e) {
-    setStatus(`Vergleichsdaten ${entry.label} fehlgeschlagen`);
+    // Grund mitgeben — "fehlgeschlagen" allein war beim Suchen nutzlos.
+    setStatus(`Vergleichsdaten ${entry.label} fehlgeschlagen: ${e && e.message ? e.message : e}`);
+    console.warn("[TreydView] Vergleich", entry.label, "type=", entry.type, e);
   }
 }
 
@@ -987,6 +1007,13 @@ function drawCompare() {
   if (!isFinite(pMin) || !isFinite(pMax)) return;
   const pad = Math.max(5, (pMax - pMin) * 0.05);
   pMin -= pad; pMax += pad;
+  // Senkrechter Zoom des Nutzers um die Mitte herum. Faktor > 1 = weiter
+  // herausgezoomt, genau wie beim Ziehen an der Preisachse.
+  const sc = state.compareScale > 0 ? state.compareScale : 1;
+  if (sc !== 1) {
+    const mid = (pMin + pMax) / 2, half = ((pMax - pMin) / 2) * sc;
+    pMin = mid - half; pMax = mid + half;
+  }
   const pRange = pMax - pMin || 1;
 
   // Preis → Y-Pixel innerhalb des Pane
@@ -1149,6 +1176,7 @@ function applyCompareIndicator() {
     // sie laufen auf Preis-Basis und hätten im %-Vergleich falsche Positionen.
     // IDs merken für Wiederherstellung.
     state._hiddenDrawingIds = [];
+    state._drawingsHidden = true;
     (state.drawings || []).forEach(d => {
       try { chart.removeOverlay(d.id); state._hiddenDrawingIds.push(d.id); } catch (e) {}
     });
@@ -1175,8 +1203,12 @@ function applyCompareIndicator() {
     });
     if (state.gbOpen && !state.gbCollapsed) { try { gbDrawBands(); } catch (e) {} }
     // Gespeicherte Overlays (FRVP, Zeichnungen) wiederherstellen
-    if (state._hiddenDrawingIds && state._hiddenDrawingIds.length) {
+    // Merker statt Id-Liste: Zeichnungen, die WAEHREND des Vergleichs
+    // entstanden sind, haben nie eine Chart-Id bekommen und fehlten
+    // deshalb in _hiddenDrawingIds.
+    if (state._drawingsHidden || (state._hiddenDrawingIds && state._hiddenDrawingIds.length)) {
       state._hiddenDrawingIds = [];
+      state._drawingsHidden = false;
       try { restoreDrawings(state.drawings); } catch (e) {}
     }
     scheduleTagDraw();
@@ -1562,6 +1594,20 @@ const SAVED_OVERLAYS = new Set([
 
 function registerDrawing(id, name, points, extendData, styles) {
   if (!SAVED_OVERLAYS.has(name)) return;
+  // Waehrend des Vergleichs gezeichnet: merken, aber sofort vom Chart
+  // nehmen. Sonst blieb genau diese eine Zeichnung sichtbar, weil
+  // applyCompareIndicator nur die BEIM EINTRITT vorhandenen entfernt hat.
+  if (state.compareAssets && state.compareAssets.length > 0) {
+    state.drawings.push({
+      id, name,
+      points: points.map(p => ({ timestamp: p.timestamp, value: p.value })),
+      extendData: extendData ?? null, styles: styles ?? null,
+    });
+    state._drawingsHidden = true;
+    try { chart.removeOverlay(id); } catch (e) {}
+    saveWorkspace();
+    return;
+  }
   state.drawings.push({
     id, name,
     points: points.map(p => ({ timestamp: p.timestamp, value: p.value })),
@@ -1827,6 +1873,16 @@ function captureDrawing(id) {
 // Gespeicherte Zeichnungen wiederherstellen
 function restoreDrawings(list) {
   if (!list || !list.length) return;
+  // Im Vergleichsmodus gehoert NICHTS auf den Chart: die Zeichnungen haengen
+  // an Kurswerten und saessen auf der Prozent-Skala voellig falsch.
+  // Frueher lief dieser Pfad trotzdem — beim Start nach loadData() und beim
+  // Laden eines Layouts — und holte die Zeichnungen zurueck, nachdem
+  // applyCompareIndicator sie eben entfernt hatte.
+  if (state.compareAssets && state.compareAssets.length > 0) {
+    state.drawings = list.map(d => ({ ...d }));
+    state._drawingsHidden = true;
+    return;
+  }
   state.drawings = [];
   list.forEach(d => {
     try {
@@ -2141,7 +2197,7 @@ function buildOverlayConfig(overlayName) {
     // Default 8 ist so eng, dass sich nur das Einrasten nahe der Kerzenmitte
     // bemerkbar macht. Grösserer Fangbereich = spürbares Einrasten an allen
     // vier Punkten.
-    modeSensitivity: state.magnetMode === "strong_magnet" ? 40 : 18,
+    modeSensitivity: 40,
     styles: currentOverlayStyles(),
     onDrawEnd: (e) => {
       // simpleAnnotation liest seinen Text aus extendData. Ohne den bleibt
@@ -2246,7 +2302,7 @@ function startTool(overlayName) {
 // Darum nie blind entfernen, sondern immer aus dem tatsaechlichen Zustand
 // ALLER Menues ableiten — sonst reisst das Schliessen eines Menues den
 // Abdunkler weg, waehrend ein anderes noch offen ist.
-const TV_MENU_IDS = ["overlayMenu", "frvpMenu", "fibMenu"];
+const TV_MENU_IDS = ["overlayMenu", "frvpMenu", "fibMenu", "posMenu"];
 function syncMenuOpen() {
   const anyOpen = TV_MENU_IDS.some((id) => {
     const el = document.getElementById(id);
@@ -2300,7 +2356,67 @@ function menuPosition(event, menuW = 130, menuH = 70) {
   };
 }
 
+// Long/Short hat keine Linie im ueblichen Sinn, sondern zwei Flaechen.
+// Deshalb ein eigenes Menue statt einer Erweiterung von #overlayMenu — das
+// gilt fuer ALLE Zeichnungen und wuerde jedes andere Werkzeug mitveraendern.
+function openPositionMenu(overlay, event) {
+  const menu = document.getElementById("posMenu");
+  if (!menu) return;
+  const { x, y } = menuPosition(event, 210, 190);
+  placeMenu(menu, x, y);
+  syncMenuOpen();
+
+  const ed = overlay.extendData || {};
+  const stopEl = document.getElementById("posStopColor");
+  const tgtEl  = document.getElementById("posTargetColor");
+  const opEl   = document.getElementById("posOpacity");
+  const opVal  = document.getElementById("posOpacityVal");
+  stopEl.value = ed.stopColor   || "#d05e5e";
+  tgtEl.value  = ed.targetColor || "#3fb68b";
+  opEl.value   = ed.zoneOpacity != null ? ed.zoneOpacity : 10;
+  opVal.textContent = opEl.value + "%";
+
+  // Live anwenden, kein separater Uebernehmen-Knopf.
+  const apply = () => {
+    opVal.textContent = opEl.value + "%";
+    try {
+      const cur = chart.getOverlayById(overlay.id);
+      const ext = {
+        ...(cur && cur.extendData ? cur.extendData : {}),
+        stopColor: stopEl.value,
+        targetColor: tgtEl.value,
+        zoneOpacity: parseInt(opEl.value, 10),
+      };
+      chart.overrideOverlay({ id: overlay.id, extendData: ext });
+      const rec = state.drawings.find(d => d.id === overlay.id);
+      if (rec) { rec.extendData = ext; saveWorkspace(); }
+    } catch (e) {}
+  };
+  stopEl.oninput = apply;
+  tgtEl.oninput  = apply;
+  opEl.oninput   = apply;
+}
+
+quiet(() => {
+  const x = document.getElementById("posMenuClose");
+  const m = document.getElementById("posMenu");
+  if (!x || !m) return;
+  x.addEventListener("click", (e) => {
+    e.stopPropagation();
+    m.classList.add("hidden");
+    syncMenuOpen();
+  });
+  document.addEventListener("click", (e) => {
+    if (!m.classList.contains("hidden") && !m.contains(e.target)) {
+      m.classList.add("hidden");
+      syncMenuOpen();
+    }
+  });
+}, "posMenu close");
+
 function openOverlayMenu(overlay, event) {
+  // Long/Short bekommt sein eigenes, schlankes Menue.
+  if (overlay && overlay.name === "positionTool") return openPositionMenu(overlay, event);
   const menu = document.getElementById("overlayMenu");
   if (!menu) return;
   const { x, y } = menuPosition(event, 190, 230);
@@ -2659,21 +2775,20 @@ function renderDrawbar() {
   // Magnet
   const magnet = document.createElement("button");
   magnet.className = "draw-cat-btn small" + (state.magnetMode !== "normal" ? " active" : "");
-  magnet.title = state.magnetMode === "normal" ? "Magnet: aus" : state.magnetMode === "weak_magnet" ? "Magnet: schwach" : "Magnet: stark";
+  magnet.title = state.magnetMode === "normal" ? "Magnet: aus" : "Magnet: ein";
   // Hufeisen mit Blitz, wie auf dem Handy. Farben als Inline-style, weil die
   // Kerben an den Polen die Leistenfarbe brauchen.
+  // Gleiches Hufeisen mit Blitz wie auf dem Handy.
   magnet.innerHTML = `<svg viewBox="0 0 24 24" style="width:20px;height:20px">
-    <g transform="rotate(-42 11.5 14.5)">
-      <path d="M6.0 8.2 V13.2 a5.4 5.4 0 0 0 10.8 0 V8.2"
-            style="fill:none;stroke:currentColor" stroke-width="3.6" stroke-linecap="butt"/>
-      <path d="M6.0 9.7 H9.6"  style="fill:none;stroke:var(--bg-raised)" stroke-width="1.4"/>
-      <path d="M13.2 9.7 H16.8" style="fill:none;stroke:var(--bg-raised)" stroke-width="1.4"/>
-    </g>
-    <path d="M19.0 1.6 L22.8 1.6 L20.7 4.6 L22.6 4.6 L17.4 9.6 L19.4 5.4 L17.2 5.4 Z"
+    <path d="M4 3 L9.5 3 L9.5 13 Q9.5 18.5 12 18.5 Q14.5 18.5 14.5 13 L14.5 3 L20 3 L20 13
+             Q20 22 12 22 Q4 22 4 13 Z" style="fill:currentColor;stroke:none"/>
+    <rect x="4" y="2" width="5.5" height="3.6" style="fill:var(--bg-raised);stroke:none"/>
+    <rect x="14.5" y="2" width="5.5" height="3.6" style="fill:var(--bg-raised);stroke:none"/>
+    <path d="M15.5 0 L21 0 L18.5 4.5 L21.5 4.5 L14.5 11.5 L17.5 6 L14 6 Z"
           style="fill:currentColor;stroke:none"/>
   </svg>`;
   magnet.addEventListener("click", () => {
-    state.magnetMode = state.magnetMode === "normal" ? "weak_magnet" : state.magnetMode === "weak_magnet" ? "strong_magnet" : "normal";
+    state.magnetMode = state.magnetMode === "normal" ? "strong_magnet" : "normal";
     renderDrawbar();
   });
   bar.appendChild(magnet);
@@ -2966,7 +3081,13 @@ quiet(() => {
       const now = Date.now();
       if (now - lastAxisTap < 300) {
         lastAxisTap = 0;
-        quiet(() => { autoScaleY(); setStatus("Preisachse zurückgesetzt"); }, "axis dbltap");
+        quiet(() => {
+          autoScaleY();
+          // Auch der Vergleichs-Zoom gehoert zurueckgesetzt.
+          state.compareScale = 1;
+          if (state.compareAssets.length > 0) { try { drawCompare(); } catch (e) {} }
+          setStatus("Preisachse zurückgesetzt");
+        }, "axis dbltap");
         return;
       }
       lastAxisTap = now;
@@ -2984,7 +3105,11 @@ quiet(() => {
         if (!r || r.range == null) return;
         // Kopie des Startzustands — alle Folgeschritte rechnen relativ dazu,
         // sonst driftet der Zoom bei jedem Frame weiter.
-        yDrag = { startY: t.pageY, base: Object.assign({}, r), yAxis };
+        // Der Vergleichs-Zoom wird ebenfalls relativ zum Startwert gerechnet,
+        // sonst driftet er bei jedem Frame weiter.
+        const b = Object.assign({}, r);
+        b.__cmpScale = state.compareScale > 0 ? state.compareScale : 1;
+        yDrag = { startY: t.pageY, base: b, yAxis };
       }, "yDrag start");
       return;
     }
@@ -3027,6 +3152,13 @@ quiet(() => {
         // löst keinen Redraw aus. (Desktop-Pfad macht exakt dasselbe.)
         chart.adjustPaneViewport(false, true, true, true);
         scheduleTagDraw();
+        // Im Vergleichsmodus haengen die Linien an einer EIGENEN
+        // Prozent-Skala. Ohne diesen Schritt bewegte sich beim Ziehen nur
+        // das Raster im Hintergrund, die Graphen blieben stehen.
+        if (state.compareAssets.length > 0) {
+          state.compareScale = (base.__cmpScale || 1) * scale;
+          try { drawCompare(); } catch (e) {}
+        }
       }, "yDrag move");
       return;
     }
@@ -4707,19 +4839,25 @@ document.getElementById("posToolTopBtn").addEventListener("click", () => {
     return;
   }
 
-  // Auf dem Handy zuerst die Richtung wählen: Einstieg, Stop und Ziel
-  // entstehen danach mit einem einzigen Tap. Am Desktop bleibt der
-  // bisherige Weg mit drei Klicks unverändert.
-  if (tvIsMobile()) {
-    const menu = document.getElementById("lsChoice");
-    if (menu) {
-      const r = btn.getBoundingClientRect();
-      const w = 152, h = 48;
-      menu.style.left = Math.max(6, Math.min(window.innerWidth - w - 6, r.left + r.width / 2 - w / 2)) + "px";
-      menu.style.top  = Math.max(6, r.top - h - 10) + "px";
-      menu.classList.remove("hidden");
-      return;
-    }
+  // Richtung zuerst waehlen, dann ein einziger Klick fuer den Einstieg —
+  // Stop und Ziel entstehen daraus (1 % / 2 %). Ab m25 auf BEIDEN Seiten
+  // gleich; der Desktop verlangte vorher drei Klicks.
+  //
+  // Unterschied nur in der Darstellung: auf dem Handy ein Popup ueber dem
+  // Knopf, auf dem Desktop ein Dropdown darunter — dort ist Platz und der
+  // Mauszeiger kommt von oben.
+  const menu = document.getElementById("lsChoice");
+  if (menu) {
+    const r = btn.getBoundingClientRect();
+    const w = 152, h = 48;
+    const left = Math.max(6, Math.min(window.innerWidth - w - 6, r.left + r.width / 2 - w / 2));
+    menu.style.left = left + "px";
+    menu.style.top = tvIsMobile()
+      ? Math.max(6, r.top - h - 10) + "px"          // Handy: darueber
+      : (r.bottom + 6) + "px";                       // Desktop: darunter
+    menu.classList.remove("hidden");
+    btn.classList.add("active");
+    return;
   }
 
   startTool("positionTool");
@@ -4735,15 +4873,11 @@ document.getElementById("gridBotBtn").addEventListener("click", () => gbToggleBa
     const update = () => {
       const on = state.magnetMode !== "normal";
       btn.classList.toggle("active", on);
-      btn.title = on
-        ? "Magnet: " + (state.magnetMode === "strong_magnet" ? "stark" : "schwach") + " (tippen zum Wechseln)"
-        : "Magnet: aus";
+      btn.title = on ? "Magnet: ein" : "Magnet: aus";
     };
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      state.magnetMode = state.magnetMode === "normal"      ? "weak_magnet"
-                       : state.magnetMode === "weak_magnet" ? "strong_magnet"
-                       : "normal";
+      state.magnetMode = state.magnetMode === "normal" ? "strong_magnet" : "normal";
       update();
       renderDrawbar();
     });
@@ -4880,7 +5014,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m24";
+const TV_BUILD = "m25";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -4964,6 +5098,9 @@ quiet(() => {
 // Verschieben und Zoomen gesperrt werden.
 quiet(() => {
   let locked = false;
+  // Arbeitsflaechen aus frueheren Builds koennen noch "weak_magnet" tragen.
+  if (state.magnetMode === "weak_magnet") state.magnetMode = "strong_magnet";
+
   const lock = (on) => {
     if (on === locked) return;
     locked = on;
@@ -5153,7 +5290,7 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
       }
       if (!closest) return null;
 
-      const tol = state.magnetMode === "strong_magnet" ? 40 : 18;
+      const tol = 40;   // nur noch ein Fangbereich, siehe state.magnetMode
       let best = null, bestPxDiff = tol;
       for (const val of [closest.open, closest.high, closest.low, closest.close]) {
         if (val == null) continue;
@@ -5412,6 +5549,68 @@ quiet(() => {
     } catch (e) { return risk; }
   }
 
+  // Aus dem einen gesetzten Einstieg die drei Punkte machen. Von beiden
+  // Wegen genutzt — Handy (Fadenkreuz) wie Desktop (Mausklick), damit sie
+  // nicht auseinanderlaufen koennen.
+  function expandPositionPoints(dir, entry) {
+    const risk   = minRiskForTouch(entry, Math.abs(entry.value) * STOP_PCT);
+    const reward = risk * (TARGET_PCT / STOP_PCT);
+    const stop   = dir === "long" ? entry.value - risk   : entry.value + risk;
+    const target = dir === "long" ? entry.value + reward : entry.value - reward;
+    return [
+      entry,
+      { timestamp: entry.timestamp, value: stop },
+      { timestamp: entry.timestamp, value: target },
+    ];
+  }
+
+  // Desktop: ein einzelner Mausklick setzt den Einstieg.
+  // startMobilePointTool horcht ausschliesslich auf Beruehrungen — auf dem
+  // Desktop kaeme dort nie ein Ereignis an und das Werkzeug bliebe haengen.
+  function placePositionByClick(dir, cfg) {
+    setStatus(dir === "long"
+      ? "Long: Einstieg anklicken"
+      : "Short: Einstieg anklicken");
+
+    const abbrechen = () => {
+      host.removeEventListener("mousedown", onDown, true);
+      document.removeEventListener("keydown", onKey, true);
+      state.activeTool = null;
+      renderDrawbar();
+      document.getElementById("posToolTopBtn")?.classList.remove("active");
+    };
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      abbrechen();
+      setStatus("Abgebrochen");
+    };
+    const onDown = (e) => {
+      if (e.button !== 0) return;
+      const rect = host.getBoundingClientRect();
+      const x = e.clientX - rect.left, y = e.clientY - rect.top;
+      if (x > rect.width - 80) return;          // Preisskala nicht bemalen
+      e.preventDefault(); e.stopPropagation();
+      abbrechen();
+      quiet(() => {
+        const v = chart.convertFromPixel({ x, y }, { paneId: "candle_pane" });
+        if (!v || v.timestamp == null || v.value == null) {
+          setStatus("Einstieg konnte nicht bestimmt werden");
+          return;
+        }
+        const entry = { timestamp: v.timestamp, value: v.value };
+        const id = chart.createOverlay({ ...cfg, points: expandPositionPoints(dir, entry) });
+        const oid = Array.isArray(id) ? id[0] : id;
+        if (oid) captureDrawing(oid);
+        state.selectedOverlayId = null;
+        setStatus(dir === "long"
+          ? "Long gesetzt — Position anklicken, dann Stop oder Ziel ziehen"
+          : "Short gesetzt — Position anklicken, dann Stop oder Ziel ziehen");
+      }, "placePositionByClick");
+    };
+    host.addEventListener("mousedown", onDown, true);
+    document.addEventListener("keydown", onKey, true);
+  }
+
   function placePosition(dir) {
     menu.classList.add("hidden");
     const cfg = buildOverlayConfig("positionTool");
@@ -5422,6 +5621,7 @@ quiet(() => {
     // mitlaufen und die Chart-Sperre nicht greifen.
     state.activeTool = "positionTool";
     renderDrawbar();
+    if (!tvIsMobile()) { placePositionByClick(dir, cfg); return; }
     startMobilePointTool("positionTool", cfg, {
       needPoints: 1,
       hint: dir === "long"
@@ -5430,24 +5630,7 @@ quiet(() => {
       // Aus dem einen gesetzten Einstieg werden drei Punkte gemacht:
       // [Einstieg, Stop, Ziel] — genau die Reihenfolge, die das
       // positionTool-Overlay erwartet.
-      expandPoints: (pts) => {
-        const entry = pts[0];
-        // Streckt das Sicherheitsnetz das Risiko, wächst die Belohnung im
-        // selben Verhältnis mit — 1:2 bleibt in jedem Fall erhalten.
-        const risk   = minRiskForTouch(entry, Math.abs(entry.value) * STOP_PCT);
-        const reward = risk * (TARGET_PCT / STOP_PCT);
-        const stop   = dir === "long" ? entry.value - risk   : entry.value + risk;
-        const target = dir === "long" ? entry.value + reward : entry.value - reward;
-
-        // Nur drei Punkte. Die Breite steckt als Kerzenanzahl in
-        // extendData — ein vierter Punkt mit Zukunfts-Zeitstempel liess
-        // sich nicht zuverlaessig in Pixel umrechnen.
-        return [
-          entry,
-          { timestamp: entry.timestamp, value: stop },
-          { timestamp: entry.timestamp, value: target },
-        ];
-      },
+      expandPoints: (pts) => expandPositionPoints(dir, pts[0]),
       done: () => {
         // Frisch gezeichnet heisst NICHT ausgewaehlt: sonst stehen
         // Beschriftungen, Kennzahlen und Griffe sofort im Bild, obwohl noch
