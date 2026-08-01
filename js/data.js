@@ -317,8 +317,22 @@ const DataLayer = {
     let rows;
     try {
       const json = JSON.parse(text);
-      if (Array.isArray(json.series)) {
-        // Das tatsächliche Format von /goldhistory: { series:[[ms,close],...] }.
+      if (Array.isArray(json.candles)) {
+        // Bevorzugt: echtes OHLC ([[ms,o,h,l,c,v],...]). Nur damit sind
+        // Kerzen sinnvoll. Der aeltere `series`-Zweig unten kennt nur
+        // Schlusskurse — dort ist jede Kerze ein koerperloser Strich.
+        rows = json.candles
+          .map(([ts, o, h, l, cl, v]) => (isFinite(ts) && isFinite(cl))
+            ? { timestamp: ts,
+                open:  isFinite(o) ? o : cl,
+                high:  isFinite(h) ? h : cl,
+                low:   isFinite(l) ? l : cl,
+                close: cl,
+                volume: isFinite(v) ? v : 0 }
+            : null)
+          .filter(Boolean);
+      } else if (Array.isArray(json.series)) {
+        // Rueckfall fuer aeltere Worker-Fassungen: { series:[[ms,close],...] }.
         // Tupel, keine benannten Felder — normalizeGoldRow passt hier nicht,
         // das erwartet ein Objekt mit date/close. Ohne diesen Zweig kam
         // json.data und json.history als undefined zurück, rows wurde null,

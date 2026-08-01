@@ -17,6 +17,20 @@
      Secret        →  Name:           SNAP_KEY      (optional, schützt /snapshot)
    ============================================================ */
 
+// ── Cache-Version ────────────────────────────────────────────────────────
+// JEDER KV-Schluessel traegt diese Kennung. Wird die Berechnung geaendert,
+// erhoehen — dann sind alle alten Eintraege sofort ungueltig, ohne dass
+// jemand von Hand aufraeumen muss.
+//
+// Warum das noetig ist: Die Schluessel hiessen frueher schlicht "m2",
+// "stooq_^spx" und "goldhistory", mit 24 Stunden Lebensdauer. Nach einer
+// Korrektur am Rechenweg lieferte der Worker deshalb bis zu einen ganzen
+// Tag lang weiter die ALTEN, falschen Werte — der Fix sah aus, als haette
+// er nicht gewirkt. Konkret: die fehlerhaften M2-Werte (Faktor 1e9 zu
+// gross) blieben im Cache und wurden vom Frontend als unplausibel
+// verworfen, mit der Meldung "Keine plausiblen M2-Daten erhalten".
+const CACHE_VERSION = "v2";
+
 const CORS = {
   "Access-Control-Allow-Origin":  "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -180,9 +194,9 @@ const GOLD_HISTORY_TTL_MS = 24 * 60 * 60 * 1000;
 // Stooq/LBMA-Historie. Falls ein anderes Projekt auf dieser Route explizit
 // die lange Historie braucht, muesste das separat geloest werden.
 //
-// Antwortform bewusst UNVERAENDERT: { series:[[ms,close],...], from, to,
-// n, _fetchedAt } — falls ein anderer Verbraucher dieses Format erwartet,
-// bleibt er unberuehrt. Nur die Quelle dahinter ist neu.
+// Antwortform ERWEITERT, nicht ersetzt: `series` bleibt wie gehabt
+// ([[ms,close],...]) fuer bestehende Verbraucher, `candles` kommt neu
+// hinzu ([[ms,o,h,l,c,v],...]) und erlaubt erstmals echte Kerzen.
 async function buildGoldHistory() {
   const quelle = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=max&interval=1d";
   const headers = {
@@ -208,23 +222,40 @@ async function buildGoldHistory() {
 
   const zeitstempel = result.timestamp || [];
   const q = result.indicators?.quote?.[0] || {};
-  const rows = [];
+  const rows = [];      // [[ms, close]]            — bisheriges Format
+  const kerzen = [];    // [[ms, o, h, l, c, v]]    — neu, fuer echte Kerzen
+  const r2 = (x) => Math.round(x * 100) / 100;
   for (let i = 0; i < zeitstempel.length; i++) {
-    const c = q.close?.[i];
-    if (c == null) continue;   // Feiertage/Luecken auslassen
-    rows.push([zeitstempel[i] * 1000, Math.round(c * 100) / 100]);
+    const cl = q.close?.[i];
+    if (cl == null) continue;   // Feiertage/Luecken auslassen
+    const ms = zeitstempel[i] * 1000;
+    rows.push([ms, r2(cl)]);
+    // Fehlt ein einzelner Teilwert, auf den Schlusskurs zurueckfallen —
+    // besser eine flache Kerze als gar keine an dieser Stelle.
+    const o = q.open?.[i]  ?? cl;
+    const h = q.high?.[i]  ?? cl;
+    const l = q.low?.[i]   ?? cl;
+    kerzen.push([ms, r2(o), r2(h), r2(l), r2(cl), q.volume?.[i] ?? 0]);
   }
   if (!rows.length) throw new Error("Yahoo Finance: 0 Gold-Kerzen erhalten");
   rows.sort((a, b) => a[0] - b[0]);
+  kerzen.sort((a, b) => a[0] - b[0]);
 
   const from = new Date(rows[0][0]).toISOString().slice(0, 10);
   const to   = new Date(rows[rows.length - 1][0]).toISOString().slice(0, 10);
-  return { series: rows, from, to, n: rows.length, _fetchedAt: new Date().toISOString() };
+  // `series` bleibt unveraendert, damit das andere Projekt (BTTF), das
+  // diese Route ebenfalls nutzt, nicht bricht. `candles` kommt zusaetzlich
+  // dazu — nur damit sind bei Gold echte Kerzen moeglich. Bisher enthielt
+  // die Antwort ausschliesslich Schlusskurse, jede Kerze waere also ein
+  // koerperloser Strich gewesen.
+  return { series: rows, candles: kerzen, from, to, n: rows.length,
+           _fetchedAt: new Date().toISOString() };
 }
 
 async function getGoldHistory(env) {
   let cached = null;
-  try { cached = JSON.parse(await env.PANTA.get("goldhistory")); } catch (_) {}
+  const goldKey = `goldhistory_${CACHE_VERSION}`;
+  try { cached = JSON.parse(await env.PANTA.get(goldKey)); } catch (_) {}
   if (cached && cached.data && (Date.now() - cached.ts) < GOLD_HISTORY_TTL_MS) return json(cached.data);
 
   let data;
@@ -237,7 +268,7 @@ async function getGoldHistory(env) {
     return json({ error: String(e && e.message || e) }, 500);
   }
 
-  try { await env.PANTA.put("goldhistory", JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
+  try { await env.PANTA.put(goldKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
   return json(data);
 }
 
@@ -363,7 +394,7 @@ async function getStooq(request, env) {
   // Nicht mehr zwingend: ohne FRED-Schluessel laeuft Yahoo trotzdem.
   const key = env.FRED_API_KEY || env.FRED_KEY;
 
-  const kvKey = `stooq_${s}`;
+  const kvKey = `stooq_${s}_${CACHE_VERSION}`;
   let cached = null;
   try { cached = JSON.parse(await env.PANTA.get(kvKey)); } catch (_) {}
   if (cached && cached.csv && (Date.now() - cached.ts) < STOOQ_TTL_MS) return csv(cached.csv);
@@ -501,7 +532,8 @@ async function getM2(env) {
 
   // KV-Cache prüfen
   let cached = null;
-  try { cached = JSON.parse(await env.PANTA.get("m2")); } catch (_) {}
+  const m2Key = `m2_${CACHE_VERSION}`;
+  try { cached = JSON.parse(await env.PANTA.get(m2Key)); } catch (_) {}
   if (cached && cached.ts && cached.csv && (Date.now() - cached.ts) < M2_TTL_MS)
     return csv(cached.csv);
 
@@ -509,7 +541,7 @@ async function getM2(env) {
   const text = "date,value\n" + zeilen.map(([d, v]) => `${d},${v.toFixed(2)}`).join("\n");
 
   // In KV cachen — 24h ausreichend für eine Monatsreihe.
-  try { await env.PANTA.put("m2", JSON.stringify({ ts: Date.now(), csv: text })); } catch (_) {}
+  try { await env.PANTA.put(m2Key, JSON.stringify({ ts: Date.now(), csv: text })); } catch (_) {}
 
   return csv(text);
 }
