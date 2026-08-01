@@ -21,8 +21,25 @@ function loadWorkspace() {
 
 const _ws = loadWorkspace();
 
+// Das gespeicherte Symbol ist ein ganzes OBJEKT, kein blosser Bezeichner.
+// Wurde es einmal gespeichert, blieben Aenderungen an CONFIG.DEFAULT_SYMBOLS
+// wirkungslos — der Browser lud weiter die eingefrorene alte Fassung, mit
+// veralteten oder fehlenden Feldern wie stooqSymbol oder type. Symptom:
+// ein Symbol funktioniert erst wieder, nachdem man es von Hand neu
+// auswaehlt, waehrend frisch gewaehlte Symbole sofort laufen.
+//
+// Deshalb: ueber die id gegen die aktuelle CONFIG abgleichen. Die
+// Definition aus config.js hat immer Vorrang; nur wenn die id dort nicht
+// mehr existiert (eigenes Symbol des Nutzers), bleibt die gespeicherte
+// Fassung erhalten.
+function _symbolAbgleichen(gespeichert) {
+  if (!gespeichert) return CONFIG.DEFAULT_SYMBOLS[0];
+  const aktuell = CONFIG.DEFAULT_SYMBOLS.find(s => s.id === gespeichert.id);
+  return aktuell || gespeichert;
+}
+
 const state = {
-  symbol:      _ws?.symbol || CONFIG.DEFAULT_SYMBOLS[0],
+  symbol:      _symbolAbgleichen(_ws?.symbol),
   timeframe:   CONFIG.TIMEFRAMES.find(t => t.id === (_ws?.timeframeId || "1d")) || CONFIG.TIMEFRAMES.find(t => t.id === "1d"),
   active:      new Set(_ws?.active || CONFIG.DEFAULT_ACTIVE),
   closeStream: null,
@@ -3534,14 +3551,13 @@ function switchSymbol(sym) {
   document.getElementById("assetLabel").textContent = sym.label;
   document.getElementById("assetPanel").classList.remove("open");
   if (sym.type === "worker" || sym.type === "stooq") state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
-  // Indizes: Kerzen als Standard waeren irrefuehrend. FRED liefert nur den
-  // Schlusskurs; Open/High/Low sind im Worker gleich Close gesetzt, damit
-  // das Datenformat stimmt — als Kerzen dargestellt saehe das ausschliesslich
-  // wie flache Doji-Kerzen aus. Linie ist hier nicht nur Geschmackssache,
-  // sondern die einzige Darstellung, die zur tatsaechlichen Datenlage passt.
-  // Wirkt nur beim WECHSEL auf ein Index-Symbol — waehlt der Nutzer waehrend
-  // der Sitzung bewusst Kerzen, bleibt das bis zum naechsten Symbolwechsel.
-  if (sym.type === "stooq") state.chartType = "area";
+  // Hinweis: In m29 wurde hier der Charttyp fuer Indizes auf "area"
+  // erzwungen, weil die damalige Quelle (FRED) nur Schlusskurse lieferte
+  // und Kerzen deshalb koerperlose Striche gewesen waeren. Seit der Worker
+  // primaer Yahoo abfragt, kommt echtes OHLC — Kerzen sind wieder sinnvoll,
+  // und die Wahl bleibt beim Nutzer. Faellt Yahoo aus und FRED springt ein,
+  // sind Kerzen wieder inhaltsleer; das ist der bewusst in Kauf genommene
+  // Preis dafuer, dass der Chart in dem Fall ueberhaupt Daten zeigt.
   // Kraken: Falls aktives TF kein krakenInterval hat (z.B. 1M), auf 1D wechseln
   if (sym.type === "kraken" && !state.timeframe.krakenInterval) {
     state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
@@ -5160,7 +5176,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m30";
+const TV_BUILD = "m31";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

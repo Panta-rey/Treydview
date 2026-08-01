@@ -279,32 +279,89 @@ async function getGoldHistory(env) {
 // KEIN eigener User-Agent, KEIN kuenstlicher Rate-Limit-Umgang noetig:
 // FRED ist eine oeffentliche US-Regierungs-API mit registriertem
 // Schluessel, kein Scraping-Ziel wie Stooq oder Yahoo.
-const FRED_INDEX_SERIEN = {
-  "^spx": "SP500",      // S&P 500 — bereits in buildMacro() erprobt
-  "^ndq": "NASDAQCOM",  // Nasdaq Composite (FRED fuehrt nur diese Variante,
-                         // keinen separaten Nasdaq-100-Index)
-  "^dji": "DJIA",        // Dow Jones Industrial Average
+// Zwei Quellen pro Index, in dieser Reihenfolge:
+//
+//   1. YAHOO  — liefert echtes OHLC. Nur damit sind Kerzen sinnvoll:
+//               FRED veroeffentlicht fuer Indizes ausschliesslich
+//               Schlusskurse, dort waere jede Kerze ein Strich ohne
+//               Koerper und Docht.
+//   2. FRED   — nur Schlusskurse, dafuer die bewaehrte Quelle. Springt
+//               ein, wenn Yahoo mit 429 blockiert.
+//
+// Faellt Yahoo aus, bleibt der Chart also nutzbar (als Linie) statt leer.
+// Das Antwortformat ist in beiden Faellen dasselbe.
+const INDEX_QUELLEN = {
+  "^spx": { yahoo: "^GSPC",  fred: "SP500"     },   // S&P 500
+  "^ndq": { yahoo: "^IXIC",  fred: "NASDAQCOM" },   // Nasdaq Composite (passend zum FRED-Pendant)
+  "^dji": { yahoo: "^DJI",   fred: "DJIA"      },   // Dow Jones Industrial Average
 };
 
 const STOOQ_TTL_MS = 24 * 60 * 60 * 1000;   // Tagesdaten, 24h Cache reicht
 
-async function buildIndexReihe(seriesId, key) {
-  const obs = await fredSeries(seriesId, key, "2010-01-01");
-  if (!obs.length) throw new Error(`FRED ${seriesId}: keine Daten`);
-  const zeilen = obs.map(({ d, v }) => `${d},${v.toFixed(2)},${v.toFixed(2)},${v.toFixed(2)},${v.toFixed(2)},0`);
+// Gemeinsame Yahoo-Abfrage samt Nachversuch bei 429 — dieselbe Logik wie
+// bei Gold, hier nur mit anderem Ticker.
+async function yahooKerzen(ticker) {
+  const quelle = `https://query1.finance.yahoo.com/v8/finance/chart/`
+    + `${encodeURIComponent(ticker)}?range=10y&interval=1d`;
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                + "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  };
+  let r = await fetch(quelle, { headers, cf: { cacheTtl: 21600 } });
+  if (r.status === 429) {
+    await new Promise(res => setTimeout(res, 400));
+    r = await fetch(quelle, { headers, cf: { cacheTtl: 21600 } });
+  }
+  if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
+
+  const j = await r.json();
+  const result = j?.chart?.result?.[0];
+  if (!result) throw new Error(j?.chart?.error?.description || "keine Daten");
+
+  const ts = result.timestamp || [];
+  const q  = result.indicators?.quote?.[0] || {};
+  const zeilen = [];
+  for (let i = 0; i < ts.length; i++) {
+    const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c2 = q.close?.[i];
+    if (o == null || h == null || l == null || c2 == null) continue;
+    const datum = new Date(ts[i] * 1000).toISOString().slice(0, 10);
+    const v = q.volume?.[i] ?? 0;
+    zeilen.push(`${datum},${o.toFixed(2)},${h.toFixed(2)},${l.toFixed(2)},${c2.toFixed(2)},${v}`);
+  }
+  if (!zeilen.length) throw new Error("0 Kerzen");
   return "Date,Open,High,Low,Close,Volume\n" + zeilen.join("\n");
+}
+
+async function buildIndexReihe(quellen, key, s) {
+  // Erst Yahoo (echtes OHLC -> Kerzen moeglich).
+  try {
+    return await yahooKerzen(quellen.yahoo);
+  } catch (eYahoo) {
+    // Dann FRED (nur Schlusskurse, aber verlaesslich). O/H/L werden gleich
+    // Close gesetzt, damit das Format stimmt — als Kerze waere das ein
+    // Strich, als Linie voellig korrekt.
+    if (!key) throw new Error(`Yahoo fehlgeschlagen (${eYahoo.message}), FRED-Schlüssel fehlt`);
+    try {
+      const obs = await fredSeries(quellen.fred, key, "2010-01-01");
+      if (!obs.length) throw new Error("keine Daten");
+      const zeilen = obs.map(({ d, v }) => `${d},${v.toFixed(2)},${v.toFixed(2)},${v.toFixed(2)},${v.toFixed(2)},0`);
+      return "Date,Open,High,Low,Close,Volume\n" + zeilen.join("\n");
+    } catch (eFred) {
+      throw new Error(`Yahoo: ${eYahoo.message} | FRED: ${eFred.message}`);
+    }
+  }
 }
 
 async function getStooq(request, env) {
   const url = new URL(request.url);
   const s   = (url.searchParams.get("s") || "").toLowerCase();
-  const seriesId = FRED_INDEX_SERIEN[s];
+  const quellen = INDEX_QUELLEN[s];
 
-  if (!seriesId)
-    return err(`Symbol nicht erlaubt: ${s}. Erlaubt: ${Object.keys(FRED_INDEX_SERIEN).join(", ")}`, 400);
+  if (!quellen)
+    return err(`Symbol nicht erlaubt: ${s}. Erlaubt: ${Object.keys(INDEX_QUELLEN).join(", ")}`, 400);
 
+  // Nicht mehr zwingend: ohne FRED-Schluessel laeuft Yahoo trotzdem.
   const key = env.FRED_API_KEY || env.FRED_KEY;
-  if (!key) return err("FRED_KEY/FRED_API_KEY fehlt", 500);
 
   const kvKey = `stooq_${s}`;
   let cached = null;
@@ -313,7 +370,7 @@ async function getStooq(request, env) {
 
   let text;
   try {
-    text = await buildIndexReihe(seriesId, key);
+    text = await buildIndexReihe(quellen, key, s);
   } catch (e) {
     if (cached && cached.csv) return csv(cached.csv);
     return err(String(e && e.message || e), 502);
@@ -377,34 +434,63 @@ const M2_REIHEN = [
 const M2_PLAUSIBEL_MIN = 1000;      // < $1 Billion waere garantiert falsch
 const M2_PLAUSIBEL_MAX = 1000000;   // > $1000 Billionen ebenso
 
+// WICHTIG — warum hier NICHT auf vollstaendige Monate gewartet wird:
+//
+// Die urspruengliche Fassung nahm nur Monate, in denen ALLE VIER Laender
+// einen Wert hatten. Das klang sauber, war aber praktisch unbrauchbar:
+// FRED hat die China-Reihe (MYAGM2CNM189N) im August 2019 EINGESTELLT.
+// Damit gab es ab 2019 keinen einzigen gemeinsamen Monat mehr, die Ausgabe
+// blieb leer und das Frontend meldete "Keine plausiblen M2-Daten erhalten".
+//
+// Neue Regel: Ein Monat zaehlt, sobald die USA (die verlaessliche
+// Leitreihe) einen Wert hat. Fehlt ein Land, wird dessen LETZTER bekannter
+// Wert fortgeschrieben — dieselbe Treppen-Logik, die der Indikator im
+// Frontend ohnehin auf Monatsdaten anwendet.
+//
+// Das ist eine bewusste Abwaegung: Fuer China ab 2019 ist der Beitrag
+// eingefroren, die Kurve zeigt dort also nur noch die Bewegung der anderen
+// drei. Das ist deutlich naeher an der Wahrheit als gar keine Kurve — aber
+// es ist eine Schaetzung, kein exakter Wert. Wer exakte globale M2-Daten
+// braucht, kommt an einer kostenpflichtigen Quelle nicht vorbei.
 async function buildM2(key) {
-  // Alle vier Reihen parallel holen, dann nach Datum zusammenführen.
   const reihen = await Promise.all(
     M2_REIHEN.map(r =>
-      fredSeries(r.id, key, "2010-01-01").then(obs => ({ obs, faktor: r.faktor }))
+      fredSeries(r.id, key, "2010-01-01")
+        .then(obs => ({ obs, faktor: r.faktor, id: r.id }))
+        .catch(() => ({ obs: [], faktor: r.faktor, id: r.id }))   // einzelne Reihe darf ausfallen
     )
   );
 
-  // Erste Reihe als Ankerpunkt; die anderen per Datum nachschlagen.
-  const restMaps = reihen.slice(1).map(r => {
-    const m = new Map();
-    r.obs.forEach(o => m.set(o.d, o.v));
-    return { map: m, faktor: r.faktor };
-  });
+  const [usa, ...rest] = reihen;
+  if (!usa.obs.length) throw new Error("FRED M2SL (USA) lieferte keine Daten");
+
+  // Fuer jedes Land: sortierte Liste plus Zeiger, um beim Durchlaufen der
+  // US-Monate den jeweils letzten bekannten Wert mitzufuehren.
+  const stand = rest.map(r => ({
+    obs: r.obs.slice().sort((a, b) => (a.d < b.d ? -1 : 1)),
+    faktor: r.faktor,
+    i: 0,
+    letzter: null,
+  }));
 
   const zeilen = [];
-  for (const { d, v } of reihen[0].obs) {
-    let summe = v * M2_REIHEN[0].faktor;
-    let ok = true;
-    for (const { map, faktor } of restMaps) {
-      const w = map.get(d);
-      if (w == null) { ok = false; break; }
-      summe += w * faktor;
+  const usaSortiert = usa.obs.slice().sort((a, b) => (a.d < b.d ? -1 : 1));
+
+  for (const { d, v } of usaSortiert) {
+    let summe = v * usa.faktor;
+    for (const s of stand) {
+      while (s.i < s.obs.length && s.obs[s.i].d <= d) { s.letzter = s.obs[s.i].v; s.i++; }
+      if (s.letzter != null) summe += s.letzter * s.faktor;
     }
-    if (ok && summe >= M2_PLAUSIBEL_MIN && summe <= M2_PLAUSIBEL_MAX) zeilen.push([d, summe]);
+    if (summe >= M2_PLAUSIBEL_MIN && summe <= M2_PLAUSIBEL_MAX) zeilen.push([d, summe]);
   }
-  zeilen.sort((a, b) => (a[0] < b[0] ? -1 : 1));
-  if (!zeilen.length) throw new Error("Keine gemeinsamen M2-Monate gefunden");
+
+  if (!zeilen.length) {
+    // Diagnose mitgeben statt nur "keine Daten" — sonst steht man beim
+    // naechsten Mal wieder ohne Anhaltspunkt da.
+    const info = reihen.map(r => `${r.id}:${r.obs.length}`).join(" ");
+    throw new Error(`Keine plausiblen M2-Monate (Reihenlaengen: ${info})`);
+  }
   return zeilen;
 }
 
