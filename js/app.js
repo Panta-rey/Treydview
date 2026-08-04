@@ -3165,29 +3165,14 @@ quiet(() => {
 
 // Mobile Info-Bar
 (function initMobileInfoBar() {
-  const mibAsset  = document.getElementById("mibAsset");
-  const mibTf     = document.getElementById("mibTf");
+  const mibAsset   = document.getElementById("mibAsset");
+  const mibTf      = document.getElementById("mibTf");
+  const mibCompare = document.getElementById("mibCompare");
   if (!mibAsset) return;
   mibAsset.addEventListener("click", () => document.getElementById("assetTrigger")?.click());
   mibTf.addEventListener("click",   () => document.getElementById("tfTrigger")?.click());
-})();
-
-// SMC-Checkboxen im Ind-Panel mit Haupt-Panel syncen
-(function initSmcIndSync() {
-  const pairs = [
-    ["smcFvgBullInd","smcFvgBull"],["smcFvgBearInd","smcFvgBear"],
-    ["smcObBullInd","smcObBull"],["smcObBearInd","smcObBear"],
-    ["smcShowFilledInd","smcShowFilled"],
-  ];
-  pairs.forEach(([indId, mainId]) => {
-    const ind = document.getElementById(indId), main = document.getElementById(mainId);
-    if (!ind || !main) return;
-    ind.checked = main.checked;
-    ind.addEventListener("change",  () => { main.checked = ind.checked;  main.dispatchEvent(new Event("change")); });
-    main.addEventListener("change", () => { ind.checked  = main.checked; });
-  });
-  document.getElementById("smcScanBtnInd")?.addEventListener("click",  () => document.getElementById("smcScanBtn")?.click());
-  document.getElementById("smcClearBtnInd")?.addEventListener("click", () => document.getElementById("smcClearBtn")?.click());
+  // K2: bisher ohne Handler — Tap auf "+" tat auf dem Handy nichts.
+  mibCompare?.addEventListener("click", () => document.getElementById("compareTrigger")?.click());
 })();
 
 (function initTouch() {
@@ -4953,6 +4938,15 @@ restartWatchlistStream();
 // ---------- Watchlist-Handler ----------
 document.getElementById("wlToggleBtn").addEventListener("click", () => {
   state.watchlistOpen = !state.watchlistOpen;
+  saveWorkspace();
+  renderWatchlist();
+  setTimeout(resize, 50);
+});
+// K2: wlCloseBtn (mobile-only "✕" im Watchlist-Header) hatte bisher keinen
+// Handler. Explizit schliessen statt togglen — ein Schliessen-Knopf soll
+// nicht wieder oeffnen koennen.
+document.getElementById("wlCloseBtn")?.addEventListener("click", () => {
+  state.watchlistOpen = false;
   saveWorkspace();
   renderWatchlist();
   setTimeout(resize, 50);

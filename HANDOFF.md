@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 29. Juli 2026 · Build m27**
+**Stand: 1. August 2026 · Build m32**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -80,6 +80,12 @@ Top-Level-`const` verwirft und `CONFIG` dann unsichtbar bleibt),
 `t-tokens.js` (Prüfung 5), `t-m22.js` (26), `t-m23.js` (26), `t-m24.js` (24), asynchron.
 `t-m25.js` (47), `t-m26.js` (43), `t-m27.js` (30). `t-compat.js` prueft alte Drei-Punkt-Zeichnungen (6).
 Rückwärtskompatibilität der Drei-Punkt-Zeichnungen: eigener Lauf, 5 Punkte.
+m28–m32 (Meta-Tag, Yahoo/FRED-Umstellung, Cache-Versionierung, Symbol-Abgleich,
+Gold-Kerzen) wurden ueberwiegend gegen simulierte Worker-Antworten
+(`node --input-type=module`, gemockter `fetch`) statt gegen die vier
+Pruefstand-Skripte getestet — der Schwerpunkt lag auf dem Cloudflare Worker,
+nicht auf der Mobile-Schicht. Fuer die App-seitigen Aenderungen (`_symbolAbgleichen`,
+`fetchGlobalM2`, `fetchGoldHistory`) gelten weiterhin alle vier Pflichtpruefungen.
 Der Canvas-Stub protokolliert `moveTo`/`lineTo`, damit Tests das gezeichnete
 Fadenkreuz auslesen können. `chart.setLoadDataCallback` muss im Stub stehen.
 Kerzenabstand im Stub: 8 px.
@@ -105,37 +111,192 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m27)
+## Datei-MD5 (Build m32)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | c1509988364d3b5bd157c013bb7eca41 | 1114 |
-| style.css | 3864288cd171d08b580d88124a32032d | 1389 |
-| app.js | 87e4b83f0719f0fa64a6c72e168a23fe | 6384 |
+| index.html | 508842413f1f8403303e09e831d7778b | 1118 |
+| style.css | 797786129ed9bbe9d03fc00944109660 | 1389 |
+| app.js | 0112beea585b294b03555a13055da30d | 6408 |
 | overlays.js | 6b3d89df6b0963cd948987e32209253a | 1152 |
-| config.js | d4c842c5979f3679bbfa4db1b7dbae71 | 409 |
-| data.js | e83756ed019760ae3a34c955e6df1f8a | 420 |
+| config.js | a2cf44f15b73d3d3221b716730a57ad8 | 412 |
+| data.js | 6eba3416df52f8966d58f89d579464e5 | 465 |
 | indicators.js | b03959e571421be134a3504fbd68cf00 | 1050 |
-
-`overlays.js` ist seit m25 unveraendert (gleiche Pruefsumme).
-| overlays.js | 41863e842e40478db3326d46156c2b89 | 1075 |
-| manifest.webmanifest | f00d4e5b6341e6400f7b5dfb48b2e667 | 11 |
-| config.js | fc6cff7fab290a246c255349f13a8fd8 | 384 |
-| data.js | 0bd0ac117e6ddd750ef11de15c484893 | 368 |
-| indicators.js | d5e023a59eee2c75b8d3ae0f8aebf595 | 1012 |
-| overlays.js | 8a6c94e2126fda08ad3291d044a25e40 | 1014 |
 | smc.js | 95601db23d23cf8f2cf19eb161c33dc6 | 248 |
 | gridbot.js | 3a65ff885ee6d55480deb166d9717b04 | 502 |
-| patterns.js | e94d7c6a70b598fe1bfeecb67c4cc82c | — |
+| patterns.js | e94d7c6a70b598fe1bfeecb67c4cc82c | 1016 |
+| settings.js | a0a42e402cbf44a755b469cb004a3836 | 250 |
+| derivatives.js | d44aac15f1dc1cc5410801b84f2aa81d | 157 |
+
+`overlays.js` unveraendert seit m25, `indicators.js`/`smc.js`/`gridbot.js`/
+`patterns.js`/`settings.js`/`derivatives.js` unveraendert seit vor m17 —
+keine dieser Dateien war in den juengeren Builds Teil der Auslieferung.
+
+**Diese Tabelle ersetzt fruehere Fassungen vollstaendig.** Sie enthielt
+zuvor stehengelassene Zeilen aus mehreren Sitzungen mit widerspruechlichen
+Pruefsummen fuer dieselben Dateien (u. a. `manifest.webmanifest`, das es
+in diesem Projekt gar nicht gibt — Verwechslung mit einem anderen Projekt
+in einer frueheren Sitzung). Immer nur DIESE, oberste Tabelle als Stand
+nehmen.
+
+### Cloudflare-Worker — eigene Datei, eigenes Deployment
+
+`worker-komplett.js` ist **nicht Teil des Git-Repos** und liegt nicht im
+`/mnt/user-data/outputs`-Zyklus der App selbst — es ist der komplette Code
+fuer den separaten Cloudflare Worker (`pantarey.rey-gafner.workers.dev`),
+der per Hand im Cloudflare-Dashboard eingefuegt und deployed wird. Bindings:
+KV-Namespace `PANTA`, Secrets `FRED_KEY` (Macro/Gold-Kontext, seit jeher)
+und `FRED_API_KEY` (M2/Indizes — faellt auf `FRED_KEY` zurueck, falls nicht
+gesetzt). Aktueller Stand MD5 `1c7bc25ea6108546d370039e9c8236a6`, 571 Zeilen.
+
+Dieser Worker wird **auch von einem anderen Projekt genutzt**
+("Back to the Future" / BTTF, laut Kopfkommentar der Originaldatei) —
+`/goldhistory` und `/macro` sind fuer BTTF entstanden, TreydView nutzt sie
+mit. Aenderungen an diesen beiden Routen koennen das andere Projekt
+beruehren; siehe die Notizen zu `series` vs. `candles` weiter unten.
+
+## Externe Datenquellen — Indizes, Gold, Global M2  (m28–m32)
+
+Vier Builds lang das eigentliche Thema. Kurzfassung fuer den Fall, dass es
+wieder "nicht funktioniert": **niemals nur den Rechenweg pruefen — immer
+zuerst pruefen, ob der KV-Cache eine alte Antwort ausliefert.**
+
+### Der wichtigste Fund: unversionierte Cache-Schluessel  (m32)
+
+Die KV-Schluessel hiessen `"m2"`, `"stooq_^spx"`, `"goldhistory"` — **ohne
+Versionskennung**, mit 24 Stunden Lebensdauer. Nach jeder Korrektur am
+Rechenweg lieferte der Worker deshalb bis zu einen ganzen Tag lang weiter
+die ALTEN, falschen Werte aus dem Cache. Mehrere Korrekturen in dieser
+Build-Reihe sahen deshalb wirkungslos aus, obwohl der Code laengst richtig
+war — der Cache hat es nur nicht gezeigt.
+
+Geloest mit `CACHE_VERSION = "v2"` (worker-komplett.js, ganz oben). Jeder
+KV-Schluessel haengt sie an (`m2_${CACHE_VERSION}`, `stooq_${s}_${CACHE_VERSION}`,
+`goldhistory_${CACHE_VERSION}`). Wird der Rechenweg kuenftig noch einmal
+geaendert: **`CACHE_VERSION` erhoehen.** Sonst wiederholt sich genau dieser
+Fehler.
+
+### Gold: `series` bleibt, `candles` kommt dazu  (m32)
+
+`/goldhistory` lieferte urspruenglich nur Schlusskurse
+(`series: [[ms, close], ...]`) — so war die Route fuer BTTF entworfen
+("Back to the Future" braucht eine lange Linie, keine Kerzen). Fuer
+TreydView bedeutete das: Kerzen waren technisch moeglich, aber inhaltlich
+leer — jede Kerze ein Strich ohne Koerper und Docht (O=H=L=C).
+
+Die Antwort ist jetzt ERWEITERT, nicht ersetzt: `candles: [[ms,o,h,l,c,v]]`
+kommt zusaetzlich zu `series` hinzu, mit echtem OHLC von Yahoo. BTTF, das
+nur `series` kennt, bleibt unberuehrt. `data.js`s `fetchGoldHistory()` liest
+bevorzugt `candles`, faellt bei aelteren Worker-Antworten auf `series`
+zurueck (dann wieder O=H=L=C).
+
+### Indizes: Yahoo zuerst (echtes OHLC), FRED als Ruecksicherung  (m31)
+
+`INDEX_QUELLEN` in worker-komplett.js: pro Symbol ein Yahoo-Ticker
+(`^GSPC`/`^IXIC`/`^DJI`) und eine FRED-Serie (`SP500`/`NASDAQCOM`/`DJIA`).
+Yahoo liefert echtes OHLC, also sind dort Kerzen sinnvoll. Blockiert Yahoo
+(429), springt FRED ein — nur Schlusskurse, aber verlaesslich, damit der
+Chart nie leer bleibt. Warum ueberhaupt zwei Quellen: Stooqs Bulk-CSV-
+Endpunkt liefert seit einiger Zeit eine JavaScript-Challenge-Seite statt
+Daten (nicht durch Kopfzeilen oder Parameter loesbar), Yahoo allein blockte
+zeitweise mit 429.
+
+### `buildM2`: haengt nicht mehr an der schwaechsten Reihe  (m31)
+
+FRED hat die China-Reihe (`MYAGM2CNM189N`) im **August 2019 eingestellt**.
+Die urspruengliche Regel verlangte einen Wert von JEDEM der vier Laender
+fuer denselben Monat — seither gab es keinen einzigen gemeinsamen Monat
+mehr, die Ausgabe blieb leer ("Keine plausiblen M2-Daten erhalten"/"Keine
+gemeinsamen M2-Monate gefunden").
+
+Neue Regel: `M2SL` (USA) ist die Leitreihe. Fehlt ein anderes Land fuer
+einen Monat, wird dessen LETZTER bekannter Wert fortgeschrieben. Das ist
+eine bewusste Naeherung — seit 2019 ist Chinas Beitrag eingefroren, die
+Kurve zeigt dort nur noch die Bewegung der anderen drei. Steht auch als
+Kommentar im Code, falls das je wieder hinterfragt wird.
+
+### Umrechnungsfaktoren: drei von vier Reihen waren falsch skaliert  (m30)
+
+`M2SL` (USA) ist tatsaechlich "Billions of Dollars". Die drei IWF-Serien
+(Euroraum, Japan, China) sind es NICHT — sie melden die ROHE
+Landeswaehrung. Beleg direkt von FRED: Euroraum-M2 stand im Maerz 2017 bei
+`10'876'141'000'000` mit der Einheit "Euros", China im August 2019 bei
+`193'549'242'773'720` "National Currency". Die urspruenglichen Faktoren
+gingen von "bereits Milliarden" aus — Fehlbetrag ueberall dort um den
+Faktor ~1e9.
+
+Symptom: eine einzelne, absurd grosse und vollkommen flache Chart-Linie
+(z. B. `39'860'906'812'499`). Der korrigierte Faktor teilt bei allen drei
+IWF-Reihen zusaetzlich durch `1e9`, bevor der Wechselkurs angewendet wird.
+Ergebnis danach: realistische ~$85–90 Billionen globales M2.
+
+**Zwei Schutzschichten gegen den naechsten unbekannten Einheitenfehler:**
+`M2_PLAUSIBEL_MIN/MAX` (1'000–1'000'000 Mrd. USD) im Worker filtert
+absurde Monate einzeln heraus, statt die ganze Serie zu verwerfen.
+`data.js`s `fetchGlobalM2()` verlangt zusaetzlich, dass eine Nicht-JSON-
+Antwort mit `date,value` beginnt, bevor sie als CSV geparst wird — sonst
+haette eine HTML-Fehlerseite Zahlen "gefunden", die keine sind.
+
+### Symbol-Objekt im Workspace veraltet stillschweigend  (m31)
+
+`state.symbol` wird als **ganzes Objekt** gespeichert (`localStorage`,
+`tv_workspace`), nicht als blosser Bezeichner. Ohne Abgleich gegen
+`CONFIG.DEFAULT_SYMBOLS` lud der Browser beim Start die eingefrorene alte
+Fassung — Aenderungen an `config.js` (etwa ein korrigiertes Label oder ein
+neues Feld) erreichten ein bereits gespeichertes Symbol nie. Genau das war
+die Ursache, warum S&P 500 nicht lief, obwohl Nasdaq und Dow (neu
+ausgewaehlt, also frisch aus `config.js`) einwandfrei funktionierten — und
+warum ein direkter `curl` auf dieselbe Route erfolgreich war.
+
+`_symbolAbgleichen()` in app.js gleicht das gespeicherte Symbol ueber seine
+`id` gegen die aktuelle `CONFIG.DEFAULT_SYMBOLS` ab; die Config-Definition
+hat Vorrang. Nur wenn die `id` dort nicht mehr existiert (eigenes Symbol
+des Nutzers), bleibt die gespeicherte Fassung erhalten. **Diese Fehlerklasse
+war nicht auf S&P 500 beschraenkt** — jede kuenftige Aenderung an einem
+Symbol in `config.js` haette dasselbe Symptom bei jedem Nutzer mit
+gespeichertem Workspace ausgeloest.
+
+### `fetchGoldHistory()` kannte den Worker-Schluessel `series` nicht  (m30)
+
+Unabhaengig von der Datenquelle (Stooq oder Yahoo): `getGoldHistory()`
+liefert seit jeher `{ series: [...], from, to, n, _fetchedAt }`. Der
+Frontend-Parser suchte aber nur `json.data` / `json.history` — beide
+undefined, `rows` wurde `null`, die Funktion gab am Ende STILLSCHWEIGEND
+ein leeres Array zurueck statt eines Fehlers. Selbst ein perfekt
+funktionierender Worker haette also nie sichtbare Gold-Kerzen ergeben.
+Jetzt erkennt `fetchGoldHistory()` `.series` (Tupel `[ms, close]`) und
+`.candles` (Tupel `[ms,o,h,l,c,v]`, seit m32) explizit.
+
+### Nasdaq-Label korrigiert  (m30)
+
+`config.js` beschriftete den Nasdaq-Eintrag als "Nasdaq 100" — FRED fuehrt
+dafuer aber nur den **Composite** (`NASDAQCOM`), keinen separaten
+100er-Index. Label auf "Nasdaq Composite" geaendert, um nicht falsche
+Information ueber richtigen Daten zu zeigen.
+
+### Meta-Tag  (m28)
+
+`apple-mobile-web-app-capable` ist Apple-spezifisch veraltet.
+`mobile-web-app-capable` steht seit m28 zusaetzlich daneben (index.html).
+
+
 
 ## Build-Abgleich — zuerst prüfen, wenn etwas „nicht wirkt"
 
-- `style.css`: `:root { --tv-build: "m27" }`
-- `app.js`: `const TV_BUILD = "m27"`
-- `index.html`: alle Verweise mit `?v=m27`
+- `style.css`: `:root { --tv-build: "m32" }`
+- `app.js`: `const TV_BUILD = "m32"`
+- `index.html`: alle Verweise mit `?v=m32`
 
 Beim Start liest das JS die CSS-Kennung aus und meldet grün oder warnt.
 **Bei jeder Auslieferung an allen drei Stellen erhöhen.**
+
+**Für den Worker gilt dasselbe Prinzip, nur mit einer eigenen Kennung:**
+`CACHE_VERSION` in `worker-komplett.js`, aktuell `"v2"`. Bei jeder Änderung
+am Rechenweg einer gecachten Route (`/m2`, `/stooq`, `/goldhistory`)
+ebenfalls erhöhen — sonst liefert der Worker bis zu 24h lang die alte,
+falsche Antwort aus dem KV-Cache aus, während der App-Build schon korrekt
+zeigt. Genau das hat in m29–m31 mehrere Korrekturen wirkungslos aussehen
+lassen, obwohl der Code längst richtig war.
 
 ---
 
@@ -997,18 +1158,31 @@ Namen der `quiet()`-Umschläge: `crosshair init`, `drawing select init`,
 
 1. **Alles Mobile nur simuliert geprüft.** jsdom kennt kein echtes Layout.
    Rendering, Gesten und Querformat müssen auf dem Gerät nachgesehen werden.
-2. **Verschiebepunkte für Stop und Ziel** sind noch nicht sichtbar markiert.
-   Das Ziehen funktioniert (Punkt-Treffer ≤ 20 px), aber `positionTool` hat
-   `needDefaultPointFigure: false` — es zeichnet keine Griffe. Für sichtbare
-   Griffe bei Auswahl müsste `createPointFigures` in overlays.js ein Flag aus
-   `extendData` lesen, das beim Auswählen gesetzt wird.
-3. **Börsen-Schnittstellen** (Coinbase, Kraken, Bybit) von der Sandbox
+2. **Börsen-Schnittstellen** (Coinbase, Kraken, Bybit) von der Sandbox
    blockiert, nur im Browser prüfbar.
-4. **SMC-Nullmodell** nie auf echten BTC-Daten gelaufen.
-5. **Grid-Bot**: `liqDist` wird im UI nicht gezeigt; Nettowert wächst linear
+3. **SMC-Nullmodell** nie auf echten BTC-Daten gelaufen.
+4. **Grid-Bot**: `liqDist` wird im UI nicht gezeigt; Nettowert wächst linear
    mit dem Hebel.
-6. **AVWAP**: nur ein Anker gleichzeitig.
-7. **Kein Journal** — bewusst zurückgestellt.
+5. **AVWAP**: nur ein Anker gleichzeitig.
+6. **Kein Journal** — bewusst zurückgestellt.
+7. **Gold-Historie ist kürzer als vorher.** Yahoo (`GC=F`) liefert
+   schätzungsweise 20–25 Jahre statt der ursprünglichen 46+ Jahre über
+   Stooq/LBMA. Für TreydViews eigenen Gebrauch ausreichend; falls BTTF
+   („Back to the Future", das andere Projekt am selben Worker) die lange
+   Historie explizit braucht, wurde das nicht separat gelöst.
+8. **Nasdaq zeigt den Composite, nicht den Nasdaq-100.** FRED führt nur
+   `NASDAQCOM`; Yahoo (`^IXIC`) für den Composite ist konsistent dazu
+   gewählt. Falls tatsächlich der 100er-Index gemeint war, wäre das ein
+   separater Wechsel auf `^NDX` (Yahoo) — für FRED gibt es dafür keinen
+   Rückfall.
+9. **Global M2 ist eine Näherung, kein Fachdatensatz.** Chinas Beitrag ist
+   seit August 2019 eingefroren (FRED hat die Reihe eingestellt) und wird
+   fortgeschrieben statt aktualisiert. Feste, nicht tagesaktuelle
+   Wechselkurse für die Umrechnung ins USD. Für eine Chart-Kennzahl
+   ausreichend, nicht für exakte Analyse.
+10. **`worker-komplett.js` ist nicht Teil des Git-Repos** und wird nicht
+    automatisch mitversioniert — bei jeder Worker-Änderung selbst prüfen,
+    ob die lokale Kopie noch dem tatsächlich deployten Stand entspricht.
 
 ---
 

@@ -158,10 +158,6 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .plot-opacity span{font-size:11px;color:var(--text-dim);width:36px;text-align:right;}
 .plot-width{width:48px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:4px 6px;outline:none;}
 
-/* ---- v0.4.1: Grössere Draw-Buttons ---- */
-
-@media(max-width:720px){.draw-btn{width:34px;height:34px;font-size:15px;}}
-
 /* ---- Mobile / Touch: grössere Ziele, passende Panels ---- */
 /* Greift auf schmalen Screens UND generell bei Touch-Geräten (coarse pointer),
    damit auch Tablets mit breitem Screen bedienbare Tap-Ziele bekommen. */
@@ -182,10 +178,8 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .pat-types label { padding: 9px 6px; font-size: 13px; }
   .pat-types input[type=checkbox] { width: 18px; height: 18px; }
   /* Drawbar: breitere Buttons, damit man nicht danebentippt */
-  .draw-btn { width: 40px; height: 40px; font-size: 16px; }
   .drawbar { padding: 8px 6px; gap: 5px; }
   /* Overlay-Kontextmenü & FRVP-Menü grösser antippbar */
-  .overlay-menu-item { padding: 12px 16px; font-size: 14px; }
   .frvp-row { padding: 8px 0; }
   .frvp-row input[type=checkbox] { width: 18px; height: 18px; }
   /* Einstellungen-Farbfelder etwas grösser */
@@ -324,7 +318,6 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
     flex-shrink: 0;
   }
   /* Einträge im Sheet grösser antippbar */
-  .as-sheet .overlay-menu-item { padding: 14px 18px; font-size: 14px; }
   .as-sheet .frvp-row { padding: 10px 0; }
 }
 @keyframes tvSheetUp {
@@ -774,9 +767,14 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 /* ═══════════════════════════════════════════════════════════════════════
    MOBILE-SCHICHT  ·  Build m7
    ───────────────────────────────────────────────────────────────────────
-   REGEL: Ab hier steht ausschliesslich Code innerhalb von @media-Blöcken.
-   Der Desktop wird dadurch nicht berührt. Neue Elemente tragen die Klasse
-   .mobile-only und sind ausserhalb dieser Blöcke unsichtbar.
+   REGEL: Ab hier steht Code innerhalb von @media-Blöcken — mit einer
+   Ausnahme (Gebot 2): Basisregeln der Form "#neuesElement{display:none}"
+   für NEUE Elemente, deren Selektor nachweislich kein bestehendes Element
+   trifft. Die Handvoll display:none-Zeilen direkt unter diesem Kommentar
+   sind genau das, kein Verstoss. Alles andere (Layout, Farben, Grössen)
+   gehört in ein @media. Der Desktop wird dadurch nicht berührt. Neue
+   Elemente tragen die Klasse .mobile-only und sind ausserhalb dieser
+   Blöcke unsichtbar.
 
    Aufbau:
      Topbar Zeile 1   F&G Fund OI  ·  Layout WL Nacht Vollbild FAQ
