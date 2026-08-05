@@ -992,9 +992,43 @@
         return uniq;
       };
 
-      let imp = dedupe(impulses.filter(inView));
-      imp.sort((a, b) => b.rightIndex - a.rightIndex || b.quality - a.quality);
-      if (opts.maxImpulses > 0) imp = imp.slice(0, opts.maxImpulses);
+      // Kappung raeumlich verteilen, NICHT nach Aktualitaet.
+      //
+      // Vorher wurde nach Endindex absteigend sortiert und dann
+      // abgeschnitten — es ueberlebten also die N juengsten Strukturen und
+      // die linke Chart-Haelfte blieb systematisch leer, egal wie gut die
+      // Zaehlungen dort waren. Die Kappung soll die Overlay-Zahl
+      // begrenzen, nicht den Zeitraum beschneiden.
+      //
+      // Jetzt: Sichtbereich in N Segmente teilen, je Segment die beste
+      // Struktur, Restplaetze nach Guete auffuellen.
+      const spread = (arr, max) => {
+        if (max <= 0 || arr.length <= max) return arr;
+        let lo = Infinity, hi = -Infinity;
+        for (const s of arr) {
+          const a = s.points[0].index, b = s.rightIndex;
+          if (a < lo) lo = a;
+          if (b > hi) hi = b;
+        }
+        const w = (hi - lo) / max || 1;
+        const buckets = new Map();
+        for (const s of arr) {
+          const mid = (s.points[0].index + s.rightIndex) / 2;
+          const b = Math.max(0, Math.min(max - 1, Math.floor((mid - lo) / w)));
+          const cur = buckets.get(b);
+          if (!cur || s.quality > cur.quality) buckets.set(b, s);
+        }
+        const chosen = new Set(buckets.values());
+        const out = [...chosen];
+        if (out.length < max) {
+          const rest = arr.filter(s => !chosen.has(s))
+                          .sort((a, b) => b.quality - a.quality);
+          out.push(...rest.slice(0, max - out.length));
+        }
+        return out;
+      };
+
+      let imp = spread(dedupe(impulses.filter(inView)), opts.maxImpulses);
       imp.sort((a, b) => a.rightIndex - b.rightIndex);
 
       // Nur Korrekturen zu Impulsen zeigen, die auch gezeichnet werden
@@ -1008,8 +1042,10 @@
         if (sseen.has(key)) return false;
         sseen.add(key); return true;
       });
-      set.sort((a, b) => b.highIndex - a.highIndex || b.quality - a.quality);
-      if (opts.maxSetups > 0) set = set.slice(0, opts.maxSetups);
+      // Setups tragen kein points-Array — fuer spread() nachruesten.
+      set = spread(set.map(s => Object.assign(s, {
+        points: s.points || [{ index: s.lowIndex, price: s.lowPrice }],
+      })), opts.maxSetups);
       set.sort((a, b) => a.highIndex - b.highIndex);
 
       return { impulses: imp, abcs: abc, setups: set };

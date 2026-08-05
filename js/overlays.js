@@ -1197,11 +1197,18 @@
       }));
       // Welle 1 beschriften. Die Projektion zaehlt ab Welle 2 weiter,
       // zusammen ergibt das die durchgehende Folge 1-2-3-4-5-A-B-C.
+      // backgroundColor explizit, sonst KLC-Default weiss auf graublau.
+      const numStyle = {
+        style: "stroke_fill", color: col,
+        backgroundColor: "rgba(13,17,23,0.85)",
+        borderColor: col, borderSize: 1, borderRadius: 3,
+        size: 10, family: "IBM Plex Mono, monospace",
+        paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
+      };
       figs.push({
         type: "text",
         attrs: { x: c1.x + 6, y: c1.y, text: "1", align: "left", baseline: "middle" },
-        styles: { style: "fill", color: col, size: 10,
-                  family: "IBM Plex Mono, monospace" },
+        styles: numStyle,
         ignoreEvent: true,
       });
       // Welle 2 sitzt in der Box — bei getriggerten Setups am gemessenen
@@ -1210,8 +1217,7 @@
         type: "text",
         attrs: { x: Math.min(c2.x, c3.x) + 6, y: (c2.y + c3.y) / 2,
                  text: "2", align: "left", baseline: "middle" },
-        styles: { style: "fill", color: col, size: 10,
-                  family: "IBM Plex Mono, monospace" },
+        styles: numStyle,
         ignoreEvent: true,
       });
 
@@ -1240,8 +1246,11 @@
             attrs: { x: c3.x - 4, y: c4.y, text: ed.targetLabel,
                      align: "right", baseline: "bottom" },
             styles: {
-              style: "fill", color: "rgba(63,182,139,0.95)",
+              style: "stroke_fill", color: "rgba(63,182,139,0.95)",
+              backgroundColor: "rgba(13,17,23,0.85)",
+              borderColor: "rgba(63,182,139,0.6)", borderSize: 1, borderRadius: 3,
               size: 10, family: "IBM Plex Mono, monospace",
+              paddingLeft: 5, paddingRight: 5, paddingTop: 1, paddingBottom: 1,
             },
             ignoreEvent: true,
           });
@@ -1252,14 +1261,14 @@
       // In den Sichtbereich klemmen: scrollt das Setup halb aus dem Bild,
       // saehe man sonst nur noch eine Box ohne Erklaerung. Gleiche
       // Behandlung wie beim Muster-Overlay.
-      if (ed.label) {
+      const zAnc = ed.label
+        ? labelAnchor(coordinates, bounding, Math.min(c2.x, c3.x) + 4) : null;
+      if (zAnc) {
         const lc = labelColors();
-        const W = (bounding && bounding.width) || 1200;
-        const x = Math.max(4, Math.min(W - 8, Math.min(c2.x, c3.x) + 4));
         const y = Math.min(c2.y, c3.y);
         figs.push({
           type: "text",
-          attrs: { x, y, text: ed.label, align: "left", baseline: "bottom" },
+          attrs: { x: zAnc.x, y, text: ed.label, align: zAnc.align, baseline: "bottom" },
           styles: {
             style: "stroke_fill",
             color: col,
@@ -1318,10 +1327,18 @@
       const cA = coordinates[5], cB = coordinates[6], cC = coordinates[7];
       const figs = [];
 
-      // Zielband Welle 3 (1.618 bis 2.618)
+      // Zielband Welle 3 (1.618 bis 2.618).
+      //
+      // Frueher spannte es vom Anker bis zum Welle-3-Punkt und stand als
+      // grosses leeres Rechteck ueber dem Wellenzug, ohne erkennbaren
+      // Bezug. Jetzt sitzt es im letzten Drittel vor dem Ziel und reicht
+      // etwas darueber hinaus — es liest sich als Zone AM Ziel, nicht als
+      // Kasten daneben.
+      const bandFrom = c0.x + (c1.x - c0.x) * 0.62;
+      const bandTo   = c1.x + (c1.x - c0.x) * 0.18;
       figs.push({
         type: "rect",
-        attrs: rectAttrs({ x: c0.x, y: c1.y }, { x: c1.x, y: c2.y }),
+        attrs: rectAttrs({ x: bandFrom, y: c1.y }, { x: bandTo, y: c2.y }),
         styles: {
           style: "stroke_fill",
           color: `rgba(90,169,230,${weak ? 0.03 : 0.06})`,
@@ -1355,22 +1372,26 @@
         });
         figs.push({
           type: "text",
-          attrs: { x: c.x + 6, y: c.y, text: n, align: "left", baseline: "middle" },
-          styles: { style: "fill", color: k, size: 10,
-                    family: "IBM Plex Mono, monospace" },
+          attrs: { x: c.x + 7, y: c.y, text: n, align: "left", baseline: "middle" },
+          styles: {
+            style: "stroke_fill", color: k,
+            backgroundColor: "rgba(13,17,23,0.85)",
+            borderColor: k, borderSize: 1, borderRadius: 3,
+            size: 10, family: "IBM Plex Mono, monospace",
+            paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
+          },
           ignoreEvent: true,
         });
       });
 
       // Titel. Das Fragezeichen ist Absicht.
-      if (ed.label) {
+      const pAnc = ed.label ? labelAnchor(coordinates, bounding, c0.x + 4) : null;
+      if (pAnc) {
         const lc = labelColors();
-        const W = (bounding && bounding.width) || 1200;
-        const x = Math.max(4, Math.min(W - 8, c0.x + 4));
         figs.push({
           type: "text",
-          attrs: { x, y: Math.min(c1.y, c2.y) - 4, text: ed.label,
-                   align: "left", baseline: "bottom" },
+          attrs: { x: pAnc.x, y: Math.min(c1.y, c2.y) - 4, text: ed.label,
+                   align: pAnc.align, baseline: "bottom" },
           styles: {
             style: "stroke_fill", color: col,
             backgroundColor: lc.bg, borderColor: col,
@@ -1384,6 +1405,32 @@
       return figs;
     },
   });
+
+  // Wohin gehoert das Etikett einer Struktur?
+  //
+  // Frueher wurde die x-Position stumpf ins Sichtfenster geklemmt, damit
+  // ein halb herausgescrolltes Etikett lesbar bleibt. Das klemmte aber
+  // auch Etiketten von Strukturen an den Rand, die VOLLSTAENDIG ausserhalb
+  // liegen — im Chart sichtbar als Beschriftungen, die links kleben
+  // bleiben, obwohl die zugehoerige Welle laengst weg ist.
+  //
+  // Rueckgabe null = gar nicht zeichnen. Sonst { x, align }: liegt das
+  // Etikett nahe am rechten Rand, wird rechtsbuendig ausgerichtet, damit
+  // der Text nach INNEN laeuft statt aus dem Bild.
+  function labelAnchor(coordinates, bounding, preferX) {
+    const W = (bounding && bounding.width) || 1200;
+    let minX = Infinity, maxX = -Infinity;
+    for (const c of coordinates) {
+      if (c.x < minX) minX = c.x;
+      if (c.x > maxX) maxX = c.x;
+    }
+    // Struktur komplett ausserhalb -> kein Etikett
+    if (maxX < 0 || minX > W) return null;
+    const x = preferX != null ? preferX : minX;
+    // Grob geschaetzte Textbreite; genauer geht ohne Messung nicht.
+    if (x > W * 0.62) return { x: Math.min(W - 6, Math.max(6, x)), align: "right" };
+    return { x: Math.max(6, Math.min(W - 6, x)), align: "left" };
+  }
 
   // ---------- EWT-Wellenzug (Impuls 1-5 / Korrektur A-B-C) ----------
   //
@@ -1430,27 +1477,37 @@
         if (!labels[i]) return;
         // Hoch- und Tiefpunkte abwechselnd oben/unten beschriften, damit
         // die Zahlen nicht auf der Linie liegen.
+        //
+        // WICHTIG: backgroundColor MUSS gesetzt werden. KLineCharts faellt
+        // sonst auf seinen Default zurueck — im Bundle nachgesehen:
+        // color "#FFFFFF" auf backgroundColor "#76808F". Das ergab weisse
+        // Ziffern auf graublauen Kaesten, in denen die Richtungsfarbe
+        // komplett verlorenging.
         const up = i % 2 === (bull ? 1 : 0);
         figs.push({
           type: "text",
-          attrs: { x: c0.x, y: c0.y + (up ? -7 : 7), text: labels[i],
+          attrs: { x: c0.x, y: c0.y + (up ? -8 : 8), text: labels[i],
                    align: "center", baseline: up ? "bottom" : "top" },
-          styles: { style: "fill", color: col, size: 11,
-                    family: "IBM Plex Mono, monospace" },
+          styles: {
+            style: "stroke_fill", color: col,
+            backgroundColor: "rgba(13,17,23,0.85)",
+            borderColor: col, borderSize: 1, borderRadius: 3,
+            size: 11, family: "IBM Plex Mono, monospace",
+            paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
+          },
           ignoreEvent: true,
         });
       });
 
       // Titel am ersten Punkt, in den Sichtbereich geklemmt — sonst
       // verschwindet er beim Scrollen aus dem Bild.
-      if (ed.label) {
+      const anc = ed.label ? labelAnchor(coordinates, bounding, coordinates[0].x) : null;
+      if (anc) {
         const lc = labelColors();
-        const W = (bounding && bounding.width) || 1200;
-        const x = Math.max(4, Math.min(W - 8, coordinates[0].x));
         figs.push({
           type: "text",
-          attrs: { x, y: coordinates[0].y + (bull ? 14 : -14), text: ed.label,
-                   align: "left", baseline: bull ? "top" : "bottom" },
+          attrs: { x: anc.x, y: coordinates[0].y + (bull ? 14 : -14), text: ed.label,
+                   align: anc.align, baseline: bull ? "top" : "bottom" },
           styles: {
             style: "stroke_fill", color: col,
             backgroundColor: lc.bg, borderColor: col,

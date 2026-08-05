@@ -4673,6 +4673,7 @@ function ewtReadOpts() {
     maxSkip:           Math.round(num("ewtMaxSkip", 0, 4, D.maxSkip)),
     strictness:        (document.getElementById("ewtStrict") || {}).value || D.strictness,
     maxImpulses:       Math.round(num("ewtMaxShow", 1, 60, D.maxImpulses)),
+    labelMode:         (document.getElementById("ewtLabels") || {}).value || "kurz",
     // Diese drei sind bewusst standardmaessig AUS. Gemessen an 2000
     // Kerzen verwarf der RSI-Filter 76 % der Kandidaten und das Volumen
     // nochmals 53 % vom Rest — zusammen blieben 6 % uebrig. Eine
@@ -4854,7 +4855,9 @@ function scanEWT() {
           ],
           lock: true,
           extendData: { basis: pr.basis,
-            label: `Projektion? W3–W5 + A-B-C · Basis ${pr.basis}${konflikt}` },
+            label: labelMode === "aus" ? null
+              : labelMode === "kurz" ? `Projektion?${konflikt}`
+              : `Projektion? W3–W5 + A-B-C · Basis ${pr.basis}${konflikt}` },
           onMouseEnter: () => { setChartCursor("pointer"); showEWTProjHint(s, pr); return false; },
           onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
           onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
@@ -5564,6 +5567,8 @@ document.getElementById("patStrictness").addEventListener("change", (e) => {
     set("ewtMaxShow", o.maxImpulses);
     const st = document.getElementById("ewtStrict");
     if (st && o.strictness) st.value = o.strictness;
+    const lb = document.getElementById("ewtLabels");
+    if (lb && o.labelMode) lb.value = o.labelMode;
     chk("ewtRule4",   o.requireWave5NewExtreme);
     chk("ewtDiagonal", o.allowDiagonal);
     chk("ewtUseRsi",  o.requireRsi);
@@ -5619,7 +5624,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m39";
+const TV_BUILD = "m40";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m39">
-  <link rel="stylesheet" href="css/style.css?v=m39">
+  <link rel="manifest" href="manifest.webmanifest?v=m40">
+  <link rel="stylesheet" href="css/style.css?v=m40">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m39"></script>
+  <script src="js/lib/klinecharts.min.js?v=m40"></script>
 </head>
 <body>
 
@@ -300,6 +300,14 @@
             <option value="locker">locker (nur Kardinalregeln)</option>
             <option value="mittel" selected>mittel (+ Proportionen)</option>
             <option value="streng">streng (+ Dauer)</option>
+          </select>
+        </div>
+        <div class="pat-row">
+          <label>Beschriftung</label>
+          <select id="ewtLabels">
+            <option value="voll">voll</option>
+            <option value="kurz" selected>kurz</option>
+            <option value="aus">aus</option>
           </select>
         </div>
         <div class="pat-row">
@@ -856,7 +864,12 @@
         <div class="faq-block"><h4>Wellengrad und Skip-Tiefe</h4>
           <p><b>Wellengrad</b> ist die Fenstergrösse der Fraktalsuche. Mit <b>3 Grade gleichzeitig</b> läuft der Scanner zusätzlich auf dem 1.8- und 3.4-fachen Wert — dieselbe Bewegung erscheint dann auf mehreren Ebenen, was der Sinn der Sache ist. Gröbere Grade werden kräftiger gezeichnet.</p>
           <p><b>Skip-Tiefe</b> erlaubt jeder Teilwelle, Zwischenextrema zu überspringen. Ohne das müsste ein ganzer Wellenzug in einer Auflösung liegen. Gemessen brauchen 73 % der gefundenen Impulse einen Skip über 0 — meist Welle 3, die als verlängerte Welle eigene Unterkorrekturen enthält. Auf 0 gestellt findet der Scanner nur rund ein Viertel.</p>
-          <p><b>Min. Pivot-Bewegung</b> räumt Rauschen beim Aufbau der Pivot-Kette weg. Zu hoch eingestellt zerfallen grosse Strukturen.</p></div>
+          <p><b>Min. Pivot-Bewegung</b> räumt Rauschen beim Aufbau der Pivot-Kette weg. Zu hoch eingestellt zerfallen grosse Strukturen.</p>
+          <p>Der Wellengrad ist die wirksamste Stellschraube. Ein Grad von&nbsp;2 macht das Fraktal-Fenster nur zwei Kerzen breit und erzeugt sehr viele Rauschpivots; 5 ist für die meisten Zeitrahmen ein guter Ausgangspunkt.</p></div>
+
+        <div class="faq-block"><h4>Beschriftung und Anzeigegrenze</h4>
+          <p><b>Beschriftung</b> steuert, wie ausführlich die Etiketten sind: <i>voll</i> mit allen Kennzahlen, <i>kurz</i> nur mit Richtung, Grad und Form-Zahl, <i>aus</i> zeigt nur die Wellenzüge. Auf dichten Zeitrahmen ist <i>kurz</i> meist die richtige Wahl — zwanzig ausführliche Etiketten überdecken einander.</p>
+          <p><b>Max. Strukturen zeigen</b> begrenzt die Anzahl der Overlays, nicht den Zeitraum. Greift die Grenze, wird der Sichtbereich in ebenso viele Abschnitte geteilt und aus jedem die beste Struktur genommen — die Auswahl verteilt sich also über den ganzen Chart, statt sich am rechten Rand zu sammeln.</p></div>
 
         <div class="faq-block"><h4>Regelstrenge</h4>
           <p><b>locker</b> prüft nur die Kardinalregeln. <b>mittel</b> ergänzt Proportionen: Welle 2 korrigiert mindestens 20 %, Welle 3 überschreitet das Welle-1-Ende und ist mindestens ein Drittel davon, Welle 5 bleibt unter dem Doppelten von Welle 1. <b>streng</b> nimmt zusätzlich Dauerverhältnisse dazu.</p>
@@ -1273,16 +1286,16 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m39"></script>
-<script src="js/indicators.js?v=m39"></script>
-<script src="js/overlays.js?v=m39"></script>
-<script src="js/data.js?v=m39"></script>
-<script src="js/settings.js?v=m39"></script>
-<script src="js/derivatives.js?v=m39"></script>
-<script src="js/gridbot.js?v=m39"></script>
-<script src="js/patterns.js?v=m39"></script>
-<script src="js/smc.js?v=m39"></script>
-<script src="js/ewt.js?v=m39"></script>
-<script src="js/app.js?v=m39"></script>
+<script src="js/config.js?v=m40"></script>
+<script src="js/indicators.js?v=m40"></script>
+<script src="js/overlays.js?v=m40"></script>
+<script src="js/data.js?v=m40"></script>
+<script src="js/settings.js?v=m40"></script>
+<script src="js/derivatives.js?v=m40"></script>
+<script src="js/gridbot.js?v=m40"></script>
+<script src="js/patterns.js?v=m40"></script>
+<script src="js/smc.js?v=m40"></script>
+<script src="js/ewt.js?v=m40"></script>
+<script src="js/app.js?v=m40"></script>
 </body>
 </html>
