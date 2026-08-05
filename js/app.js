@@ -4667,6 +4667,12 @@ function ewtReadOpts() {
     rsiOversold:       num("ewtRsiOs",   1,  99, D.rsiOversold),
     requireWave5NewExtreme: chk("ewtRule4", true),
     allowDiagonal:     chk("ewtDiagonal", false),
+    // Skip-Tiefe: wie viele Zwischenextrema eine Teilwelle ueberspringen
+    // darf. Gemessen brauchen 73 % der gefundenen Impulse einen Skip > 0 —
+    // ohne diese Suche bleiben drei Viertel aller Zaehlungen unsichtbar.
+    maxSkip:           Math.round(num("ewtMaxSkip", 0, 4, D.maxSkip)),
+    strictness:        (document.getElementById("ewtStrict") || {}).value || D.strictness,
+    maxImpulses:       Math.round(num("ewtMaxShow", 1, 60, D.maxImpulses)),
     // Diese drei sind bewusst standardmaessig AUS. Gemessen an 2000
     // Kerzen verwarf der RSI-Filter 76 % der Kandidaten und das Volumen
     // nochmals 53 % vom Rest — zusammen blieben 6 % uebrig. Eine
@@ -5544,6 +5550,10 @@ document.getElementById("patStrictness").addEventListener("change", (e) => {
     set("ewtMinPivotPct", o.minPivotPercent);
     if (Array.isArray(o.degrees) && o.degrees.length) set("ewtSwing", o.degrees[0]);
     chk("ewtMultiDegree", o.degrees ? o.degrees.length > 1 : true);
+    set("ewtMaxSkip", o.maxSkip);
+    set("ewtMaxShow", o.maxImpulses);
+    const st = document.getElementById("ewtStrict");
+    if (st && o.strictness) st.value = o.strictness;
     chk("ewtRule4",   o.requireWave5NewExtreme);
     chk("ewtDiagonal", o.allowDiagonal);
     chk("ewtUseRsi",  o.requireRsi);
@@ -5599,7 +5609,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m34";
+const TV_BUILD = "m35";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

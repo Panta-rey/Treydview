@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m34">
-  <link rel="stylesheet" href="css/style.css?v=m34">
+  <link rel="manifest" href="manifest.webmanifest?v=m35">
+  <link rel="stylesheet" href="css/style.css?v=m35">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m34"></script>
+  <script src="js/lib/klinecharts.min.js?v=m35"></script>
 </head>
 <body>
 
@@ -291,6 +291,22 @@
           <label><input type="checkbox" id="ewtMultiDegree" checked> 3 Grade gleichzeitig</label>
         </div>
         <div class="pat-row">
+          <label>Skip-Tiefe je Teilwelle</label>
+          <input type="number" id="ewtMaxSkip" value="2" min="0" max="4">
+        </div>
+        <div class="pat-row">
+          <label>Regelstrenge</label>
+          <select id="ewtStrict">
+            <option value="locker">locker (nur Kardinalregeln)</option>
+            <option value="mittel" selected>mittel (+ Proportionen)</option>
+            <option value="streng">streng (+ Dauer)</option>
+          </select>
+        </div>
+        <div class="pat-row">
+          <label>Max. Strukturen zeigen</label>
+          <input type="number" id="ewtMaxShow" value="12" min="1" max="60">
+        </div>
+        <div class="pat-row">
           <label>Min. Pivot-Bewegung %</label>
           <input type="number" id="ewtMinPivotPct" value="1.5" min="0" max="50" step="0.5">
         </div>
@@ -315,6 +331,12 @@
           Elliott-Regeln: Welle&nbsp;2 hält den Start von Welle&nbsp;1,
           Welle&nbsp;3 ist nicht die kürzeste, Welle&nbsp;4 überlappt
           Welle&nbsp;1 nicht. Nur bestätigte Fraktale — kein Repainting.
+          <br><br>
+          Die <b>Skip-Tiefe</b> erlaubt jeder Teilwelle, Zwischenextrema zu
+          überspringen. Gemessen brauchen 73&nbsp;% der gefundenen Impulse
+          einen Skip&nbsp;&gt;&nbsp;0 — meist Welle&nbsp;3, die als
+          verlängerte Welle eigene Unterkorrekturen enthält. Auf&nbsp;0
+          gestellt findet der Scanner nur rund ein Viertel.
           <br><br>
           Die <b>Zusatzfilter</b> sind bewusst aus. Gemessen an 2000&nbsp;Kerzen
           verwarf der RSI-Filter 76&nbsp;% der Kandidaten und das Volumen
@@ -1196,16 +1218,16 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m34"></script>
-<script src="js/indicators.js?v=m34"></script>
-<script src="js/overlays.js?v=m34"></script>
-<script src="js/data.js?v=m34"></script>
-<script src="js/settings.js?v=m34"></script>
-<script src="js/derivatives.js?v=m34"></script>
-<script src="js/gridbot.js?v=m34"></script>
-<script src="js/patterns.js?v=m34"></script>
-<script src="js/smc.js?v=m34"></script>
-<script src="js/ewt.js?v=m34"></script>
-<script src="js/app.js?v=m34"></script>
+<script src="js/config.js?v=m35"></script>
+<script src="js/indicators.js?v=m35"></script>
+<script src="js/overlays.js?v=m35"></script>
+<script src="js/data.js?v=m35"></script>
+<script src="js/settings.js?v=m35"></script>
+<script src="js/derivatives.js?v=m35"></script>
+<script src="js/gridbot.js?v=m35"></script>
+<script src="js/patterns.js?v=m35"></script>
+<script src="js/smc.js?v=m35"></script>
+<script src="js/ewt.js?v=m35"></script>
+<script src="js/app.js?v=m35"></script>
 </body>
 </html>

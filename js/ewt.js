@@ -60,9 +60,35 @@
     requireWave5NewExtreme: true,  // Welle 5 muss ueber Welle 3 hinaus
     allowDiagonal: false,          // Diagonalen duerfen Regel 3 verletzen
 
+    // ---- Flexible Wellengrenzen (Skip-Suche) ----
+    //
+    // Der entscheidende Punkt: eine Teilwelle darf Zwischenextrema
+    // ueberspringen. Ohne das muss ein ganzer Wellenzug in EINER
+    // Fraktal-Aufloesung liegen — real braucht Welle 1 aber oft eine
+    // groebere als Welle 3, und dann wird gar nichts gefunden.
+    //
+    // Uebernommen aus dem WaveOptionsGenerator5 des Python-Projekts,
+    // aber gedeckelt: dort sind es bei up_to=10 rund 66'000
+    // Kombinationen pro Startindex. maxSkip=2 ergibt 3^5 = 243, und mit
+    // dem fruehen Abbruch ungueltiger Teilwellen bleibt das im Browser
+    // bezahlbar. Durchprobiert wird aufsteigend nach Skip-Summe, die
+    // erste gueltige Zaehlung gewinnt — kuerzeste Wellen zuerst.
+    maxSkip: 2,
+
+    // ---- Regelstrenge ----
+    //   locker  nur die drei kardinalen Regeln
+    //   mittel  + Proportionen (W2-Mindestkorrektur, W3 ueber W1, W5-Deckel)
+    //   streng  + Dauer-Verhaeltnisse, wie im Python-Regelsatz
+    strictness: "mittel",
+
     // ---- Korrektur ----
     detectAbc: true,
     abcMaxRetrace: 0.854,          // C darf hoechstens so viel zurueckholen
+    // Welle B korrigiert einen Teil von A — nicht beliebig viel und nicht
+    // beliebig wenig. Bandbreite aus dem Python-Regelsatz (w2_7 / w3_2).
+    abcBMin: 0.35, abcBMax: 0.618,
+    // Welle C im Verhaeltnis zu A (w2_5 / w2_6)
+    abcCMin: 0.60, abcCMax: 2.61,
 
     // ---- Welle-3-Setup (eigener Modus) ----
     detectSetups: true,
@@ -93,7 +119,7 @@
     // ---- Ausgabe ----
     // Der eigentliche FPS-Faktor ist die Overlay-Anzahl, nicht die
     // Rechnung: KLineCharts zeichnet jedes Overlay bei jedem Frame neu.
-    maxImpulses: 8,
+    maxImpulses: 12,
     maxSetups: 6,
   };
 
@@ -216,13 +242,79 @@
   // genommen keine Regel, sondern schliesst nur verkuerzte Fuenfte
   // (failed fifth) aus — deshalb abschaltbar.
   function checkRules(p, bull, opts) {
-    const [p0, p1, p2, p3, p4, p5] = p.map(x => x.price);
-    const w1 = Math.abs(p1 - p0), w3 = Math.abs(p3 - p2), w5 = Math.abs(p5 - p4);
+    const P = p.map(x => x.price);
+    const [p0, p1, p2, p3, p4, p5] = P;
+    const w1 = Math.abs(p1 - p0), w2 = Math.abs(p2 - p1);
+    const w3 = Math.abs(p3 - p2), w4 = Math.abs(p4 - p3), w5 = Math.abs(p5 - p4);
+    const d = (a, b) => Math.max(1, Math.abs(p[b].index - p[a].index));
+    const d1 = d(0, 1), d2 = d(1, 2), d3 = d(2, 3), d4 = d(3, 4);
+
+    // ---- Kardinal, immer geprueft ----
     const r1 = bull ? p2 > p0 : p2 < p0;
     const r2 = !(w3 < w1 && w3 < w5);
     const r3 = opts.allowDiagonal ? true : (bull ? p4 > p1 : p4 < p1);
     const r4 = !opts.requireWave5NewExtreme ? true : (bull ? p5 > p3 : p5 < p3);
-    return { r1, r2, r3, r4, all: r1 && r2 && r3 && r4, w1, w3, w5 };
+
+    // ---- Struktur-Integritaet ----
+    // Welle 2 muss das tiefste Tief bis Welle 4 bleiben. Steht dazwischen
+    // ein tieferes, ist die Zaehlung hinfaellig. Entspricht der Pruefung
+    // wave2.low > min(lows[wave2 .. wave4]) im Python-Analyzer.
+    const rInt = bull ? p4 >= p2 : p4 <= p2;
+
+    const lvl = opts.strictness || "mittel";
+    let prop = true, dur = true;
+    if (lvl === "mittel" || lvl === "streng") {
+      prop =
+        w2 >= 0.2 * w1 &&                        // W2 korrigiert mindestens 20 %
+        (bull ? p3 > p1 : p3 < p1) &&            // W3 ueberschreitet W1-Ende
+        w3 >= w1 / 3 &&                          // W3 nicht verkuemmert
+        w3 > w2 &&                               // W3 laenger als W2
+        w4 > w2 / 3 &&                           // W4 nicht verkuemmert
+        w5 < 2.0 * w1;                           // W5 kein Ausreisser
+    }
+    if (lvl === "streng") {
+      // Dauer-Verhaeltnisse aus dem Python-Regelsatz (w2_3, w3_5).
+      dur = 9 * d2 > d1 && 7 * d3 > d1 && d4 > 0;
+    }
+
+    const all = r1 && r2 && r3 && r4 && rInt && prop && dur;
+    return { r1, r2, r3, r4, rInt, prop, dur, all, w1, w2, w3, w4, w5 };
+  }
+
+  // Ist die Teilwelle von Ketten-Index a nach b sauber?
+  //
+  // "Sauber" heisst: kein Zwischenhoch ueberragt das Endhoch und kein
+  // Zwischentief unterschreitet das Starttief. Genau das leisten im
+  // Python-Projekt find_end() und die np.min/np.max-Pruefungen — ohne sie
+  // wuerde ein Skip ueber ein tieferes Tief hinweg eine Welle behaupten,
+  // die es nicht gibt.
+  function legClean(chain, a, b, up) {
+    const start = chain[a].price, end = chain[b].price;
+    if (up ? !(end > start) : !(end < start)) return false;
+    for (let i = a + 1; i < b; i++) {
+      const q = chain[i];
+      if (up) {
+        if (q.type === "high" && q.price >= end)   return false;
+        if (q.type === "low"  && q.price <= start) return false;
+      } else {
+        if (q.type === "low"  && q.price <= end)   return false;
+        if (q.type === "high" && q.price >= start) return false;
+      }
+    }
+    return true;
+  }
+
+  // Skip-Tupel, aufsteigend nach Summe sortiert: kuerzeste Wellen zuerst,
+  // wie options_sorted im Python-Generator.
+  function skipTuples(maxSkip) {
+    const out = [];
+    for (let a = 0; a <= maxSkip; a++)
+     for (let b = 0; b <= maxSkip; b++)
+      for (let c2 = 0; c2 <= maxSkip; c2++)
+       for (let d2 = 0; d2 <= maxSkip; d2++)
+        for (let e = 0; e <= maxSkip; e++) out.push([a, b, c2, d2, e]);
+    out.sort((x, y) => x.reduce((s, v) => s + v, 0) - y.reduce((s, v) => s + v, 0));
+    return out;
   }
 
   // ============================================================
@@ -328,84 +420,143 @@
         if (chain.length < 6) continue;
 
         // ================= Impuls 1-2-3-4-5 =================
-        // Fenster von 6 aufeinanderfolgenden Pivots.
+        //
+        // Statt sechs STARR aufeinanderfolgender Pivots wird pro Teilwelle
+        // eine Skip-Tiefe gesucht: Welle 1 darf Zwischenextrema
+        // ueberspringen, Welle 3 unabhaengig davon eine andere Zahl. Ohne
+        // das muss der ganze Zug in einer Aufloesung liegen — und genau
+        // daran scheiterte die vorige Fassung.
+        //
+        // Pro Startpunkt gewinnt die erste gueltige Zaehlung; die Tupel
+        // sind nach Skip-Summe sortiert, also kuerzeste Wellen zuerst.
+        const tuples = skipTuples(Math.max(0, Math.min(4, opts.maxSkip | 0)));
+
         for (let k = 0; k + 5 < chain.length; k++) {
-          const p = chain.slice(k, k + 6);
-          const bull = p[0].type === "low";
-          // Die Kette alterniert, also genuegt die Pruefung des ersten
-          // Punktes — der Rest folgt zwangslaeufig.
-          if (bull ? p[1].type !== "high" : p[1].type !== "low") continue;
+          const bull = chain[k].type === "low";
 
-          const rules = checkRules(p, bull, opts);
-          if (!rules.all) continue;
+          let found = null;
+          for (const t of tuples) {
+            // Ketten-Indizes der sechs Strukturpunkte
+            const i1 = k  + 1 + 2 * t[0];
+            const i2 = i1 + 1 + 2 * t[1];
+            const i3 = i2 + 1 + 2 * t[2];
+            const i4 = i3 + 1 + 2 * t[3];
+            const i5 = i4 + 1 + 2 * t[4];
+            if (i5 >= chain.length) continue;
 
-          // Non-Repainting: die Struktur gilt erst als erkannt, wenn ihr
-          // LETZTER Punkt bestaetigt ist.
-          const confirmIndex = p[5].confirmIndex;
-          if (confirmIndex >= len) continue;
+            // Jede Teilwelle muss fuer sich sauber sein — frueher Abbruch
+            // haelt die Kombinatorik bezahlbar.
+            if (!legClean(chain, k,  i1, bull))  continue;
+            if (!legClean(chain, i1, i2, !bull)) continue;
+            if (!legClean(chain, i2, i3, bull))  continue;
+            if (!legClean(chain, i3, i4, !bull)) continue;
+            if (!legClean(chain, i4, i5, bull))  continue;
 
-          const i0 = p[0].index, i5 = p[5].index;
+            const p = [chain[k], chain[i1], chain[i2], chain[i3], chain[i4], chain[i5]];
+            const rules = checkRules(p, bull, opts);
+            if (!rules.all) continue;
+
+            // Non-Repainting: erst wenn der LETZTE Punkt bestaetigt ist.
+            if (p[5].confirmIndex >= len) continue;
+
+            found = { p, rules, skips: t, endChainIdx: i5 };
+            break;
+          }
+          if (!found) continue;
+
+          const { p, rules } = found;
+          const i0 = p[0].index, i5x = p[5].index;
           const lo = bull ? p[0].price : p[5].price;
           const hi = bull ? p[5].price : p[0].price;
 
-          // Bewertung, kein Filter
-          const er = eff(Math.min(i0, i5), Math.max(i0, i5));
-          const rsiEnd = rsi[i5];
+          const er = eff(Math.min(i0, i5x), Math.max(i0, i5x));
           const v = volConf(Math.min(p[0].index, p[1].index),
                             Math.max(p[0].index, p[1].index),
                             Math.max(p[0].index, p[1].index) + Math.max(n, 3));
           if (opts.requireEfficiency && er < opts.minEfficiency) continue;
           if (opts.requireVolume && v.ok === false) continue;
 
-          // Regelmaessigkeit der Verhaeltnisse: wie nah liegt Welle 3 an
-          // 1.618 x Welle 1 und Welle 5 an 1.0 x Welle 1? Rein
-          // beschreibend — ausdruecklich keine Trefferwahrscheinlichkeit.
+          // Beschreibend, keine Trefferwahrscheinlichkeit: wie nah liegen
+          // die Verhaeltnisse an den klassischen Werten?
           const r31 = rules.w1 > 0 ? rules.w3 / rules.w1 : 0;
           const r51 = rules.w1 > 0 ? rules.w5 / rules.w1 : 0;
-          const near = (x, t) => Math.max(0, 1 - Math.abs(x - t) / t);
+          const r21 = rules.w1 > 0 ? rules.w2 / rules.w1 : 0;
+          const near = (x, t2) => Math.max(0, 1 - Math.abs(x - t2) / t2);
           const quality = Math.max(0, Math.min(1,
-            0.40 * near(r31, 1.618) + 0.25 * near(r51, 1.0) +
-            0.20 * Math.min(1, er / 0.5) +
+            0.35 * near(r31, 1.618) + 0.20 * near(r51, 1.0) +
+            0.15 * near(r21, 0.618) +
+            0.15 * Math.min(1, er / 0.5) +
             0.15 * (v.ratio == null ? 0.5 : Math.min(1, v.ratio / 2))));
 
           impulses.push({
             kind: "impulse", degree: n, dir: bull ? "bull" : "bear",
             points: p.map(x => ({ index: x.index, price: x.price })),
-            chainPos: k, confirmIndex,
+            chainPos: k, confirmIndex: p[5].confirmIndex,
+            skips: found.skips,
             w1: rules.w1, w3: rules.w3, w5: rules.w5,
-            ratio31: r31, ratio51: r51,
-            rules: { r1: rules.r1, r2: rules.r2, r3: rules.r3, r4: rules.r4 },
-            er, rsiAtEnd: rsiEnd, volRatio: v.ratio, quality,
-            lowPrice: lo, highPrice: hi,
-            rightIndex: i5,
+            ratio31: r31, ratio51: r51, ratio21: r21,
+            rules: { r1: rules.r1, r2: rules.r2, r3: rules.r3, r4: rules.r4,
+                     rInt: rules.rInt, prop: rules.prop, dur: rules.dur },
+            er, rsiAtEnd: rsi[i5x], volRatio: v.ratio, quality,
+            lowPrice: lo, highPrice: hi, rightIndex: i5x,
           });
+          // Kein gieriges Blockieren benachbarter Startpunkte: das hat in
+          // einer Zwischenfassung die Ergebnisse aufgefressen und die
+          // Messung verfaelscht (strengere Regeln fanden MEHR, weil frueh
+          // verworfene Kandidaten spaetere nicht mehr blockierten).
+          // Deduplizieren geschieht geometrisch am Ende.
 
           // ================= Korrektur A-B-C =================
-          // Direkt im Anschluss an den Impuls: drei weitere Pivots.
-          if (opts.detectAbc && k + 8 < chain.length) {
-            const a = chain[k + 6], b = chain[k + 7], cc = chain[k + 8];
-            if (a && b && cc && cc.confirmIndex < len) {
+          // Direkt im Anschluss an den Impuls, ebenfalls mit Skip-Suche.
+          if (opts.detectAbc) {
+            const e0 = found.endChainIdx;
+            let abcFound = null;
+            for (const t of tuples) {
+              const ia = e0 + 1 + 2 * t[0];
+              const ib = ia + 1 + 2 * t[1];
+              const ic = ib + 1 + 2 * t[2];
+              if (ic >= chain.length) continue;
+              if (!legClean(chain, e0, ia, !bull)) continue;
+              if (!legClean(chain, ia, ib, bull))  continue;
+              if (!legClean(chain, ib, ic, !bull)) continue;
+              const A = chain[ia], B = chain[ib], C = chain[ic];
+              if (C.confirmIndex >= len) continue;
+
               const p5v = p[5].price, p0v = p[0].price;
-              // Nach einem Bullen-Impuls korrigiert A-B-C abwaerts.
-              const okDir = bull
-                ? (a.price < p5v && b.price > a.price && b.price < p5v && cc.price < b.price)
-                : (a.price > p5v && b.price < a.price && b.price > p5v && cc.price > b.price);
-              // C darf den Impuls nicht praktisch ausloeschen.
+              const lenA = Math.abs(p5v - A.price);
+              const lenB = Math.abs(B.price - A.price);
+              const lenC = Math.abs(C.price - B.price);
+              if (!(lenA > 0)) continue;
+              // B korrigiert einen Teil von A — nicht beliebig viel und
+              // nicht beliebig wenig (w2_7 / w3_2 im Python-Regelsatz).
+              const bOk = lenB >= opts.abcBMin * lenA && lenB <= opts.abcBMax * lenA;
+              // C im Verhaeltnis zu A (w2_5 / w2_6)
+              const cOk = lenC >= opts.abcCMin * lenA && lenC <= opts.abcCMax * lenA;
+              // C laeuft ueber A hinaus, B bleibt innerhalb des Impulses
+              const dirOk = bull
+                ? (C.price < A.price && B.price < p5v)
+                : (C.price > A.price && B.price > p5v);
+              // Die Korrektur darf den Impuls nicht praktisch ausloeschen
               const limit = bull ? logRetrace(p5v, p0v, opts.abcMaxRetrace)
                                  : logRetrace(p0v, p5v, 1 - opts.abcMaxRetrace);
-              const okDepth = bull ? cc.price >= limit : cc.price <= limit;
-              if (okDir && okDepth) {
-                abcs.push({
-                  kind: "abc", degree: n, dir: bull ? "bear" : "bull",
-                  points: [{ index: p[5].index, price: p5v },
-                           { index: a.index,  price: a.price },
-                           { index: b.index,  price: b.price },
-                           { index: cc.index, price: cc.price }],
-                  confirmIndex: cc.confirmIndex,
-                  parentDir: bull ? "bull" : "bear",
-                  rightIndex: cc.index,
-                });
+              const depthOk = bull ? C.price >= limit : C.price <= limit;
+              if (bOk && cOk && dirOk && depthOk) {
+                abcFound = { A, B, C, ratioBA: lenB / lenA, ratioCA: lenC / lenA };
+                break;
               }
+            }
+            if (abcFound) {
+              abcs.push({
+                kind: "abc", degree: n, dir: bull ? "bear" : "bull",
+                points: [{ index: p[5].index, price: p[5].price },
+                         { index: abcFound.A.index, price: abcFound.A.price },
+                         { index: abcFound.B.index, price: abcFound.B.price },
+                         { index: abcFound.C.index, price: abcFound.C.price }],
+                confirmIndex: abcFound.C.confirmIndex,
+                ratioBA: abcFound.ratioBA, ratioCA: abcFound.ratioCA,
+                parentEnd: p[5].index,
+                rightIndex: abcFound.C.index,
+              });
             }
           }
         }
@@ -526,17 +677,34 @@
       const inView = (s) => s.rightIndex >= from &&
         (s.points ? s.points[0].index : s.lowIndex) <= to;
 
-      // Ueber mehrere Grade entstehen fast deckungsgleiche Strukturen.
-      // Der groebere Grad gewinnt: er beschreibt die uebergeordnete Welle.
+      // Deduplizierung JE GRAD, nicht ueber alle Grade hinweg.
+      //
+      // Die Mehrskalen-Suche ist ja gerade dafuer da, dieselbe Bewegung
+      // auf verschiedenen Ebenen zu zeigen — eine uebergeordnete Zaehlung
+      // und die feinere darin sind kein Widerspruch, sondern der Sinn der
+      // Sache. Frueher wurde ueber alle Grade dedupliziert, wodurch aus
+      // 64 gefundenen Strukturen 11 wurden und die Skip-Suche wirkungslos
+      // erschien.
+      //
+      // Innerhalb eines Grades gewinnt bei Ueberlappung die hoehere Guete.
       const dedupe = (arr) => {
-        const out = [], seen = [];
-        for (const s of arr.slice().sort((a, b) => b.degree - a.degree)) {
-          const a0 = s.points[0].index, a1 = s.points[s.points.length - 1].index;
-          const dup = seen.some(([b0, b1]) => {
-            const ov = Math.min(a1, b1) - Math.max(a0, b0);
-            return ov > 0 && ov / Math.max(1, a1 - a0) > 0.7;
-          });
-          if (!dup) { out.push(s); seen.push([a0, a1]); }
+        const byDeg = new Map();
+        for (const s of arr) {
+          if (!byDeg.has(s.degree)) byDeg.set(s.degree, []);
+          byDeg.get(s.degree).push(s);
+        }
+        const out = [];
+        for (const [, list] of byDeg) {
+          const seen = [];
+          list.sort((a, b) => b.quality - a.quality);
+          for (const s of list) {
+            const a0 = s.points[0].index, a1 = s.points[s.points.length - 1].index;
+            const dup = seen.some(([b0, b1]) => {
+              const ov = Math.min(a1, b1) - Math.max(a0, b0);
+              return ov > 0 && ov / Math.max(1, a1 - a0) > 0.6;
+            });
+            if (!dup) { out.push(s); seen.push([a0, a1]); }
+          }
         }
         return out;
       };
@@ -546,8 +714,9 @@
       if (opts.maxImpulses > 0) imp = imp.slice(0, opts.maxImpulses);
       imp.sort((a, b) => a.rightIndex - b.rightIndex);
 
+      // Nur Korrekturen zu Impulsen zeigen, die auch gezeichnet werden
       const keep = new Set(imp.map(s => s.degree + ":" + s.points[5].index));
-      const abc = abcs.filter(inView).filter(s => keep.has(s.degree + ":" + s.points[0].index));
+      const abc = abcs.filter(inView).filter(s => keep.has(s.degree + ":" + s.parentEnd));
 
       let set = setups.filter(inView);
       const sseen = new Set();
@@ -568,20 +737,36 @@
     // mit Zahlen statt mit Vermutungen.
     diagnose(data, userOpts = {}) {
       const opts = { ...DEFAULTS, ...userOpts };
+      const tuples = skipTuples(Math.max(0, Math.min(4, opts.maxSkip | 0)));
       const out = { degrees: {}, gesamt: 0 };
       for (const n of opts.degrees) {
         const chain = buildChain(findFractals(data, n), opts.minPivotPercent);
-        const c = { pivots: chain.length, fenster: 0, r1: 0, r2: 0, r3: 0, r4: 0, ok: 0, unbestaetigt: 0 };
+        const c = { pivots: chain.length, starts: 0, legFail: 0,
+                    r1: 0, r2: 0, r3: 0, r4: 0, rInt: 0, prop: 0, dur: 0,
+                    ok: 0, unbestaetigt: 0, skipHisto: {} };
         for (let k = 0; k + 5 < chain.length; k++) {
-          const p = chain.slice(k, k + 6);
-          const bull = p[0].type === "low";
-          c.fenster++;
-          const r = checkRules(p, bull, opts);
-          if (!r.r1) c.r1++;
-          if (!r.r2) c.r2++;
-          if (!r.r3) c.r3++;
-          if (!r.r4) c.r4++;
-          if (r.all) { if (p[5].confirmIndex >= data.length) c.unbestaetigt++; else c.ok++; }
+          const bull = chain[k].type === "low";
+          c.starts++;
+          let hit = false;
+          for (const t of tuples) {
+            const i1 = k + 1 + 2*t[0], i2 = i1 + 1 + 2*t[1], i3 = i2 + 1 + 2*t[2];
+            const i4 = i3 + 1 + 2*t[3], i5 = i4 + 1 + 2*t[4];
+            if (i5 >= chain.length) continue;
+            if (!legClean(chain, k, i1, bull) || !legClean(chain, i1, i2, !bull) ||
+                !legClean(chain, i2, i3, bull) || !legClean(chain, i3, i4, !bull) ||
+                !legClean(chain, i4, i5, bull)) { c.legFail++; continue; }
+            const r = checkRules([chain[k], chain[i1], chain[i2], chain[i3],
+                                  chain[i4], chain[i5]], bull, opts);
+            if (!r.r1) c.r1++; if (!r.r2) c.r2++; if (!r.r3) c.r3++;
+            if (!r.r4) c.r4++; if (!r.rInt) c.rInt++;
+            if (!r.prop) c.prop++; if (!r.dur) c.dur++;
+            if (r.all) {
+              if (chain[i5].confirmIndex >= data.length) { c.unbestaetigt++; continue; }
+              const key = t.join("");
+              c.skipHisto[key] = (c.skipHisto[key] || 0) + 1;
+              c.ok++; hit = true; break;
+            }
+          }
         }
         out.degrees[n] = c;
         out.gesamt += c.ok;
