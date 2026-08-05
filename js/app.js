@@ -4653,6 +4653,7 @@ function ewtReadOpts() {
     swingLength:       num("ewtSwing",   2,  50, D.swingLength),
     minSwingPercent:   num("ewtMinPct",  0, 500, D.minSwingPercent),
     timeoutBars:       num("ewtTimeout", 1, 500, D.timeoutBars),
+    rsiPeriod:         num("ewtRsiPeriod", 2, 100, D.rsiPeriod),
     rsiOversold:       num("ewtRsiOs",   1,  99, D.rsiOversold),
     requireRsi:        chk("ewtUseRsi",  true),
     requireVolume:     chk("ewtUseVol",  true),
@@ -5502,6 +5503,7 @@ document.getElementById("patStrictness").addEventListener("change", (e) => {
     set("ewtSwing",   o.swingLength);
     set("ewtMinPct",  o.minSwingPercent);
     set("ewtTimeout", o.timeoutBars);
+    set("ewtRsiPeriod", o.rsiPeriod);
     set("ewtRsiOs",   o.rsiOversold);
     chk("ewtUseRsi",  o.requireRsi);
     chk("ewtUseVol",  o.requireVolume);
