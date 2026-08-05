@@ -1122,6 +1122,233 @@
     },
   });
 
+  // ---------- Elliott-Wellen-Setup (Welle 3 / Golden Pocket) ----------
+  //
+  // Programmatisch vom EWT-Scanner erzeugt, wie "pattern" und "smcZone".
+  //
+  // Punkt-Reihenfolge — vom Scanner in app.js in exakt dieser Folge
+  // uebergeben. ALLE Punkte haengen an echten Timestamps und Kurswerten,
+  // nie an Pixeln: dadurch sitzt die Zeichnung bei jedem Zoom- und
+  // Scrollzustand automatisch richtig, ohne eigenes Nachrechnen.
+  //   0  Start Welle 1   (Zeitpunkt Tief,  Tiefkurs)
+  //   1  Ende  Welle 1   (Zeitpunkt Hoch,  Hochkurs)
+  //   2  Box oben links  (Zeitpunkt Hoch,  0.5-Level)
+  //   3  Box unten rechts(rechter Rand,    0.618-Level)
+  //   4  Welle-3-Ziel    (rechter Rand,    1.618-Extension)  — optional
+  //
+  // Die Y-Werte der Box stammen aus der LOGARITHMISCHEN Rechnung in
+  // ewt.js. Hier wird nichts mehr interpoliert — sonst waere die
+  // geometrische Korrektheit an dieser Stelle wieder verloren.
+  klinecharts.registerOverlay({
+    name: "ewtZone",
+    totalStep: 1,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: true,
+    createPointFigures: ({ coordinates, overlay, bounding }) => {
+      if (coordinates.length < 4) return [];
+      const ed = overlay.extendData || {};
+
+      // Gelb wartend · Gruen getriggert · Rot invalidiert · Grau Time-Out
+      const PAL = {
+        pending:   "232,182,76",
+        triggered: "63,182,139",
+        invalid:   "208,94,94",
+        timeout:   "143,163,184",
+      };
+      const rgb = PAL[ed.state] || PAL.pending;
+      const done = ed.state === "invalid" || ed.state === "timeout";
+      const col  = `rgba(${rgb},${done ? 0.6 : 0.95})`;
+
+      const c0 = coordinates[0], c1 = coordinates[1];
+      const c2 = coordinates[2], c3 = coordinates[3];
+      const c4 = coordinates.length > 4 ? coordinates[4] : null;
+      const figs = [];
+
+      // ---- Golden-Pocket-Box ----
+      // Nach dem Einstieg gebrochen: gruen gefuellt, aber roter Strichrand.
+      // Ohne diese Unterscheidung sieht im Rueckblick jede gruene Box wie
+      // ein Treffer aus.
+      const broke = ed.outcome === "invalidiert";
+      figs.push({
+        type: "rect",
+        attrs: rectAttrs(c2, c3),
+        styles: {
+          style: "stroke_fill",
+          color: `rgba(${rgb},${done ? 0.07 : 0.16})`,
+          borderColor: broke ? "rgba(208,94,94,0.95)" : col,
+          borderSize: 1,
+          borderStyle: (done || broke) ? "dashed" : "solid",
+          dashedValue: [4, 3],
+        },
+        ignoreEvent: false,
+      });
+
+      // ---- Welle 1 als Linie mit Anfassern ----
+      figs.push({
+        type: "line",
+        attrs: { coordinates: [c0, c1] },
+        styles: { style: "solid", color: col, size: 2, smooth: false },
+      });
+      [c0, c1].forEach(c => figs.push({
+        type: "circle",
+        attrs: { x: c.x, y: c.y, r: 3.5 },
+        styles: { style: "fill", color: col },
+      }));
+
+      // Invalidierungs-Niveau: Waagrechte auf Hoehe des Start-Tiefs bis an
+      // den rechten Rand der Box. Bricht der Kurs darunter, ist die
+      // EWT-Regel "Welle 2 unterschreitet den Start von Welle 1 nicht"
+      // verletzt — das ist die eine harte Regel des Setups.
+      figs.push({
+        type: "line",
+        attrs: { coordinates: [{ x: c0.x, y: c0.y }, { x: c3.x, y: c0.y }] },
+        styles: { style: "dashed", dashedValue: [3, 4],
+                  color: `rgba(208,94,94,${done ? 0.35 : 0.6})`, size: 1 },
+      });
+
+      // ---- Welle-3-Ziel (nur bei getriggerten Setups) ----
+      if (c4) {
+        figs.push({
+          type: "line",
+          attrs: { coordinates: [{ x: c2.x, y: c4.y }, { x: c3.x, y: c4.y }] },
+          styles: { style: "dashed", dashedValue: [6, 4],
+                    color: "rgba(63,182,139,0.75)", size: 1 },
+        });
+        if (ed.targetLabel) {
+          figs.push({
+            type: "text",
+            attrs: { x: c3.x - 4, y: c4.y, text: ed.targetLabel,
+                     align: "right", baseline: "bottom" },
+            styles: {
+              style: "fill", color: "rgba(63,182,139,0.95)",
+              size: 10, family: "IBM Plex Mono, monospace",
+            },
+            ignoreEvent: true,
+          });
+        }
+      }
+
+      // ---- Beschriftung ----
+      // In den Sichtbereich klemmen: scrollt das Setup halb aus dem Bild,
+      // saehe man sonst nur noch eine Box ohne Erklaerung. Gleiche
+      // Behandlung wie beim Muster-Overlay.
+      if (ed.label) {
+        const lc = labelColors();
+        const W = (bounding && bounding.width) || 1200;
+        const x = Math.max(4, Math.min(W - 8, Math.min(c2.x, c3.x) + 4));
+        const y = Math.min(c2.y, c3.y);
+        figs.push({
+          type: "text",
+          attrs: { x, y, text: ed.label, align: "left", baseline: "bottom" },
+          styles: {
+            style: "stroke_fill",
+            color: col,
+            backgroundColor: lc.bg,
+            borderColor: col,
+            borderSize: 1,
+            borderRadius: 3,
+            size: 10,
+            family: "IBM Plex Mono, monospace",
+            paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+          },
+          ignoreEvent: true,
+        });
+      }
+
+      return figs;
+    },
+  });
+
+  // ---------- EWT-Projektion (Welle 3/4/5) ----------
+  //
+  // Bewusst zurueckhaltend gezeichnet: gepunktet, halbtransparent, mit
+  // Fragezeichen im Titel. Das ist eine Fibonacci-Fortschreibung, keine
+  // Vorhersage — und es soll auch so AUSSEHEN. Wer eine gepunktete
+  // blasse Linie sieht, liest sie anders als eine kraeftige durchgezogene.
+  //
+  // Punkt-Reihenfolge:
+  //   0  Anker (Welle-2-Tief)        3  Welle-4-Tief
+  //   1  Welle-3-Ziel                4  Welle-5-Ziel
+  //   2  Welle-3-Zielband oben       5  rechter Rand (nur fuer die x-Weite)
+  klinecharts.registerOverlay({
+    name: "ewtProjection",
+    totalStep: 1,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, overlay, bounding }) => {
+      if (coordinates.length < 5) return [];
+      const ed = overlay.extendData || {};
+      // Angenommene Basis (Welle-2-Tief noch nicht bekannt) wird noch
+      // blasser gezeichnet als eine gemessene.
+      const weak = ed.basis !== "gemessen";
+      const a    = weak ? 0.42 : 0.68;
+      const col  = `rgba(90,169,230,${a})`;
+      const c0 = coordinates[0], c1 = coordinates[1], c2 = coordinates[2];
+      const c3 = coordinates[3], c4 = coordinates[4];
+      const figs = [];
+
+      // Zielband Welle 3 (1.618 bis 2.618)
+      figs.push({
+        type: "rect",
+        attrs: rectAttrs({ x: c0.x, y: c1.y }, { x: c1.x, y: c2.y }),
+        styles: {
+          style: "stroke_fill",
+          color: `rgba(90,169,230,${weak ? 0.05 : 0.09})`,
+          borderColor: `rgba(90,169,230,${a * 0.6})`,
+          borderSize: 1, borderStyle: "dashed", dashedValue: [2, 3],
+        },
+        ignoreEvent: true,
+      });
+
+      // Wellenzug 2 -> 3 -> 4 -> 5, gepunktet
+      figs.push({
+        type: "line",
+        attrs: { coordinates: [c0, c1, c3, c4] },
+        styles: { style: "dashed", dashedValue: [2, 4], color: col, size: 1.5, smooth: false },
+      });
+
+      // Wendepunkte
+      [[c1, "3"], [c3, "4"], [c4, "5"]].forEach(([c, n]) => {
+        figs.push({
+          type: "circle",
+          attrs: { x: c.x, y: c.y, r: 3 },
+          styles: { style: "stroke_fill", color: "rgba(13,17,23,0.9)",
+                    borderColor: col, borderSize: 1.5 },
+        });
+        figs.push({
+          type: "text",
+          attrs: { x: c.x + 6, y: c.y, text: n, align: "left", baseline: "middle" },
+          styles: { style: "fill", color: col, size: 10,
+                    family: "IBM Plex Mono, monospace" },
+          ignoreEvent: true,
+        });
+      });
+
+      // Titel. Das Fragezeichen ist Absicht.
+      if (ed.label) {
+        const lc = labelColors();
+        const W = (bounding && bounding.width) || 1200;
+        const x = Math.max(4, Math.min(W - 8, c0.x + 4));
+        figs.push({
+          type: "text",
+          attrs: { x, y: Math.min(c1.y, c2.y) - 4, text: ed.label,
+                   align: "left", baseline: "bottom" },
+          styles: {
+            style: "stroke_fill", color: col,
+            backgroundColor: lc.bg, borderColor: col,
+            borderSize: 1, borderRadius: 3, size: 10,
+            family: "IBM Plex Mono, monospace",
+            paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+          },
+          ignoreEvent: true,
+        });
+      }
+      return figs;
+    },
+  });
+
   // ---------- Polyline (nur Rendering) ----------
   // Das Zeichnen läuft klickbasiert über eigene Handler in app.js
   // (startPolyline), analog zum Freihand-Werkzeug. Hier nur die Darstellung

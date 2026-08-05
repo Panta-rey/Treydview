@@ -109,6 +109,14 @@ const state = {
   smcOverlayIds: [],
   smcOpts: _ws?.smcOpts || {},
 
+  // Elliott-Wellen-Scanner (Welle 3 / Golden Pocket)
+  ewtOverlayIds: [],
+  ewtOpts: _ws?.ewtOpts || {},
+
+  // Logarithmische Preisskala. Default linear — die Log-Ansicht ist eine
+  // Darstellungsoption, keine Voreinstellung.
+  logScale: _ws?.logScale === true,
+
   // Chart-Darstellung (Kerzen-/Linienfarben)
   chartStyle: _ws?.chartStyle || {
     // Preis-Markierungen: aktueller Preis + lokale Hochs/Tiefs
@@ -715,7 +723,7 @@ function initDropdowns() {
       document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
     }
   });
-  ["assetDropdown", "compareDropdown", "tfDropdown", "typeDropdown", "indDropdown", "layoutDropdown", "patternDropdown", "smcDropdown"].forEach(id => {
+  ["assetDropdown", "compareDropdown", "tfDropdown", "typeDropdown", "indDropdown", "layoutDropdown", "patternDropdown", "smcDropdown", "ewtDropdown"].forEach(id => {
     const dd = document.getElementById(id);
     if (!dd) return;
     const trigger = dd.querySelector(".dd-trigger, .action-btn");
@@ -724,7 +732,7 @@ function initDropdowns() {
       e.stopPropagation();
       const wasOpen = panel.classList.contains("open");
       document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
-      if (!wasOpen) panel.classList.add("open");
+      if (!wasOpen) { panel.classList.add("open"); placeDropdownPanel(dd, trigger, panel); }
       if (id === "assetDropdown" && !wasOpen) {
         setTimeout(() => document.getElementById("assetSearch").focus(), 30);
       }
@@ -735,6 +743,28 @@ function initDropdowns() {
       if (id === "layoutDropdown" && !wasOpen) renderLayoutList();
     });
   });
+}
+
+// Panels von Knoepfen, die in der Seitenleiste sitzen, muessen fixiert
+// positioniert werden: .drawbar traegt overflow-y:auto und wuerde ein
+// absolut positioniertes Panel abschneiden. Zudem zeigt .dd-panel--right
+// mit right:0 in der schmalen Leiste nach LINKS aus dem Bild hinaus.
+// Dieselbe Loesung wie bei den Werkzeug-Fly-Outs: position:fixed und
+// Koordinaten aus dem Knopf rechnen.
+function placeDropdownPanel(dd, trigger, panel) {
+  if (!dd.closest("#drawbar")) {
+    // Ausserhalb der Leiste gilt unveraendert das Stylesheet.
+    panel.style.position = ""; panel.style.left = "";
+    panel.style.top = "";      panel.style.right = "";
+    return;
+  }
+  const r = trigger.getBoundingClientRect();
+  panel.style.position = "fixed";
+  panel.style.right = "auto";
+  panel.style.left  = (r.right + 8) + "px";
+  panel.style.top   = "8px";
+  const ph = panel.offsetHeight;
+  panel.style.top = Math.max(8, Math.min(r.top, window.innerHeight - ph - 12)) + "px";
 }
 
 function renderAssetList(filter = "") {
@@ -1230,6 +1260,9 @@ function applyCompareIndicator() {
     try { gbClearBands(); } catch (e) {}
     try { clearPatterns(); } catch (e) {}
     try { clearSMC(); } catch (e) {}
+    // EWT-Boxen haengen an Kurswerten und saessen auf der Prozent-Skala
+    // voellig falsch — wie Muster und SMC-Zonen.
+    try { clearEWT(); } catch (e) {}
     // Alle Overlays (FRVP, Zeichnungen, Fibonacci etc.) verstecken —
     // sie laufen auf Preis-Basis und hätten im %-Vergleich falsche Positionen.
     // IDs merken für Wiederherstellung.
@@ -1706,6 +1739,7 @@ function findOverlayNear(x, y, lineTol, pointTol) {
     .concat((state.drawings || []).map(d => d.id))
     .concat(state.patternOverlayIds || [])
     .concat(state.smcOverlayIds || [])
+    .concat(state.ewtOverlayIds || [])
     .concat(state.gbBandIds || []);
   if (state.selectedOverlayId) ids.unshift(state.selectedOverlayId);
 
@@ -2717,47 +2751,10 @@ document.addEventListener("click", (e) => {
   }
 });
 
-function toggleDrawStylePopover() {
-  let pop = document.getElementById("drawStylePopover");
-  if (pop) { pop.remove(); return; }
-  pop = document.createElement("div");
-  pop.id = "drawStylePopover";
-  pop.className = "draw-style-popover";
-  const ds = state.drawStyle;
-  pop.innerHTML = `
-    <div class="dsp-row"><label>Farbe</label><input type="color" id="dspColor" value="${ds.color}"></div>
-    <div class="dsp-row"><label>Deckkraft</label><input type="range" min="0" max="100" id="dspOpacity" value="${ds.opacity}"><span id="dspOpVal">${ds.opacity}%</span></div>
-    <div class="dsp-row"><label>Stärke</label><input type="number" min="1" max="5" id="dspWidth" value="${ds.width}"></div>
-    <div class="dsp-row"><label>Linienart</label>
-      <select id="dspLineStyle">
-        <option value="solid"${ds.lineStyle==="solid"?" selected":""}>durchgezogen</option>
-        <option value="dashed"${ds.lineStyle==="dashed"?" selected":""}>gestrichelt</option>
-      </select>
-    </div>`;
-  document.body.appendChild(pop);
-  const bar = document.getElementById("drawbar").getBoundingClientRect();
-  placeMenu(pop, bar.right + 6, 120);
-
-  const opEl = pop.querySelector("#dspOpacity");
-  opEl.addEventListener("input", () => { pop.querySelector("#dspOpVal").textContent = opEl.value + "%"; });
-  const apply = () => {
-    state.drawStyle = {
-      color: pop.querySelector("#dspColor").value,
-      opacity: parseInt(opEl.value, 10),
-      width: parseInt(pop.querySelector("#dspWidth").value, 10),
-      lineStyle: pop.querySelector("#dspLineStyle").value,
-    };
-  };
-  pop.querySelectorAll("input,select").forEach(el => el.addEventListener("change", apply));
-  // Klick ausserhalb schliesst
-  setTimeout(() => {
-    document.addEventListener("click", function close(e) {
-      if (!pop.contains(e.target) && e.target.id !== "drawStyleBtn") {
-        pop.remove(); document.removeEventListener("click", close);
-      }
-    });
-  }, 10);
-}
+// Der Zeichenstil-Knopf ist ab m33 aus der Seitenleiste entfernt: der
+// Stil einer Zeichnung wird ueber den Schwebebalken (Stift-Symbol) am
+// ausgewaehlten Objekt gesetzt. state.drawStyle bleibt als Vorgabe fuer
+// neue Zeichnungen bestehen und wird weiterhin aus dem Workspace geladen.
 
 // Zeichenwerkzeug-Kategorien
 // Einheitliche Symbolgarnitur im Stil der TradingView-Zeichnungsliste.
@@ -2847,20 +2844,53 @@ const DRAW_CATEGORIES = [
   },
 ];
 
+// Panel-Knoepfe, die auf dem Desktop aus der Topbar in die Seitenleiste
+// wandern. Reihenfolge = Reihenfolge in der Leiste.
+const DRAWBAR_PANEL_IDS = [
+  "gridBotBtn", "posToolTopBtn", "patternDropdown", "smcDropdown", "ewtDropdown",
+];
+
 function renderDrawbar() {
   const bar = document.getElementById("drawbar");
-  bar.innerHTML = "";
+  if (!bar) return;
 
-  // Stil-Wähler oben
-  const styleBtn = document.createElement("button");
-  styleBtn.id = "drawStyleBtn";
-  styleBtn.className = "draw-cat-btn";
-  styleBtn.title = "Zeichenstil";
-  styleBtn.innerHTML = `<svg viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M12 2a10 10 0 1 0 0 20 2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2h1.17A8 8 0 0 0 12 2z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="9" r="1.5" fill="#ff5252"/><circle cx="12" cy="7" r="1.5" fill="#e8b64c"/><circle cx="16" cy="9" r="1.5" fill="#3fb68b"/><circle cx="17" cy="13" r="1.5" fill="#5aa9e6"/></svg>`;
-  styleBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleDrawStylePopover(); });
-  bar.appendChild(styleBtn);
+  // ── Persistenter Kopf mit den Panel-Knoepfen ──
+  //
+  // WICHTIG: Diese Knoepfe stammen aus der Topbar und tragen ihre
+  // Ereignis-Handler seit dem Start der App. renderDrawbar() laeuft bei
+  // jedem Werkzeugwechsel, Magnet- und Pin-Klick erneut. Wuerden sie im
+  // geleerten Bereich liegen, wuerde `innerHTML = ""` sie samt Handlern
+  // vernichten und jedes spaetere getElementById liefe ins Leere.
+  // Deshalb ein eigener Container, der nur EINMAL befuellt und danach nie
+  // wieder angefasst wird.
+  let head = bar.querySelector(".drawbar-panels");
+  if (!head) {
+    head = document.createElement("div");
+    head.className = "drawbar-panels";
+    bar.appendChild(head);
+    // Auf dem Handy bleibt das DOM unangetastet: dort liegt die Drawbar
+    // ohnehin auf display:none und die Knoepfe gehoeren in die Bottom Bar.
+    // Die Abfrage steht wortgleich hier statt ueber tvIsMobile(), weil das
+    // ein spaeter deklariertes const ist (temporale Todeszone).
+    if (!window.matchMedia("(max-width: 720px), (pointer: coarse)").matches) {
+      DRAWBAR_PANEL_IDS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) head.appendChild(el);
+      });
+      if (head.childElementCount) {
+        const sepHead = document.createElement("div");
+        sepHead.className = "draw-sep";
+        head.appendChild(sepHead);
+      }
+    }
+  }
 
-  const sep0 = document.createElement("div"); sep0.className = "draw-sep"; bar.appendChild(sep0);
+  // ── Werkzeug-Teil: wird bei jedem Aufruf neu gebaut ──
+  let tools = bar.querySelector(".drawbar-tools");
+  if (tools) tools.remove();
+  tools = document.createElement("div");
+  tools.className = "drawbar-tools";
+  bar.appendChild(tools);
 
   // Kategorie-Gruppen
   DRAW_CATEGORIES.forEach(cat => {
@@ -2918,10 +2948,10 @@ function renderDrawbar() {
       popup.appendChild(item);
     });
     group.appendChild(popup);
-    bar.appendChild(group);
+    tools.appendChild(group);
   });
 
-  const sep1 = document.createElement("div"); sep1.className = "draw-sep"; bar.appendChild(sep1);
+  const sep1 = document.createElement("div"); sep1.className = "draw-sep"; tools.appendChild(sep1);
 
   // Magnet
   const magnet = document.createElement("button");
@@ -2946,7 +2976,7 @@ function renderDrawbar() {
     state.magnetMode = state.magnetMode === "normal" ? "strong_magnet" : "normal";
     renderDrawbar();
   });
-  bar.appendChild(magnet);
+  tools.appendChild(magnet);
 
   // Pin
   const pin = document.createElement("button");
@@ -2954,9 +2984,9 @@ function renderDrawbar() {
   pin.title = state.pinTool ? "Werkzeug bleibt aktiv" : "Werkzeug nach Zeichnung deaktivieren";
   pin.innerHTML = `<svg viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M9 4v6l-2 4v2h10v-2l-2-4V4M12 16v5M8 4h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   pin.addEventListener("click", () => { state.pinTool = !state.pinTool; renderDrawbar(); });
-  bar.appendChild(pin);
+  tools.appendChild(pin);
 
-  const sep2 = document.createElement("div"); sep2.className = "draw-sep"; bar.appendChild(sep2);
+  const sep2 = document.createElement("div"); sep2.className = "draw-sep"; tools.appendChild(sep2);
 
   // Alles löschen
   const clear = document.createElement("button");
@@ -2964,7 +2994,7 @@ function renderDrawbar() {
   clear.title = "Alle Zeichnungen löschen";
   clear.innerHTML = `<svg viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   clear.addEventListener("click", () => chart.removeOverlay());
-  bar.appendChild(clear);
+  tools.appendChild(clear);
 }
 
 // Popups schliessen bei Klick ausserhalb
@@ -3056,6 +3086,7 @@ function resize() {
     _compareCanvas.height = chartEl.clientHeight;
     try { drawCompare(); } catch (e) {}
   }
+  placeLogScaleBtn();
 }
 new ResizeObserver(resize).observe(document.querySelector(".workspace"));
 // Die Statusleiste kann bei langem Text auf zwei oder mehr Zeilen wachsen.
@@ -3349,6 +3380,8 @@ function saveWorkspace() {
       chartStyle: state.chartStyle,
       drawStyle:  state.drawStyle,
       smcOpts:    state.smcOpts,
+      ewtOpts:    state.ewtOpts,
+      logScale:   state.logScale,
     }));
   } catch (e) {
     // QuotaExceededError: localStorage voll (z.B. viele Zeichnungen).
@@ -3571,6 +3604,7 @@ function clearAllDrawings() {
   state.drawings = [];
   state.patternOverlayIds = [];
   state.smcOverlayIds = [];
+  state.ewtOverlayIds = [];
   state.gbActiveTier = null;
   state.selectedOverlayId = null;
   state.drawingId = null;
@@ -4582,6 +4616,304 @@ function showSMCHint(z) {
   setStatus(`${kind}  ·  ${dir}  ·  Zone ${rng}  ·  ${status}${gap}`);
 }
 
+// ---------- Elliott-Wellen-Scanner (Welle 3 / Golden Pocket) ----------
+// Aufbau exakt analog zu scanPatterns()/scanSMC(): auf Knopfdruck ueber
+// den sichtbaren Bereich, Ergebnis als Overlays, einzeln per Rechtsklick
+// loeschbar. Die gesamte Rechnung steckt in ewt.js — hier nur das
+// Einsammeln der Optionen, das Zeichnen und die Statuszeile.
+
+function clearEWT() {
+  (state.ewtOverlayIds || []).forEach(id => {
+    try { chart.removeOverlay(id); } catch (e) {}
+  });
+  state.ewtOverlayIds = [];
+}
+
+// Liest die Zahlenfelder aus dem Panel. Leere oder unsinnige Eingaben
+// fallen auf die Engine-Defaults zurueck, statt NaN in die Rechnung zu
+// tragen.
+function ewtReadOpts() {
+  const num = (id, min, max, def) => {
+    const el = document.getElementById(id);
+    if (!el) return def;
+    const v = parseFloat(el.value);
+    if (!isFinite(v)) return def;
+    return Math.max(min, Math.min(max, v));
+  };
+  const chk = (id, def) => {
+    const el = document.getElementById(id);
+    return el ? el.checked : def;
+  };
+  const D = (typeof EWTEngine !== "undefined" && EWTEngine.DEFAULTS) || {};
+  return {
+    swingLength:       num("ewtSwing",   2,  50, D.swingLength),
+    minSwingPercent:   num("ewtMinPct",  0, 500, D.minSwingPercent),
+    timeoutBars:       num("ewtTimeout", 1, 500, D.timeoutBars),
+    rsiOversold:       num("ewtRsiOs",   1,  99, D.rsiOversold),
+    requireRsi:        chk("ewtUseRsi",  true),
+    requireVolume:     chk("ewtUseVol",  true),
+    requireEfficiency: chk("ewtUseEff",  true),
+  };
+}
+
+function scanEWT() {
+  if (typeof EWTEngine === "undefined") { setStatus("EWT-Modul nicht geladen"); return; }
+  // Im Vergleichsmodus zeigt die Achse Prozente — Kursboxen waeren dort
+  // schlicht falsch platziert.
+  if (state.compareAssets && state.compareAssets.length > 0) {
+    setStatus("EWT-Scanner ist im Vergleichsmodus nicht verfügbar");
+    return;
+  }
+  clearEWT();
+
+  const data = chart.getDataList();
+  if (!data || data.length < 40) { setStatus("Zu wenig Daten"); return; }
+
+  let range;
+  try { range = chart.getVisibleRange(); } catch (e) { range = null; }
+  const from = range ? Math.max(0, range.realFrom ?? range.from) : 0;
+  const to   = range ? Math.min(data.length - 1, range.realTo ?? range.to) : data.length - 1;
+
+  const opts = ewtReadOpts();
+  state.ewtOpts = opts;
+  saveWorkspace();
+
+  let setups;
+  try {
+    setups = EWTEngine.scan(data, { from, to }, opts);
+  } catch (e) {
+    setStatus("EWT-Scan fehlgeschlagen: " + (e && e.message ? e.message : e));
+    console.warn("[TreydView] EWT", e);
+    return;
+  }
+
+  // Zustaende, die der Nutzer sehen will
+  const show = {
+    pending:   document.getElementById("ewtShowPending")   ?.checked !== false,
+    triggered: document.getElementById("ewtShowTriggered") ?.checked !== false,
+    invalid:   document.getElementById("ewtShowInvalid")   ?.checked !== false,
+    timeout:   document.getElementById("ewtShowTimeout")   ?.checked !== false,
+  };
+  setups = setups.filter(s => show[s.state]);
+  const showProj = document.getElementById("ewtShowProj")?.checked !== false;
+
+  if (!setups.length) {
+    setStatus("Keine EWT-Setups im sichtbaren Bereich");
+    return;
+  }
+
+  // Rechter Rand fuer Box und Ziel-Linie.
+  //
+  // Der Abstand zweier Kerzen aus den LETZTEN BEIDEN Bars zu nehmen ist
+  // bei Wochenend-Luecken (Indizes, Gold) falsch. Deshalb der Median der
+  // letzten 20 Abstaende — der ignoriert einzelne Luecken.
+  const deltas = [];
+  for (let i = Math.max(1, data.length - 20); i < data.length; i++) {
+    const d = data[i].timestamp - data[i - 1].timestamp;
+    if (d > 0) deltas.push(d);
+  }
+  deltas.sort((a, b) => a - b);
+  const barMs = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 0;
+
+  const STATE_LABEL = {
+    pending:   "wartend",
+    triggered: "getriggert",
+    invalid:   "invalidiert",
+    timeout:   "Time-Out",
+  };
+
+  state.ewtOverlayIds = [];
+  let drawn = 0;
+  setups.forEach(s => {
+    try {
+      // Rechter Rand: bis zur Aufloesung, sonst etwas ueber den letzten
+      // Bar hinaus, damit die wartende Box in die Zukunft zeigt.
+      const lastTs = data[data.length - 1].timestamp;
+      let endTs;
+      if (s.state === "pending") {
+        endTs = lastTs + barMs * 12;
+      } else if (s.resolvedAt != null && data[s.resolvedAt]) {
+        endTs = data[s.resolvedAt].timestamp + barMs * 3;
+      } else {
+        endTs = lastTs;
+      }
+      // Die Box muss immer eine sichtbare Breite haben.
+      const startTs = data[s.highIndex].timestamp;
+      if (!(endTs > startTs)) endTs = startTs + barMs * 6;
+
+      const pts = [
+        { timestamp: data[s.lowIndex].timestamp,  value: s.lowPrice },
+        { timestamp: data[s.highIndex].timestamp, value: s.highPrice },
+        { timestamp: startTs,                     value: s.boxTop },
+        { timestamp: endTs,                       value: s.boxBottom },
+      ];
+      // Fuenfter Punkt nur bei getriggerten Setups: das Welle-3-Ziel.
+      if (s.state === "triggered" && s.target != null && isFinite(s.target)) {
+        pts.push({ timestamp: endTs, value: s.target });
+      }
+
+      const outTxt = s.outcome === "ziel" ? " · Ziel erreicht"
+                   : s.outcome === "invalidiert" ? " · danach gebrochen"
+                   : s.outcome === "offen" ? " · offen" : "";
+      const label = `W3 ${STATE_LABEL[s.state]} · ${s.risePct.toFixed(0)}%`
+                  + ` · Form ${Math.round(s.quality * 100)}%${outTxt}`;
+
+      const id = chart.createOverlay({
+        name: "ewtZone",
+        points: pts,
+        lock: true,
+        extendData: {
+          state: s.state,
+          outcome: s.outcome,
+          label,
+          targetLabel: s.target != null && isFinite(s.target)
+            ? "Ziel " + s.target.toLocaleString("de-CH", { maximumFractionDigits: 2 })
+            : null,
+        },
+        onMouseEnter: () => { setChartCursor("pointer"); showEWTHint(s); return false; },
+        onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
+        onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
+      });
+      if (id) { state.ewtOverlayIds.push(Array.isArray(id) ? id[0] : id); drawn++; }
+
+      // ---- Projektion der Folgewellen ----
+      const pr = s.projection;
+      if (showProj && pr) {
+        // Startpunkt auf der Zeitachse: bei getriggerten Setups der
+        // Beruehrungspunkt, bei wartenden der letzte Bar ("ab jetzt").
+        const startIdx = pr.startIdx != null ? pr.startIdx : data.length - 1;
+        const t0 = data[startIdx] ? data[startIdx].timestamp : lastTs;
+        const t3 = t0 + barMs * pr.barsW3;
+        const t4 = t3 + barMs * pr.barsW4;
+        const t5 = t4 + barMs * pr.barsW5;
+
+        // Das Fragezeichen ist Absicht: eine Fibonacci-Fortschreibung
+        // ist eine Hypothese, keine Vorhersage.
+        const konflikt = pr.w4Conflict ? " · ⚠ W4 überlappt W1" : "";
+        const projLabel = `Projektion? W3–W5 · Basis ${pr.basis}${konflikt}`;
+
+        const pid = chart.createOverlay({
+          name: "ewtProjection",
+          points: [
+            { timestamp: t0, value: pr.anchor },
+            { timestamp: t3, value: pr.w3    },
+            { timestamp: t3, value: pr.w3x   },
+            { timestamp: t4, value: pr.w4Bot },
+            { timestamp: t5, value: pr.w5    },
+          ],
+          lock: true,
+          extendData: { basis: pr.basis, label: projLabel },
+          onMouseEnter: () => { setChartCursor("pointer"); showEWTProjHint(s, pr); return false; },
+          onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
+          onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
+        });
+        if (pid) state.ewtOverlayIds.push(Array.isArray(pid) ? pid[0] : pid);
+      }
+    } catch (e) { /* ein defektes Setup darf den Rest nicht verhindern */ }
+  });
+
+  if (!drawn) { setStatus("Keine EWT-Setups gezeichnet"); return; }
+  const offen = setups.filter(s => s.state === "pending").length;
+  setStatus(`${drawn} EWT-Setups (${offen} wartend) · log. Golden Pocket 0.5–0.618 · Rechtsklick löscht einzelne`);
+}
+
+// Kurz-Info beim Ueberfahren, wie bei Mustern und SMC-Zonen.
+// Bewusst mit den Gruenden, WARUM das Setup durchkam — sonst ist die
+// Box eine Behauptung ohne Beleg.
+function showEWTHint(s) {
+  if (_patHintPrev == null) _patHintPrev = document.getElementById("statusline").textContent;
+  const nf = (v, d = 2) => v == null || !isFinite(v) ? "–"
+    : v.toLocaleString("de-CH", { maximumFractionDigits: d });
+  const grund = [];
+  if (s.oversold)  grund.push(`RSI ${nf(s.rsiAtLow, 0)} überverkauft`);
+  if (s.divergence) grund.push("bull. Divergenz");
+  if (s.volRatio != null) grund.push(`Vol ${nf(s.volRatio, 1)}×`);
+  grund.push(`ER ${nf(s.er, 2)}`);
+  const ziel = s.target != null && isFinite(s.target) ? ` · Ziel ${nf(s.target)}` : "";
+  setStatus(
+    `Welle 3 · ${{ pending: "wartend", triggered: "getriggert",
+                   invalid: "invalidiert", timeout: "Time-Out" }[s.state]}`
+    + ` · Box ${nf(s.boxBottom)}–${nf(s.boxTop)} (log)`
+    + ` · ungültig unter ${nf(s.invalidLevel)}${ziel}`
+    + `  ·  ${grund.join(" · ")}`
+  );
+}
+
+// Beim Ueberfahren der Projektion wird ausdruecklich gesagt, worauf sie
+// beruht. Ohne diese Einordnung liest man Fibonacci-Fortschreibungen
+// leicht als Prognose.
+function showEWTProjHint(s, pr) {
+  if (_patHintPrev == null) _patHintPrev = document.getElementById("statusline").textContent;
+  const nf = (v) => v == null || !isFinite(v) ? "–"
+    : v.toLocaleString("de-CH", { maximumFractionDigits: 2 });
+  const basis = pr.basis === "gemessen"
+    ? "gemessenes Welle-2-Tief"
+    : "angenommenes Welle-2-Tief (Box-Mitte) — Setup noch nicht getriggert";
+  setStatus(
+    `Projektion (keine Prognose) · W3 ${nf(pr.w3)}–${nf(pr.w3x)}`
+    + ` · W4 ${nf(pr.w4Bot)}–${nf(pr.w4Top)} · W5 ${nf(pr.w5)}`
+    + (pr.w4Conflict ? " · ⚠ Welle 4 überlappt Welle 1 — Zählung unstimmig" : "")
+    + `  ·  Basis: ${basis}`
+  );
+}
+
+// ---------- Logarithmische Preisskala ----------
+//
+// Im Bundle verifiziert: YAxis.getType() liest getStyles().yAxis.type,
+// aber NUR fuer die Kerzen-Pane (isInCandle()). Indikator-Subpanes geben
+// fest YAxisType.Normal zurueck. Ein Umschalten kann RSI, MACD & Co.
+// also nicht verzerren — genau das gewuenschte Verhalten.
+//
+// WICHTIG zum Verstaendnis: Die EWT-Rechnung ist bereits logarithmisch,
+// unabhaengig von dieser Einstellung. Die Fibonacci-Niveaus haengen an
+// Kurswerten, nicht an Pixeln. Der Schalter aendert nichts an der
+// Mathematik — er macht sie nur SICHTBAR: auf der Log-Skala liegt das
+// 0.5-Retracement optisch exakt in der Mitte der Welle, auf der linearen
+// Skala erscheint dieselbe (korrekte) Box nach unten verschoben.
+
+function applyLogScale() {
+  try {
+    chart.setStyles({ yAxis: { type: state.logScale ? "log" : "normal" } });
+  } catch (e) {
+    console.warn("[TreydView] Log-Skala nicht unterstützt", e);
+    return;
+  }
+  const btn = document.getElementById("logScaleBtn");
+  if (btn) {
+    btn.classList.toggle("active", state.logScale);
+    btn.title = state.logScale ? "Preisskala: logarithmisch" : "Preisskala: linear";
+    btn.setAttribute("aria-pressed", state.logScale ? "true" : "false");
+  }
+  // VRVP und Vergleichslinien zeichnen auf ein eigenes Canvas und rechnen
+  // Preise selbst in Pixel um — die muessen nach dem Achsenwechsel neu.
+  try { if (state.active.has("vrvp")) requestAnimationFrame(drawVrvp); } catch (e) {}
+  try { if (state.compareAssets.length > 0) drawCompare(); } catch (e) {}
+}
+
+// Sitzt am unteren Ende der Preisskala, also rechts unten ueber der
+// Zeitachse. Absolut positioniert in .chart-col (position:relative);
+// die Hoehe kommt aus #mainChart, damit der Knopf mitwandert, wenn sich
+// die Grid-Bot-Leiste oeffnet oder schliesst.
+function placeLogScaleBtn() {
+  const btn = document.getElementById("logScaleBtn");
+  const mc  = document.getElementById("mainChart");
+  if (!btn || !mc) return;
+  btn.style.top = (mc.offsetTop + mc.offsetHeight - 27) + "px";
+}
+
+(function initLogScale() {
+  const btn = document.getElementById("logScaleBtn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    state.logScale = !state.logScale;
+    applyLogScale();
+    saveWorkspace();
+    setStatus(state.logScale
+      ? "Preisskala logarithmisch — gleiche Prozentbewegungen haben gleichen Abstand"
+      : "Preisskala linear");
+  });
+})();
+
 // ---------- Y-Achse entsperren ----------
 // KLineCharts erlaubt vertikales Draggen nur wenn autoCalcTickFlag=false ist.
 // Beim Start ist es true (Achse skaliert automatisch), deshalb blockiert das
@@ -4747,6 +5079,7 @@ async function applyNamedLayout(name) {
   saveWorkspace();
   syncLabels();
   applyTheme();
+  applyLogScale();
   renderTfList();
   renderTypeList();
   renderIndPanel();
@@ -4923,6 +5256,9 @@ renderIndPanel();
 renderDrawbar();
 renderWatchlist();
 applyAllActive();
+// Gespeicherte Achsenwahl wiederherstellen und den Knopf positionieren.
+applyLogScale();
+placeLogScaleBtn();
 updateLegend();
 loadBinanceSymbols();
 // Zeichnungen aus dem Workspace erst wiederherstellen, wenn die Kerzen da
@@ -5123,6 +5459,28 @@ document.getElementById("patStrictness").addEventListener("change", (e) => {
   if (clearBtn) clearBtn.addEventListener("click", () => { clearSMC(); setStatus("SMC-Zonen entfernt"); });
 })();
 
+// ---------- EWT-Handler (Elliott Wellen) ----------
+(function () {
+  const scanBtn  = document.getElementById("ewtScanBtn");
+  const clearBtn = document.getElementById("ewtClearBtn");
+  if (scanBtn)  scanBtn.addEventListener("click", scanEWT);
+  if (clearBtn) clearBtn.addEventListener("click", () => { clearEWT(); setStatus("EWT-Setups entfernt"); });
+
+  // Gespeicherte Einstellungen in die Felder zuruecklegen
+  quiet(() => {
+    const o = state.ewtOpts || {};
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+    const chk = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.checked = !!v; };
+    set("ewtSwing",   o.swingLength);
+    set("ewtMinPct",  o.minSwingPercent);
+    set("ewtTimeout", o.timeoutBars);
+    set("ewtRsiOs",   o.rsiOversold);
+    chk("ewtUseRsi",  o.requireRsi);
+    chk("ewtUseVol",  o.requireVolume);
+    chk("ewtUseEff",  o.requireEfficiency);
+  }, "ewt opts restore");
+})();
+
 // ---------- Layout-Handler ----------
 document.getElementById("layoutSaveBtn").addEventListener("click", () => {
   const input = document.getElementById("layoutName");
@@ -5170,7 +5528,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m32";
+const TV_BUILD = "m33";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -5215,7 +5573,7 @@ quiet(() => {
 
   // Bottom Bar
   ["indDropdown", "drawSheetBtn", "gridBotBtn",
-   "patternDropdown", "smcDropdown", "magnetBbBtn", "posToolTopBtn"]
+   "patternDropdown", "smcDropdown", "ewtDropdown", "magnetBbBtn", "posToolTopBtn"]
     .forEach(id => { const el = $(id); if (el) bb.appendChild(el); });
 
   // Das Popover liegt fest am Bildschirm — ausserhalb des Stapelkontexts

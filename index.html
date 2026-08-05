@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m32">
-  <link rel="stylesheet" href="css/style.css?v=m32">
+  <link rel="manifest" href="manifest.webmanifest?v=m33">
+  <link rel="stylesheet" href="css/style.css?v=m33">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m32"></script>
+  <script src="js/lib/klinecharts.min.js?v=m33"></script>
 </head>
 <body>
 
@@ -248,6 +248,73 @@
       </div>
     </div>
 
+    <!-- Elliott-Wellen-Scanner: Welle 3 / Golden Pocket -->
+    <div class="dropdown" id="ewtDropdown">
+      <button class="action-btn" id="ewtTrigger" title="Elliott-Wellen: Welle-3-Setups">
+        <!-- Impulswelle mit markierten Wendepunkten. Die Punkte nehmen die
+             Leistenfarbe als Fuellung und wirken so als Aussparung — gleiche
+             Garnitur wie die Zeichenwerkzeuge. -->
+        <svg viewBox="0 0 24 24" class="ab-icon" aria-hidden="true">
+          <path d="M3 18 L9 8 L14 13 L21 4" style="fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round"/>
+          <circle cx="3"  cy="18" r="2.1" style="fill:var(--bg-raised);stroke:currentColor;stroke-width:1.5"/>
+          <circle cx="9"  cy="8"  r="2.1" style="fill:var(--bg-raised);stroke:currentColor;stroke-width:1.5"/>
+          <circle cx="14" cy="13" r="2.1" style="fill:var(--bg-raised);stroke:currentColor;stroke-width:1.5"/>
+          <circle cx="21" cy="4"  r="2.1" style="fill:var(--bg-raised);stroke:currentColor;stroke-width:1.5"/>
+        </svg>
+      </button>
+      <div class="dd-panel dd-panel--right" id="ewtPanel">
+        <div class="pat-header">Elliott-Wellen · Welle 3</div>
+        <div class="pat-types">
+          <div class="pat-group">Zustände</div>
+          <label><input type="checkbox" id="ewtShowPending" checked> Wartend (gelb)</label>
+          <label><input type="checkbox" id="ewtShowTriggered" checked> Getriggert (grün)</label>
+          <label><input type="checkbox" id="ewtShowInvalid" checked> Invalidiert (rot)</label>
+          <label><input type="checkbox" id="ewtShowTimeout" checked> Time-Out (grau)</label>
+          <div class="pat-group">Qualitäts-Filter</div>
+          <label><input type="checkbox" id="ewtUseRsi" checked> RSI überverkauft o. Divergenz</label>
+          <label><input type="checkbox" id="ewtUseVol" checked> Volumen-Konfluenz</label>
+          <label><input type="checkbox" id="ewtUseEff" checked> Impuls-Effizienz (ER)</label>
+          <div class="pat-group">Projektion</div>
+          <label><input type="checkbox" id="ewtShowProj" checked> Welle 3–5 fortschreiben</label>
+        </div>
+        <div class="pat-row">
+          <label>Swing-Länge</label>
+          <input type="number" id="ewtSwing" value="5" min="2" max="50">
+        </div>
+        <div class="pat-row">
+          <label>Min. Impuls %</label>
+          <input type="number" id="ewtMinPct" value="5" min="0" max="500" step="0.5">
+        </div>
+        <div class="pat-row">
+          <label>RSI überverkauft</label>
+          <input type="number" id="ewtRsiOs" value="30" min="1" max="99">
+        </div>
+        <div class="pat-row">
+          <label>Time-Out (Bars)</label>
+          <input type="number" id="ewtTimeout" value="60" min="1" max="500">
+        </div>
+        <div class="pat-info">
+          <b>Kontext, kein Signal.</b> Sucht abgeschlossene Impulse (Welle&nbsp;1) und
+          zeichnet die <b>logarithmische</b> Golden Pocket (0.5–0.618) der Korrektur.
+          Nur bestätigte Fraktale — kein Repainting, keine Zukunftsdaten.
+          Die gestrichelte rote Linie ist das Start-Tief: bricht der Kurs darunter,
+          ist das Setup nach EWT-Regel ungültig.
+          <br><br>
+          <b>Die Projektion ist keine Prognose.</b> Sie schreibt nur die
+          Fibonacci-Verhältnisse fort, die die Elliott-Lehre unterstellt, und
+          enthält keine Information, die nicht schon in Welle&nbsp;1 steckt.
+          Bei noch nicht getriggerten Setups ist auch das Welle-2-Tief bloss
+          angenommen — solche Projektionen sind blasser gezeichnet.
+          Die Zeitachse ist der schwächste Teil und sagt nichts darüber aus,
+          <i>wann</i> etwas eintritt.
+        </div>
+        <div class="pat-actions">
+          <button id="ewtScanBtn" class="pat-scan">Scannen</button>
+          <button id="ewtClearBtn" class="pat-clear">Löschen</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Layouts -->
     <div class="dropdown" id="layoutDropdown">
       <button class="action-btn" id="layoutTrigger" title="Layouts">
@@ -390,6 +457,13 @@
     <div class="frvp-guide" id="frvpGuideA"></div>
       <div class="frvp-guide" id="frvpGuideB"></div>
       <div id="mainChart" class="main-chart"></div>
+
+    <!-- Preisskala linear/logarithmisch. Sitzt am unteren Ende der
+         Preisskala; die genaue Hoehe setzt placeLogScaleBtn() aus der
+         Hoehe von #mainChart, damit der Knopf mitwandert, wenn sich die
+         Grid-Bot-Leiste oeffnet. Default ist linear. -->
+    <button id="logScaleBtn" class="log-scale-btn" type="button"
+            title="Preisskala: linear" aria-pressed="false">L</button>
 
 
     <!-- Grid Bot: Flex-Kind, grenzt links an die Drawbar und rechts an die
@@ -1104,15 +1178,16 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m32"></script>
-<script src="js/indicators.js?v=m32"></script>
-<script src="js/overlays.js?v=m32"></script>
-<script src="js/data.js?v=m32"></script>
-<script src="js/settings.js?v=m32"></script>
-<script src="js/derivatives.js?v=m32"></script>
-<script src="js/gridbot.js?v=m32"></script>
-<script src="js/patterns.js?v=m32"></script>
-<script src="js/smc.js?v=m32"></script>
-<script src="js/app.js?v=m32"></script>
+<script src="js/config.js?v=m33"></script>
+<script src="js/indicators.js?v=m33"></script>
+<script src="js/overlays.js?v=m33"></script>
+<script src="js/data.js?v=m33"></script>
+<script src="js/settings.js?v=m33"></script>
+<script src="js/derivatives.js?v=m33"></script>
+<script src="js/gridbot.js?v=m33"></script>
+<script src="js/patterns.js?v=m33"></script>
+<script src="js/smc.js?v=m33"></script>
+<script src="js/ewt.js?v=m33"></script>
+<script src="js/app.js?v=m33"></script>
 </body>
 </html>

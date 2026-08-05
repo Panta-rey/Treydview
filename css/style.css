@@ -86,6 +86,22 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 .draw-cat-btn.small svg{width:16px;height:16px;}
 .draw-cat-btn.danger:hover{color:var(--down);border-color:var(--down);}
 .draw-sep{width:22px;height:1px;background:var(--border);margin:5px 0;}
+/* ---- Seitenleiste: Panel-Knoepfe ueber den Zeichenwerkzeugen (m33) ----
+   Die Knoepfe fuer Grid Bot, Long/Short, Muster, SMC und Elliott sind aus
+   der Topbar hierher gewandert. .drawbar-panels wird von renderDrawbar()
+   nur EINMAL befuellt und danach nie neu gebaut — die Knoepfe behalten so
+   ihre Ereignis-Handler. Alle Selektoren sind entweder neu oder auf
+   #drawbar eingegrenzt. */
+.drawbar-panels,.drawbar-tools{display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;}
+/* In der Leiste sollen die Panel-Knoepfe wie die Werkzeug-Knoepfe wirken:
+   ohne Dauerrahmen, gleiche Groesse. */
+#drawbar .action-btn{width:36px;height:36px;border-color:transparent;}
+#drawbar .action-btn:hover{border-color:var(--border);background:var(--bg-hover);color:var(--text);}
+#drawbar .action-btn.active{color:var(--accent);border-color:rgba(232,182,76,.4);}
+#drawbar .dropdown{width:36px;display:flex;justify-content:center;}
+/* Panels werden von placeDropdownPanel() fixiert positioniert — .drawbar
+   traegt overflow-y:auto und wuerde ein absolutes Panel abschneiden. */
+#drawbar .dd-panel{max-height:78vh;overflow-y:auto;}
 .draw-popup{display:none;position:fixed;background:var(--bg-raised);border:1px solid var(--border);border-radius:8px;padding:6px;min-width:240px;max-width:280px;z-index:500;box-shadow:0 8px 32px rgba(0,0,0,.6);}
 .draw-popup.open{display:flex;flex-direction:column;gap:2px;}
 /* Symbol links, Text rechts — Garnitur aus der Handy-Fassung uebernommen.
@@ -111,6 +127,12 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 
 /* ---- Chart (RSI/VOL als Panes darin) ---- */
 .main-chart{flex:1 1 auto;min-height:300px;}
+/* ---- Preisskala linear/logarithmisch (m33) ----
+   Neues Element, trifft kein bestehendes. Absolut in .chart-col
+   (position:relative); top setzt placeLogScaleBtn() im JS. */
+.log-scale-btn{position:absolute;right:6px;z-index:25;width:22px;height:22px;display:flex;align-items:center;justify-content:center;padding:0;background:var(--bg-raised);color:var(--text-dim);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-family:var(--font-mono);font-size:11px;font-weight:600;line-height:1;opacity:.75;transition:color .12s,border-color .12s,opacity .12s;}
+.log-scale-btn:hover{color:var(--text);border-color:rgba(232,182,76,.5);opacity:1;}
+.log-scale-btn.active{color:var(--accent);border-color:rgba(232,182,76,.6);opacity:1;}
 
 /* Tooltip-Toggle-Row im Indikator-Dropdown */
 
@@ -793,7 +815,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m32"; }
+:root { --tv-build: "m33"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
