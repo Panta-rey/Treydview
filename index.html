@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m37">
-  <link rel="stylesheet" href="css/style.css?v=m37">
+  <link rel="manifest" href="manifest.webmanifest?v=m39">
+  <link rel="stylesheet" href="css/style.css?v=m39">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m37"></script>
+  <script src="js/lib/klinecharts.min.js?v=m39"></script>
 </head>
 <body>
 
@@ -271,7 +271,7 @@
           <label><input type="checkbox" id="ewtShowSetup" checked> Welle-3-Setup (Golden Pocket)</label>
           <label><input type="checkbox" id="ewtShowProj" checked> Projektion W3–W5 + A-B-C</label>
           <div class="pat-group">Regeln</div>
-          <label><input type="checkbox" id="ewtRule4" checked> Welle 5 muss neues Extrem setzen</label>
+          <label><input type="checkbox" id="ewtRule4"> Welle 5 muss neues Extrem setzen</label>
           <label><input type="checkbox" id="ewtDiagonal"> Diagonalen zulassen (Regel 3 aus)</label>
           <div class="pat-group">Setup-Zustände</div>
           <label><input type="checkbox" id="ewtShowPending" checked> Wartend (gelb)</label>
@@ -325,37 +325,6 @@
         <div class="pat-row">
           <label>Time-Out (Bars)</label>
           <input type="number" id="ewtTimeout" value="60" min="1" max="500">
-        </div>
-        <div class="pat-info">
-          <b>Kontext, kein Signal.</b> Geprüft werden die drei kardinalen
-          Elliott-Regeln: Welle&nbsp;2 hält den Start von Welle&nbsp;1,
-          Welle&nbsp;3 ist nicht die kürzeste, Welle&nbsp;4 überlappt
-          Welle&nbsp;1 nicht. Nur bestätigte Fraktale — kein Repainting.
-          <br><br>
-          Korrekturen werden nach den drei Grundformen unterschieden:
-          <b>Zigzag</b> (B bleibt innerhalb von A), <b>Flat</b> (B läuft bis
-          an den A-Start) und <b>Expanded&nbsp;Flat</b> (B läuft darüber
-          hinaus). Bewertet wird zusätzlich die <b>Alternation</b> — ist
-          Welle&nbsp;2 tief und scharf, fällt Welle&nbsp;4 typischerweise
-          flach aus — sowie die <b>Gleichheit von Welle&nbsp;1 und&nbsp;5</b>,
-          falls Welle&nbsp;3 verlängert ist. Beides sind Leitlinien, keine
-          Regeln: sie schliessen nichts aus, sie gewichten nur.
-          <br><br>
-          Die <b>Skip-Tiefe</b> erlaubt jeder Teilwelle, Zwischenextrema zu
-          überspringen. Gemessen brauchen 73&nbsp;% der gefundenen Impulse
-          einen Skip&nbsp;&gt;&nbsp;0 — meist Welle&nbsp;3, die als
-          verlängerte Welle eigene Unterkorrekturen enthält. Auf&nbsp;0
-          gestellt findet der Scanner nur rund ein Viertel.
-          <br><br>
-          Die <b>Zusatzfilter</b> sind bewusst aus. Gemessen an 2000&nbsp;Kerzen
-          verwarf der RSI-Filter 76&nbsp;% der Kandidaten und das Volumen
-          nochmals 53&nbsp;% vom Rest. Sie bewerten die Güte — einschalten
-          nur, wenn du gezielt weniger und schärfere Treffer willst.
-          <br><br>
-          <b>Die Projektion ist keine Prognose.</b> Sie schreibt nur
-          Fibonacci-Verhältnisse fort und enthält keine Information, die
-          nicht schon in Welle&nbsp;1 steckt. Die Zeitachse sagt nichts
-          darüber aus, <i>wann</i> etwas eintritt.
         </div>
         <div class="pat-actions">
           <button id="ewtScanBtn" class="pat-scan">Scannen</button>
@@ -687,6 +656,7 @@
       <button class="faq-navbtn" data-sec="draw">Zeichnen</button>
       <button class="faq-navbtn" data-sec="ind">Indikatoren</button>
       <button class="faq-navbtn" data-sec="pat">Muster</button>
+      <button class="faq-navbtn" data-sec="ewt">Elliott-Wellen</button>
       <button class="faq-navbtn" data-sec="pos">Position</button>
       <button class="faq-navbtn" data-sec="gridbot">Grid Bot</button>
       <button class="faq-navbtn" data-sec="zyklus">Zyklus</button>
@@ -865,6 +835,82 @@
           <p>In der Browser-Konsole (F12):</p>
           <p><code>PatternEngine.backtest(window.__tvGetDataList())</code> → Trefferquote und Expectancy in R.</p>
           <p><code>PatternEngine.backtestVsNull(window.__tvGetDataList(), {}, 20)</code> → Vergleich gegen Zufall. Der p-Wert sagt, wie oft blosser Zufall mindestens so gut war. Über 0.05 heisst: kein belastbarer Unterschied.</p></div>
+      </section>
+
+      <section class="faq-sec hidden" data-sec="ewt">
+        <h3>Elliott-Wellen-Scanner</h3>
+
+        <div class="faq-block"><h4>Was der Scanner sucht</h4>
+          <p>Auf Knopfdruck durchsucht er den sichtbaren Bereich nach drei Dingen:</p>
+          <p><b>Impuls 1–2–3–4–5</b> — die vollständige Fünferstruktur. <b>Korrektur A–B–C</b> — die Dreierkorrektur im Anschluss daran. <b>Welle-3-Setup</b> — ein einzelner bestätigter Impuls mit der Golden Pocket der folgenden Korrektur.</p>
+          <p>Das Ergebnis ist Kontext, kein Handelssignal. Elliott beschreibt Struktur, nicht Zeitpunkte.</p></div>
+
+        <div class="faq-block"><h4>Die drei Regeln</h4>
+          <p>Geprüft werden die kardinalen Regeln, die nicht verhandelbar sind:</p>
+          <p>1. Welle 2 gibt Welle 1 nicht vollständig zurück.<br>
+             2. Welle 3 ist nicht die kürzeste von 1, 3 und 5.<br>
+             3. Welle 4 läuft nicht in das Kursgebiet von Welle 1.</p>
+          <p>Dazu optional: Welle 5 setzt ein neues Extrem. Standardmässig <b>aus</b>, weil eine verkürzte Fünfte (<i>truncated fifth</i>) kein Zählfehler ist, sondern ein Erschöpfungszeichen — oft die Vorwarnung vor einer scharfen Umkehr. Gemessen wären sonst 30&nbsp;% aller Zählungen unsichtbar. Betroffene Strukturen sind im Etikett als <i>verkürzte 5</i> gekennzeichnet. Und: <b>Diagonalen zulassen</b> hebt Regel 3 auf — in Diagonalen darf Welle 4 Welle 1 überlappen.</p>
+          <p>Beim Überfahren einer Struktur steht die Regelprüfung im Klartext in der Statuszeile, damit die Zählung nachvollziehbar ist statt behauptet.</p></div>
+
+        <div class="faq-block"><h4>Wellengrad und Skip-Tiefe</h4>
+          <p><b>Wellengrad</b> ist die Fenstergrösse der Fraktalsuche. Mit <b>3 Grade gleichzeitig</b> läuft der Scanner zusätzlich auf dem 1.8- und 3.4-fachen Wert — dieselbe Bewegung erscheint dann auf mehreren Ebenen, was der Sinn der Sache ist. Gröbere Grade werden kräftiger gezeichnet.</p>
+          <p><b>Skip-Tiefe</b> erlaubt jeder Teilwelle, Zwischenextrema zu überspringen. Ohne das müsste ein ganzer Wellenzug in einer Auflösung liegen. Gemessen brauchen 73 % der gefundenen Impulse einen Skip über 0 — meist Welle 3, die als verlängerte Welle eigene Unterkorrekturen enthält. Auf 0 gestellt findet der Scanner nur rund ein Viertel.</p>
+          <p><b>Min. Pivot-Bewegung</b> räumt Rauschen beim Aufbau der Pivot-Kette weg. Zu hoch eingestellt zerfallen grosse Strukturen.</p></div>
+
+        <div class="faq-block"><h4>Regelstrenge</h4>
+          <p><b>locker</b> prüft nur die Kardinalregeln. <b>mittel</b> ergänzt Proportionen: Welle 2 korrigiert mindestens 20 %, Welle 3 überschreitet das Welle-1-Ende und ist mindestens ein Drittel davon, Welle 5 bleibt unter dem Doppelten von Welle 1. <b>streng</b> nimmt zusätzlich Dauerverhältnisse dazu.</p>
+          <p>Höhere Strenge liefert weniger, aber sauberere Zählungen. Wird es unübersichtlich, senke zuerst <b>Max. Strukturen zeigen</b> — das ist eine reine Anzeigegrenze und verwirft keine echten Zählungen.</p></div>
+
+        <div class="faq-block"><h4>Korrekturformen</h4>
+          <p>Die Dreierkorrektur wird nach dem Verhalten von Welle B unterschieden:</p>
+          <p><b>Zigzag</b> — B holt 38–79 % von A zurück und bleibt innerhalb des Impulses.<br>
+             <b>Flat</b> — B läuft bis an den Startpunkt von A (79–105 %).<br>
+             <b>Expanded Flat</b> — B läuft darüber hinaus (105–138 %).</p>
+          <p>Läuft B noch weiter, ist es keine Korrektur mehr, sondern ein neuer Gegenimpuls — deshalb die Obergrenze. Die Form steht im Etikett, zusammen mit dem B- und C-Verhältnis.</p></div>
+
+        <div class="faq-block"><h4>Wie die Form-Zahl entsteht</h4>
+          <p>Sie ist beschreibend und <b>keine Trefferwahrscheinlichkeit</b>. Sie mischt:</p>
+          <p><b>Anpassungsfehler</b> — wie weit weicht der echte Kurs von den Wellenlinien ab? Gerechnet im logarithmischen Raum und mit der Wurzel der Spanne normiert, damit lange Wellen und grobe Grade nicht pauschal schlechter dastehen.<br>
+             <b>Fibonacci-Nähe</b> — liegt Welle 3 nahe 1.618 × Welle 1, Welle 2 nahe 0.618?<br>
+             <b>Alternation</b> — ist Welle 2 tief und scharf, fällt Welle 4 typischerweise flach aus, und umgekehrt.<br>
+             <b>Gleichheit</b> — ist Welle 3 verlängert, streben Welle 1 und 5 zur Gleichheit.<br>
+             <b>Momentum-Divergenz</b> — setzt Welle 5 ein neues Kursextrem, ohne dass der RSI das Extrem von Welle 3 übertrifft, ist der Impuls erschöpft.<br>
+             <b>Effizienz und Volumen</b> — läuft der Impuls gerichtet, trägt Volumen ihn?</p></div>
+
+        <div class="faq-block"><h4>Zusatzfilter — standardmässig aus</h4>
+          <p>RSI, Volumen-Konfluenz und Impuls-Effizienz lassen sich als harte Filter zuschalten. Gemessen an 2000 Kerzen verwarf der RSI-Filter 76 % der Kandidaten und das Volumen nochmals 53 % vom Rest.</p>
+          <p>Deshalb sind sie aus: eine Wellenstruktur ist eine geometrische Aussage. Ob gleichzeitig der RSI unter 30 stand, ist eine andere Frage und darf die Zählung nicht unterdrücken. Einschalten nur, wenn du gezielt weniger und schärfere Treffer willst.</p></div>
+
+        <div class="faq-block"><h4>Welle-3-Setup und die vier Zustände</h4>
+          <p>Aus einem bestätigten Impulsbein wird die <b>logarithmische</b> Golden Pocket (0.5–0.618) der folgenden Korrektur berechnet und in die Zukunft gezeichnet.</p>
+          <p><b>Gelb</b> wartend — Kurs fällt vom Hoch, ist aber noch über der Box.<br>
+             <b>Grün</b> getriggert — Kurs hat die Box berührt.<br>
+             <b>Rot</b> invalidiert — Kurs unter dem Start-Tief, EWT-Regelbruch.<br>
+             <b>Grau</b> Time-Out — Box nach der eingestellten Bar-Zahl nicht berührt.</p>
+          <p>Die gestrichelte rote Linie ist das Start-Tief. Berührt eine Kerze die Box <i>und</i> schliesst darunter, gilt sie als invalidiert — ein Bar, der unter der Grenze schliesst, darf keinen sauberen Einstieg behaupten.</p>
+          <p>Bei getriggerten Setups steht im Etikett, was danach geschah: <i>Ziel erreicht</i>, <i>danach gebrochen</i> oder <i>offen</i>. Ohne diese Angabe sähe im Rückblick jede grüne Box wie ein Treffer aus.</p></div>
+
+        <div class="faq-block"><h4>Die Projektion ist keine Prognose</h4>
+          <p>Sie schreibt die Fibonacci-Verhältnisse fort, die die Elliott-Lehre unterstellt — Welle 3 bis 5, dann A–B–C. Es kommt <b>keine Information</b> aus den Daten hinzu, die nicht schon in Welle 1 steckt.</p>
+          <p>Bei noch nicht getriggerten Setups ist auch das Welle-2-Tief bloss angenommen; solche Projektionen sind blasser gezeichnet und mit <i>Basis angenommen</i> beschriftet. Die Zeitachse ist der schwächste Teil und sagt nichts darüber aus, <i>wann</i> etwas eintritt.</p>
+          <p>Projiziert wird nur aus Setups, die noch laufen. Widerspricht die eigene Projektion Regel 3, erscheint eine Warnung.</p></div>
+
+        <div class="faq-block"><h4>Kein Repainting</h4>
+          <p>Ein Fraktal bei Kerze i ist erst bei i + Wellengrad bestätigt — vorher weiss niemand, dass es ein Extrempunkt war. Eine Struktur wird deshalb erst ausgegeben, wenn ihr letzter Punkt bestätigt ist. Was einmal gezeichnet wurde, ändert sich nicht mehr rückwirkend.</p></div>
+
+        <div class="faq-block"><h4>Logarithmische Preisskala</h4>
+          <p>Der Knopf <b>L</b> unten an der Preisskala schaltet zwischen linear und logarithmisch. Das ändert <b>nichts</b> an der Rechnung — die Fibonacci-Niveaus hängen an Kurswerten und sind ohnehin geometrisch berechnet. Es macht sie nur sichtbar: auf der Log-Skala liegt das 0.5-Retracement optisch mittig in der Welle, auf der linearen erscheint dieselbe korrekte Box nach unten verschoben. Bei weit gelaufenen Bewegungen lohnt der Blick auf beide Skalen.</p></div>
+
+        <div class="faq-block"><h4>Selbst nachmessen</h4>
+          <p>In der Browser-Konsole (F12):</p>
+          <p><code>EWTEngine.vsNull(window.__tvGetDataList())</code> → vergleicht gegen ein Nullmodell: dieselbe Reihe mit vertauschten Log-Renditen, also gleiche Volatilität und gleiche Kerzenformen, aber ohne zeitliche Ordnung. Der p-Wert sagt, wie oft blosser Zufall mindestens so gut abschnitt. <b>Über 0.05 heisst: kein belastbarer Unterschied zu Rauschen.</b> Das ist der ehrlichste Test, den es für dieses Werkzeug gibt.</p>
+          <p><code>EWTEngine.calibrateBeta(window.__tvGetDataList())</code> → misst nach, wie stark der Anpassungsfehler mit der Wellenlänge wächst. Der voreingestellte Wert 0.5 stammt aus der Zufallspfad-Theorie; weicht das Ergebnis deutlich ab, lässt er sich mit <code>EWTEngine.setFitBeta(wert)</code> anpassen.</p>
+          <p><code>EWTEngine.diagnose(window.__tvGetDataList())</code> → je Wellengrad: Pivot-Anzahl, geprüfte Startpunkte, wie oft jede Regel scheiterte, und ein Histogramm der gewinnenden Skip-Tupel. Beantwortet „warum finde ich nichts" mit Zahlen.</p></div>
+
+        <div class="faq-block"><h4>Grenzen</h4>
+          <p>Nicht erkannt werden derzeit: <b>Triangles</b> (fünfteilig A–B–C–D–E, kommen vor allem in Welle-4- und B-Position vor), <b>doppelte und dreifache Korrekturen</b> sowie die Unterwellenstruktur innerhalb einer Welle. Im Vergleichsmodus ist der Scanner deaktiviert, weil die Achse dort Prozente zeigt.</p>
+          <p>Rechtsklick auf eine Struktur löscht sie einzeln.</p></div>
       </section>
 
       <section class="faq-sec hidden" data-sec="pos">
@@ -1227,16 +1273,16 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m37"></script>
-<script src="js/indicators.js?v=m37"></script>
-<script src="js/overlays.js?v=m37"></script>
-<script src="js/data.js?v=m37"></script>
-<script src="js/settings.js?v=m37"></script>
-<script src="js/derivatives.js?v=m37"></script>
-<script src="js/gridbot.js?v=m37"></script>
-<script src="js/patterns.js?v=m37"></script>
-<script src="js/smc.js?v=m37"></script>
-<script src="js/ewt.js?v=m37"></script>
-<script src="js/app.js?v=m37"></script>
+<script src="js/config.js?v=m39"></script>
+<script src="js/indicators.js?v=m39"></script>
+<script src="js/overlays.js?v=m39"></script>
+<script src="js/data.js?v=m39"></script>
+<script src="js/settings.js?v=m39"></script>
+<script src="js/derivatives.js?v=m39"></script>
+<script src="js/gridbot.js?v=m39"></script>
+<script src="js/patterns.js?v=m39"></script>
+<script src="js/smc.js?v=m39"></script>
+<script src="js/ewt.js?v=m39"></script>
+<script src="js/app.js?v=m39"></script>
 </body>
 </html>

@@ -54,10 +54,24 @@
     // Prozent. Wirkt beim AUFBAU der Kette, nicht als nachtraeglicher
     // Filter — genau so raeumt der Detector Pro das Rauschen weg, ohne
     // ganze Strukturen zu verlieren.
+    // Mindestbewegung zwischen zwei Pivots, in Prozent, fuer den
+    // FEINSTEN Grad. Groebere Grade bekommen eine groessere Schwelle:
+    // ein Grad-17-Pivot beschreibt eine viel groessere Bewegung als ein
+    // Grad-5-Pivot und darf nicht dieselbe Rauschschwelle haben.
+    // Skaliert mit sqrt(Grad-Verhaeltnis) — die typische Schwungweite
+    // waechst bei einem Zufallspfad mit der Wurzel der Fensterbreite.
     minPivotPercent: 1.5,
+    scalePivotWithDegree: true,
 
     // ---- Struktur ----
-    requireWave5NewExtreme: true,  // Welle 5 muss ueber Welle 3 hinaus
+    // Welle 5 muss ueber Welle 3 hinaus.
+    //
+    // Default AUS: eine verkuerzte Fuenfte (truncated fifth) ist kein
+    // Zaehlfehler, sondern ein Erschoepfungszeichen — oft die Vorwarnung
+    // vor einer scharfen Umkehr. Sie auszublenden verwirft genau die
+    // Strukturen, die am meisten aussagen. Betroffene Zaehlungen tragen
+    // das Feld `truncated` und werden im Chart gekennzeichnet.
+    requireWave5NewExtreme: false,
     allowDiagonal: false,          // Diagonalen duerfen Regel 3 verletzen
 
     // ---- Flexible Wellengrenzen (Skip-Suche) ----
@@ -129,7 +143,11 @@
     projectWaves: true,
     w3Ratio: 1.618, w3RatioX: 2.618,
     w4Top: 0.236, w4Bottom: 0.382,
-    w5Ratio: 1.0,
+    // Welle 5 haengt davon ab, ob Welle 3 laenger als Welle 1 ist:
+    //   W3 > W1  ->  Welle 5 strebt 1.0 x Welle 1
+    //   W3 < W1  ->  Welle 5 misst sich an Welle 3 (0.382)
+    // Ein fester Faktor unterschlaegt diese Fallunterscheidung.
+    w5Ratio: 1.0, w5RatioShort: 0.382,
     waveARatio: 0.382, waveBRatio: 0.5, waveCRatio: 1.0,
     maxProjBars: 90,
 
@@ -314,6 +332,8 @@
     // ---- Verlaengerte Welle und Regel der Gleichheit ----
     // Eine der drei Impulswellen ist typischerweise verlaengert, meist
     // Welle 3. Ist sie es, streben Welle 1 und Welle 5 zur Gleichheit.
+    // Ist Welle 3 laenger als Welle 1? Entscheidet ueber das Welle-5-Ziel.
+    const w3Dominant = w3 > w1;
     const extended = (w3 > 1.618 * w1 && w3 > 1.618 * w5) ? 3
                    : (w5 > 1.618 * w1 && w5 > 1.618 * w3) ? 5
                    : (w1 > 1.618 * w3 && w1 > 1.618 * w5) ? 1 : 0;
@@ -322,7 +342,8 @@
       : null;
 
     return { r1, r2, r3, r4, rInt, prop, dur, all,
-             w1, w2, w3, w4, w5, dep2, dep4, alternation, extended, equality };
+             w1, w2, w3, w4, w5, dep2, dep4, alternation, extended, equality,
+             w3Dominant };
   }
 
   // Ist die Teilwelle von Ketten-Index a nach b sauber?
@@ -416,8 +437,17 @@
     }
     if (!cnt) return null;
     const span = Math.max(1, pts[pts.length - 1].index - pts[0].index);
-    return Math.sqrt(sq / cnt) / Math.sqrt(span);
+    const raw = Math.sqrt(sq / cnt);
+    // Der Normierungsexponent ist NICHT universell. Er wurde an
+    // synthetischen Zufallspfaden bestimmt, wo er per Konstruktion 0.5
+    // sein muss. Echte Maerkte liegen je nach Skala eher darueber.
+    // calibrateBeta() misst ihn an echten Daten nach.
+    return { raw, norm: raw / Math.pow(span, FIT_BETA.value), span };
   }
+
+  // Veraenderbar, damit die Kalibrierung greifen kann, ohne dass jede
+  // Aufrufstelle einen Parameter durchreichen muss.
+  const FIT_BETA = { value: 0.5 };
 
   // Skip-Tupel, aufsteigend nach Summe sortiert: kuerzeste Wellen zuerst,
   // wie options_sorted im Python-Generator.
@@ -441,7 +471,7 @@
   // den Daten hinzu, die nicht schon in Welle 1 steckt. Die Zeitachse
   // ist der schwaechste Teil und sagt nichts darueber aus, WANN etwas
   // eintritt.
-  function buildProjection(L, H, anchor, measured, barsW1, opts) {
+  function buildProjection(L, H, anchor, measured, barsW1, opts, w3Dominant) {
     if (!(anchor > 0) || !(H > 0) || !(L > 0)) return null;
     const w3  = logExtend(anchor, H, L, opts.w3Ratio);
     const w3x = logExtend(anchor, H, L, opts.w3RatioX);
@@ -451,7 +481,11 @@
     // Verletzt die eigene Projektion Regel 3, ist die Zaehlung in sich
     // unstimmig — das wird gemeldet statt huebsch gezeichnet.
     const w4Conflict = w4Bot <= H;
-    const w5 = logExtend(w4Bot, H, L, opts.w5Ratio);
+    // Bedingtes Welle-5-Ziel (siehe w5Ratio oben). Bei kuerzerer Welle 3
+    // misst sich Welle 5 an Welle 3, nicht an Welle 1.
+    const w5 = w3Dominant === false
+      ? logExtend(w4Bot, w3, anchor, opts.w5RatioShort)
+      : logExtend(w4Bot, H, L, opts.w5Ratio);
     const waveA = logRetrace(w5, L, opts.waveARatio);
     const waveB = logRetrace(w5, waveA, opts.waveBRatio);
     const waveC = waveA > 0 && w5 > 0
@@ -535,7 +569,9 @@
       // ---- Je Wellengrad einmal durchgehen ----
       for (const n of opts.degrees) {
         if (len < 2 * n + 8) continue;
-        const chain = buildChain(findFractals(data, n), opts.minPivotPercent);
+        const degScale = opts.scalePivotWithDegree
+          ? Math.sqrt(n / Math.max(1, opts.degrees[0])) : 1;
+        const chain = buildChain(findFractals(data, n), opts.minPivotPercent * degScale);
         if (chain.length < 6) continue;
 
         // ================= Impuls 1-2-3-4-5 =================
@@ -563,7 +599,6 @@
           // Die Reihenfolge bleibt aufsteigend (lexikografisch), es wird
           // also weiterhin die kuerzeste gueltige Zaehlung zuerst gefunden.
           let found = null;
-          outer:
           for (let s1 = 0; s1 <= MS; s1++) {
             const i1 = k + 1 + 2 * s1;
             if (i1 >= chain.length) break;
@@ -594,8 +629,22 @@
                     if (!rr.all) continue;
                     // Non-Repainting: erst wenn der LETZTE Punkt bestaetigt ist.
                     if (pp[5].confirmIndex >= len) continue;
-                    found = { p: pp, rules: rr, skips: [s1, s2, s3, s4, s5], endChainIdx: i5 };
-                    break outer;
+
+                    // Nicht die ERSTE gueltige Zaehlung nehmen, sondern die
+                    // BESTE. Welche zuerst kommt, haengt an der
+                    // Iterationsreihenfolge — ein Implementierungsdetail.
+                    // Beim Wechsel von summen- auf lexikografische
+                    // Reihenfolge fielen die Treffer von 33 auf 25, ohne
+                    // dass sich an den Daten etwas geaendert haette.
+                    // Entscheidend ist stattdessen der Anpassungsfehler:
+                    // welche Zaehlung liegt tatsaechlich am Kursverlauf?
+                    const fpts = pp.map(x => ({ index: x.index, price: x.price }));
+                    const fer = fitError(fitPre, fpts);
+                    const score = fer == null ? Infinity : fer.norm;
+                    if (!found || score < found.score) {
+                      found = { p: pp, rules: rr, skips: [s1, s2, s3, s4, s5],
+                                endChainIdx: i5, fe: fer, score };
+                    }
                   }
                 }
               }
@@ -608,6 +657,21 @@
           const i0 = p[0].index, i5x = p[5].index;
           const lo = bull ? p[0].price : p[5].price;
           const hi = bull ? p[5].price : p[0].price;
+
+          // ---- Momentum-Divergenz Welle 5 gegen Welle 3 ----
+          //
+          // Setzt Welle 5 ein neues Kursextrem, ohne dass der RSI das
+          // Extrem von Welle 3 uebertrifft, ist der Impuls erschoepft —
+          // die klassische Divergenz am Ende einer Fuenferstruktur.
+          //
+          // BEWERTUNG, kein Filter: eine Zaehlung ohne Divergenz ist nicht
+          // falsch, nur weniger reif.
+          const rsi3 = rsi[p[3].index], rsi5 = rsi[p[5].index];
+          let momDiv = null;
+          if (rsi3 != null && rsi5 != null) {
+            momDiv = bull ? (p[5].price > p[3].price && rsi5 < rsi3)
+                          : (p[5].price < p[3].price && rsi5 > rsi3);
+          }
 
           const er = eff(Math.min(i0, i5x), Math.max(i0, i5x));
           const v = volConf(Math.min(p[0].index, p[1].index),
@@ -624,19 +688,23 @@
           const near = (x, t2) => Math.max(0, 1 - Math.abs(x - t2) / t2);
           // Anpassungsfehler: 0.0015 ist der gemessene Median ueber 205
           // Impulse und dient als Halbwertspunkt — dort ergibt sich 0.5.
-          const fe = fitError(fitPre, p.map(x => ({ index: x.index, price: x.price })));
+          const fe = found.fe ? found.fe.norm : null;
+          const feRaw = found.fe ? found.fe.raw : null;
+          const feSpan = found.fe ? found.fe.span : null;
           const fitScore = fe == null ? 0.5 : 1 / (1 + fe / 0.0015);
           // Ist Welle 3 verlaengert, zaehlt zusaetzlich die Gleichheit von
           // Welle 1 und 5; sonst faellt der Beitrag neutral aus.
           const eqScore = rr2.equality == null ? 0.5 : rr2.equality;
+          const momScore = momDiv == null ? 0.5 : (momDiv ? 1 : 0.4);
           const quality = Math.max(0, Math.min(1,
-            0.26 * fitScore +
-            0.20 * near(r31, 1.618) + 0.10 * near(r51, 1.0) +
-            0.08 * near(r21, 0.618) +
-            0.14 * rr2.alternation +
+            0.08 * momScore +
+            0.22 * fitScore +
+            0.18 * near(r31, 1.618) + 0.09 * near(r51, 1.0) +
+            0.07 * near(r21, 0.618) +
+            0.13 * rr2.alternation +
             0.08 * eqScore +
             0.07 * Math.min(1, er / 0.5) +
-            0.07 * (v.ratio == null ? 0.5 : Math.min(1, v.ratio / 2))));
+            0.08 * (v.ratio == null ? 0.5 : Math.min(1, v.ratio / 2))));
 
           impulses.push({
             kind: "impulse", degree: n, dir: bull ? "bull" : "bear",
@@ -648,7 +716,11 @@
             rules: { r1: rules.r1, r2: rules.r2, r3: rules.r3, r4: rules.r4,
                      rInt: rules.rInt, prop: rules.prop, dur: rules.dur },
             er, rsiAtEnd: rsi[i5x], volRatio: v.ratio, quality,
-            fitError: fe, fitScore,
+            fitError: fe, fitErrorRaw: feRaw, fitSpan: feSpan, fitScore,
+            momDiv, rsi3, rsi5, w3Dominant: rr2.w3Dominant,
+            // Verkuerzte Fuenfte: Welle 5 erreicht das Extrem von Welle 3
+            // nicht. Kein Zaehlfehler, sondern ein Erschoepfungszeichen.
+            truncated: bull ? p[5].price <= p[3].price : p[5].price >= p[3].price,
             alternation: rr2.alternation, extended: rr2.extended,
             equality: rr2.equality, dep2: rr2.dep2, dep4: rr2.dep4,
             lowPrice: lo, highPrice: hi, rightIndex: i5x,
@@ -943,6 +1015,168 @@
       return { impulses: imp, abcs: abc, setups: set };
     },
 
+    // ── NULL-HYPOTHESEN-TEST ────────────────────────────────────────
+    //
+    // Die Frage, die bei Elliott immer im Raum steht: findet der Scanner
+    // in echten Kursen mehr oder bessere Strukturen als in reinem
+    // Rauschen? Ohne Antwort darauf ist jede Trefferzahl wertlos —
+    // auf synthetischen Zufallspfaden wurden hier 33 Impulse pro 2000
+    // Kerzen gefunden, was man ebenso gut als Warnung lesen kann.
+    //
+    // Nullmodell: dieselbe Reihe mit VERTAUSCHTEN Log-Renditen. Das
+    // erhaelt Startkurs, Renditeverteilung, Volatilitaetsniveau und die
+    // Form jeder einzelnen Kerze (Docht-Verhaeltnisse wandern mit) —
+    // zerstoert aber die zeitliche Ordnung und damit jede Struktur.
+    // Findet der Scanner darin gleich viel, misst er Rauschen.
+    //
+    // Rueckgabe u. a. p-Werte: Anteil der Permutationen, die mindestens
+    // so gut abschnitten. Ueber 0.05 heisst: kein belastbarer Unterschied.
+    vsNull(data, userOpts = {}, iterations = 30) {
+      if (!data || data.length < 200) return { error: "Zu wenig Daten (min. 200)" };
+      const opts = { ...userOpts, maxImpulses: 0, maxSetups: 0 };
+      const range = { from: 0, to: data.length - 1 };
+
+      const measure = (d) => {
+        const r = this.scan(d, { from: 0, to: d.length - 1 }, opts);
+        const errs = r.impulses.map(s => s.fitError).filter(x => x != null);
+        return {
+          n: r.impulses.length,
+          abc: r.abcs.length,
+          meanErr: errs.length ? errs.reduce((a, b) => a + b, 0) / errs.length : null,
+          bestErr: errs.length ? Math.min(...errs) : null,
+        };
+      };
+
+      // Log-Renditen und relative Dochtlaengen je Kerze
+      const rets = [], shape = [];
+      for (let i = 1; i < data.length; i++) {
+        const a = data[i - 1].close, b = data[i].close;
+        if (!(a > 0) || !(b > 0)) return { error: "Ungültige Kurse" };
+        rets.push(Math.log(b / a));
+        shape.push({
+          hi: Math.log(Math.max(data[i].high, b) / b),
+          lo: Math.log(Math.min(data[i].low, b) / b),
+          v: data[i].volume || 0,
+          up: data[i].close >= data[i].open,
+        });
+      }
+
+      const rebuild = (order) => {
+        const out = [{ ...data[0] }];
+        let p = data[0].close;
+        for (let i = 0; i < order.length; i++) {
+          const k = order[i];
+          const prev = p;
+          p = p * Math.exp(rets[k]);
+          const s = shape[k];
+          out.push({
+            timestamp: data[i + 1].timestamp,
+            open: prev,
+            close: p,
+            high: p * Math.exp(s.hi),
+            low:  p * Math.exp(s.lo),
+            volume: s.v,
+          });
+        }
+        return out;
+      };
+
+      const real = measure(data);
+      const nulls = [];
+      // Deterministischer Generator: derselbe Aufruf liefert dasselbe
+      // Ergebnis, sonst ist der p-Wert nicht reproduzierbar.
+      let seed = 20260805;
+      const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+      for (let it = 0; it < iterations; it++) {
+        const order = rets.map((_, i) => i);
+        for (let i = order.length - 1; i > 0; i--) {
+          const j = Math.floor(rnd() * (i + 1));
+          [order[i], order[j]] = [order[j], order[i]];
+        }
+        nulls.push(measure(rebuild(order)));
+      }
+
+      const pct = (arr) => {
+        const s = arr.slice().sort((a, b) => a - b);
+        return (q) => s[Math.min(s.length - 1, Math.floor(s.length * q))];
+      };
+      const nCounts = nulls.map(x => x.n);
+      const nErrs = nulls.map(x => x.meanErr).filter(x => x != null);
+      const mean = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+
+      // p-Wert Anzahl: wie oft fand das Nullmodell MINDESTENS so viele?
+      const pCount = (nCounts.filter(x => x >= real.n).length + 1) / (iterations + 1);
+      // p-Wert Anpassung: wie oft war das Nullmodell MINDESTENS so gut
+      // angepasst (kleinerer Fehler)?
+      const pFit = real.meanErr == null ? null
+        : (nErrs.filter(x => x <= real.meanErr).length + 1) / (iterations + 1);
+
+      return {
+        echt: { impulse: real.n, abc: real.abc,
+                mittlererFehler: real.meanErr, besterFehler: real.bestErr },
+        null: { impulseMittel: mean(nCounts),
+                impulseSpanne: [Math.min(...nCounts), Math.max(...nCounts)],
+                impulse95: pct(nCounts)(0.95),
+                mittlererFehler: mean(nErrs) },
+        pWertAnzahl: pCount,
+        pWertAnpassung: pFit,
+        iterationen: iterations,
+        urteil: (pCount > 0.05 && (pFit == null || pFit > 0.05))
+          ? "Kein belastbarer Unterschied zu Rauschen"
+          : (pCount <= 0.05 && pFit != null && pFit <= 0.05)
+            ? "Anzahl UND Anpassung unterscheiden sich von Rauschen"
+            : pCount <= 0.05 ? "Nur die Anzahl unterscheidet sich"
+                             : "Nur die Anpassungsgüte unterscheidet sich",
+      };
+    },
+
+    // ── NORMIERUNGSEXPONENT AN ECHTEN DATEN BESTIMMEN ───────────────
+    //
+    // Der Anpassungsfehler waechst mit der Wellenlaenge. Ohne Normierung
+    // gelten lange Wellen und grobe Grade pauschal als schlecht. Der
+    // Exponent 0.5 stammt aus der Zufallspfad-Theorie und wurde an
+    // synthetischen Daten bestaetigt — dort MUSS er 0.5 sein, weil die
+    // Daten so erzeugt wurden. Das ist zirkulaer.
+    //
+    // Diese Funktion misst ihn an der vorliegenden Reihe nach:
+    // Regression von log(roher Fehler) auf log(Spanne). Anschliessend
+    // laesst sich der Wert mit setFitBeta() setzen.
+    calibrateBeta(data, userOpts = {}) {
+      const r = this.scan(data, { from: 0, to: data.length - 1 },
+                          { ...userOpts, maxImpulses: 0, maxSetups: 0 });
+      const pts = r.impulses
+        .filter(s => s.fitErrorRaw != null && s.fitSpan > 1)
+        .map(s => [Math.log(s.fitSpan), Math.log(s.fitErrorRaw)]);
+      if (pts.length < 12) {
+        return { error: "Zu wenige Impulse für eine Regression", n: pts.length };
+      }
+      const n = pts.length;
+      const mx = pts.reduce((a, p) => a + p[0], 0) / n;
+      const my = pts.reduce((a, p) => a + p[1], 0) / n;
+      let sxy = 0, sxx = 0, syy = 0;
+      for (const [x, y] of pts) { sxy += (x - mx) * (y - my); sxx += (x - mx) ** 2; syy += (y - my) ** 2; }
+      const beta = sxy / sxx, rho = sxy / Math.sqrt(sxx * syy);
+      // Restkorrelation nach Normierung mit dem gemessenen Beta
+      const res = pts.map(([x, y]) => [x, y - beta * x]);
+      const mr = res.reduce((a, p) => a + p[1], 0) / n;
+      let c2 = 0, s1 = 0, s2 = 0;
+      for (const [x, y] of res) { c2 += (x - mx) * (y - mr); s1 += (x - mx) ** 2; s2 += (y - mr) ** 2; }
+      return {
+        n, beta: +beta.toFixed(3), korrelation: +rho.toFixed(3),
+        restkorrelation: +(s2 > 0 ? c2 / Math.sqrt(s1 * s2) : 0).toFixed(3),
+        aktuell: FIT_BETA.value,
+        hinweis: Math.abs(beta - FIT_BETA.value) > 0.08
+          ? `Weicht deutlich ab — EWTEngine.setFitBeta(${beta.toFixed(2)}) erwägen`
+          : "Nahe am aktuellen Wert, kein Handlungsbedarf",
+      };
+    },
+
+    setFitBeta(v) {
+      if (typeof v === "number" && v >= 0 && v <= 1.5) { FIT_BETA.value = v; return v; }
+      return FIT_BETA.value;
+    },
+    getFitBeta() { return FIT_BETA.value; },
+
     // Diagnose fuer die Konsole: wie viele Strukturen je Grad, und wo
     // scheitern die Regeln? Beantwortet die Frage "warum finde ich nichts"
     // mit Zahlen statt mit Vermutungen.
@@ -952,7 +1186,11 @@
       const tuples = skipTuples(MS);
       const out = { degrees: {}, gesamt: 0 };
       for (const n of opts.degrees) {
-        const chain = buildChain(findFractals(data, n), opts.minPivotPercent);
+        // Dieselbe Grad-Skalierung wie im Scan — sonst meldet die
+        // Diagnose andere Pivot-Zahlen als der Scanner tatsaechlich nutzt.
+        const degScale = opts.scalePivotWithDegree
+          ? Math.sqrt(n / Math.max(1, opts.degrees[0])) : 1;
+        const chain = buildChain(findFractals(data, n), opts.minPivotPercent * degScale);
         const c = { pivots: chain.length, starts: 0, legFail: 0,
                     r1: 0, r2: 0, r3: 0, r4: 0, rInt: 0, prop: 0, dur: 0,
                     ok: 0, unbestaetigt: 0, skipHisto: {} };
