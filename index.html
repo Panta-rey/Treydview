@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m35">
-  <link rel="stylesheet" href="css/style.css?v=m35">
+  <link rel="manifest" href="manifest.webmanifest?v=m37">
+  <link rel="stylesheet" href="css/style.css?v=m37">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m35"></script>
+  <script src="js/lib/klinecharts.min.js?v=m37"></script>
 </head>
 <body>
 
@@ -267,7 +267,7 @@
         <div class="pat-types">
           <div class="pat-group">Strukturen</div>
           <label><input type="checkbox" id="ewtShowImpulse" checked> Impuls 1–2–3–4–5</label>
-          <label><input type="checkbox" id="ewtShowAbc" checked> Korrektur A–B–C</label>
+          <label><input type="checkbox" id="ewtShowAbc" checked> Korrektur A–B–C (Zigzag/Flat/Expanded)</label>
           <label><input type="checkbox" id="ewtShowSetup" checked> Welle-3-Setup (Golden Pocket)</label>
           <label><input type="checkbox" id="ewtShowProj" checked> Projektion W3–W5 + A-B-C</label>
           <div class="pat-group">Regeln</div>
@@ -331,6 +331,15 @@
           Elliott-Regeln: Welle&nbsp;2 hält den Start von Welle&nbsp;1,
           Welle&nbsp;3 ist nicht die kürzeste, Welle&nbsp;4 überlappt
           Welle&nbsp;1 nicht. Nur bestätigte Fraktale — kein Repainting.
+          <br><br>
+          Korrekturen werden nach den drei Grundformen unterschieden:
+          <b>Zigzag</b> (B bleibt innerhalb von A), <b>Flat</b> (B läuft bis
+          an den A-Start) und <b>Expanded&nbsp;Flat</b> (B läuft darüber
+          hinaus). Bewertet wird zusätzlich die <b>Alternation</b> — ist
+          Welle&nbsp;2 tief und scharf, fällt Welle&nbsp;4 typischerweise
+          flach aus — sowie die <b>Gleichheit von Welle&nbsp;1 und&nbsp;5</b>,
+          falls Welle&nbsp;3 verlängert ist. Beides sind Leitlinien, keine
+          Regeln: sie schliessen nichts aus, sie gewichten nur.
           <br><br>
           Die <b>Skip-Tiefe</b> erlaubt jeder Teilwelle, Zwischenextrema zu
           überspringen. Gemessen brauchen 73&nbsp;% der gefundenen Impulse
@@ -1218,16 +1227,16 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m35"></script>
-<script src="js/indicators.js?v=m35"></script>
-<script src="js/overlays.js?v=m35"></script>
-<script src="js/data.js?v=m35"></script>
-<script src="js/settings.js?v=m35"></script>
-<script src="js/derivatives.js?v=m35"></script>
-<script src="js/gridbot.js?v=m35"></script>
-<script src="js/patterns.js?v=m35"></script>
-<script src="js/smc.js?v=m35"></script>
-<script src="js/ewt.js?v=m35"></script>
-<script src="js/app.js?v=m35"></script>
+<script src="js/config.js?v=m37"></script>
+<script src="js/indicators.js?v=m37"></script>
+<script src="js/overlays.js?v=m37"></script>
+<script src="js/data.js?v=m37"></script>
+<script src="js/settings.js?v=m37"></script>
+<script src="js/derivatives.js?v=m37"></script>
+<script src="js/gridbot.js?v=m37"></script>
+<script src="js/patterns.js?v=m37"></script>
+<script src="js/smc.js?v=m37"></script>
+<script src="js/ewt.js?v=m37"></script>
+<script src="js/app.js?v=m37"></script>
 </body>
 </html>

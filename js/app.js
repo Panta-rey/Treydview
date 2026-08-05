@@ -4774,6 +4774,9 @@ function scanEWT() {
   });
 
   // ---------- Korrekturen A-B-C ----------
+  // Zigzag, Flat und Expanded Flat unterscheiden sich im Verhalten von
+  // Welle B — deshalb steht die Form im Etikett, nicht nur "A-B-C".
+  const EWT_FORM = { zigzag: "Zigzag", flat: "Flat", expanded: "Expanded Flat" };
   abcs.forEach(s => {
     try {
       const id = chart.createOverlay({
@@ -4783,7 +4786,8 @@ function scanEWT() {
         extendData: {
           kind: "abc", dir: s.dir, degreeRank: rankOf(s.degree),
           labels: ["", "A", "B", "C"],
-          label: `Korrektur A-B-C · Grad ${s.degree}`,
+          label: `${EWT_FORM[s.form] || "Korrektur"} · Grad ${s.degree}`
+               + ` · B ${(s.ratioBA * 100).toFixed(0)}% · C ${s.ratioCA.toFixed(2)}×A`,
         },
         onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
       });
@@ -4881,6 +4885,10 @@ function showEWTWaveHint(s) {
   setStatus(
     `Impuls Grad ${s.degree} · ${s.dir === "bull" ? "bullisch" : "bärisch"}`
     + ` · W3 = ${s.ratio31.toFixed(2)}× W1 · W5 = ${s.ratio51.toFixed(2)}× W1`
+    + (s.extended ? ` · Welle ${s.extended} verlängert` : "")
+    + (s.equality != null ? ` · Gleichheit W1/W5 ${Math.round(s.equality * 100)}%` : "")
+    + ` · Alternation ${Math.round(s.alternation * 100)}%`
+    + (s.fitError != null ? ` · Anpassung ${(s.fitError * 1000).toFixed(2)}‰` : "")
     + `  ·  Regeln: W2 hält Start ${R.r1 ? "✓" : "✗"}`
     + ` · W3 nicht kürzeste ${R.r2 ? "✓" : "✗"}`
     + ` · W4 ohne Überlappung ${R.r3 ? "✓" : "✗"}`
@@ -5609,7 +5617,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m35";
+const TV_BUILD = "m37";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
