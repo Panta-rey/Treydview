@@ -1385,6 +1385,86 @@
     },
   });
 
+  // ---------- EWT-Wellenzug (Impuls 1-5 / Korrektur A-B-C) ----------
+  //
+  // Ein Overlay fuer beide Strukturarten. Die Beschriftung kommt aus
+  // extendData.labels, die Punktzahl richtet sich danach — so braucht es
+  // keine getrennten Overlays fuer Impuls und Korrektur.
+  //
+  // Alle Punkte haengen an dataIndex und Kurswert, nie an Pixeln. Der
+  // Wellenzug sitzt dadurch bei jedem Zoom- und Scrollzustand richtig.
+  klinecharts.registerOverlay({
+    name: "ewtWave",
+    totalStep: 1,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, overlay, bounding }) => {
+      if (coordinates.length < 2) return [];
+      const ed = overlay.extendData || {};
+      const bull = ed.dir === "bull";
+      // Impuls in Richtungsfarbe, Korrektur warm abgesetzt.
+      const rgb = ed.kind === "abc" ? "208,138,94" : (bull ? "63,182,139" : "208,94,94");
+      // Feinere Wellengrade duenner und blasser: die uebergeordnete
+      // Struktur soll optisch dominieren.
+      const w = ed.degreeRank === 0 ? 2.2 : ed.degreeRank === 1 ? 1.7 : 1.3;
+      const a = ed.degreeRank === 0 ? 0.95 : ed.degreeRank === 1 ? 0.75 : 0.55;
+      const col = `rgba(${rgb},${a})`;
+      const figs = [];
+
+      figs.push({
+        type: "line",
+        attrs: { coordinates },
+        styles: { style: ed.kind === "abc" ? "dashed" : "solid",
+                  dashedValue: [5, 4], color: col, size: w, smooth: false },
+      });
+
+      const labels = ed.labels || [];
+      coordinates.forEach((c0, i) => {
+        figs.push({
+          type: "circle",
+          attrs: { x: c0.x, y: c0.y, r: ed.degreeRank === 0 ? 3.5 : 2.8 },
+          styles: { style: "stroke_fill", color: "rgba(13,17,23,0.9)",
+                    borderColor: col, borderSize: 1.5 },
+        });
+        if (!labels[i]) return;
+        // Hoch- und Tiefpunkte abwechselnd oben/unten beschriften, damit
+        // die Zahlen nicht auf der Linie liegen.
+        const up = i % 2 === (bull ? 1 : 0);
+        figs.push({
+          type: "text",
+          attrs: { x: c0.x, y: c0.y + (up ? -7 : 7), text: labels[i],
+                   align: "center", baseline: up ? "bottom" : "top" },
+          styles: { style: "fill", color: col, size: 11,
+                    family: "IBM Plex Mono, monospace" },
+          ignoreEvent: true,
+        });
+      });
+
+      // Titel am ersten Punkt, in den Sichtbereich geklemmt — sonst
+      // verschwindet er beim Scrollen aus dem Bild.
+      if (ed.label) {
+        const lc = labelColors();
+        const W = (bounding && bounding.width) || 1200;
+        const x = Math.max(4, Math.min(W - 8, coordinates[0].x));
+        figs.push({
+          type: "text",
+          attrs: { x, y: coordinates[0].y + (bull ? 14 : -14), text: ed.label,
+                   align: "left", baseline: bull ? "top" : "bottom" },
+          styles: {
+            style: "stroke_fill", color: col,
+            backgroundColor: lc.bg, borderColor: col,
+            borderSize: 1, borderRadius: 3, size: 10,
+            family: "IBM Plex Mono, monospace",
+            paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+          },
+          ignoreEvent: true,
+        });
+      }
+      return figs;
+    },
+  });
+
   // ---------- Polyline (nur Rendering) ----------
   // Das Zeichnen läuft klickbasiert über eigene Handler in app.js
   // (startPolyline), analog zum Freihand-Werkzeug. Hier nur die Darstellung

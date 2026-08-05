@@ -4649,22 +4649,39 @@ function ewtReadOpts() {
     return el ? el.checked : def;
   };
   const D = (typeof EWTEngine !== "undefined" && EWTEngine.DEFAULTS) || {};
+  // Wellengrade: der eingestellte Grundwert plus die beiden groeberen
+  // Stufen darueber. Ohne Mehrskalen-Suche sieht man immer nur eine
+  // Aufloesung — beide Referenz-Indikatoren rechnen ebenfalls mehrere
+  // Laengen gleichzeitig.
+  const base = Math.round(num("ewtSwing", 2, 50, 5));
+  const multi = chk("ewtMultiDegree", true);
+  const degrees = multi
+    ? [base, Math.round(base * 1.8), Math.round(base * 3.4)]
+    : [base];
   return {
-    swingLength:       num("ewtSwing",   2,  50, D.swingLength),
-    minSwingPercent:   num("ewtMinPct",  0, 500, D.minSwingPercent),
+    degrees,
+    minPivotPercent:   num("ewtMinPivotPct", 0, 50, D.minPivotPercent),
+    setupMinPercent:   num("ewtMinPct",  0, 500, D.setupMinPercent),
     timeoutBars:       num("ewtTimeout", 1, 500, D.timeoutBars),
     rsiPeriod:         num("ewtRsiPeriod", 2, 100, D.rsiPeriod),
     rsiOversold:       num("ewtRsiOs",   1,  99, D.rsiOversold),
-    requireRsi:        chk("ewtUseRsi",  true),
-    requireVolume:     chk("ewtUseVol",  true),
-    requireEfficiency: chk("ewtUseEff",  true),
+    requireWave5NewExtreme: chk("ewtRule4", true),
+    allowDiagonal:     chk("ewtDiagonal", false),
+    // Diese drei sind bewusst standardmaessig AUS. Gemessen an 2000
+    // Kerzen verwarf der RSI-Filter 76 % der Kandidaten und das Volumen
+    // nochmals 53 % vom Rest — zusammen blieben 6 % uebrig. Eine
+    // Wellenstruktur ist eine geometrische Aussage; Oszillatoren
+    // duerfen sie bewerten, aber nicht unterdruecken.
+    requireRsi:        chk("ewtUseRsi",  false),
+    requireVolume:     chk("ewtUseVol",  false),
+    requireEfficiency: chk("ewtUseEff",  false),
   };
 }
 
 function scanEWT() {
   if (typeof EWTEngine === "undefined") { setStatus("EWT-Modul nicht geladen"); return; }
-  // Im Vergleichsmodus zeigt die Achse Prozente — Kursboxen waeren dort
-  // schlicht falsch platziert.
+  // Im Vergleichsmodus zeigt die Achse Prozente — Kursstrukturen waeren
+  // dort falsch platziert.
   if (state.compareAssets && state.compareAssets.length > 0) {
     setStatus("EWT-Scanner ist im Vergleichsmodus nicht verfügbar");
     return;
@@ -4683,72 +4700,100 @@ function scanEWT() {
   state.ewtOpts = opts;
   saveWorkspace();
 
-  let setups;
+  let res;
   try {
-    setups = EWTEngine.scan(data, { from, to }, opts);
+    res = EWTEngine.scan(data, { from, to }, opts);
   } catch (e) {
     setStatus("EWT-Scan fehlgeschlagen: " + (e && e.message ? e.message : e));
     console.warn("[TreydView] EWT", e);
     return;
   }
 
-  // Zustaende, die der Nutzer sehen will
+  const showImp = document.getElementById("ewtShowImpulse")?.checked !== false;
+  const showAbc = document.getElementById("ewtShowAbc")?.checked !== false;
+  const showSet = document.getElementById("ewtShowSetup")?.checked !== false;
+  const showProj = document.getElementById("ewtShowProj")?.checked !== false;
   const show = {
     pending:   document.getElementById("ewtShowPending")   ?.checked !== false,
     triggered: document.getElementById("ewtShowTriggered") ?.checked !== false,
     invalid:   document.getElementById("ewtShowInvalid")   ?.checked !== false,
     timeout:   document.getElementById("ewtShowTimeout")   ?.checked !== false,
   };
-  setups = setups.filter(s => show[s.state]);
-  const showProj = document.getElementById("ewtShowProj")?.checked !== false;
 
-  if (!setups.length) {
-    setStatus("Keine EWT-Setups im sichtbaren Bereich");
+  const impulses = showImp ? res.impulses : [];
+  const abcs     = showAbc ? res.abcs : [];
+  const setups   = showSet ? res.setups.filter(s => show[s.state]) : [];
+
+  if (!impulses.length && !abcs.length && !setups.length) {
+    setStatus("Keine EWT-Strukturen im sichtbaren Bereich");
     return;
   }
 
-  // Anmerkung zur frueheren Fassung: hier stand eine Median-Berechnung
-  // des Bar-Abstands, um Zukunfts-Zeitstempel zu bilden. Die ist
-  // ersatzlos entfallen — es wird durchgehend mit dataIndex gerechnet,
-  // weil KLineCharts Zeitstempel jenseits des letzten Bars auf diesen
-  // klemmt. Damit erledigt sich auch das Wochenend-Luecken-Problem.
-
-  const STATE_LABEL = {
-    pending:   "wartend",
-    triggered: "getriggert",
-    invalid:   "invalidiert",
-    timeout:   "Time-Out",
+  // ACHTUNG, im Bundle verifiziert: _drawOverlay nimmt zwar
+  // point.dataIndex, ueberschreibt es aber mit
+  // timestampToDataIndex(point.timestamp), sobald ein timestamp gesetzt
+  // ist — und diese Umrechnung KLEMMT auf den letzten Bar. Punkte mit
+  // Zukunfts-Zeitstempeln fallen dadurch alle auf dieselbe x-Position
+  // zusammen. Deshalb durchgehend dataIndex, OHNE timestamp.
+  const lastIdx = data.length - 1;
+  let maxIdxUsed = lastIdx;
+  const degrees = (opts.degrees || EWTEngine.DEFAULTS.degrees);
+  const rankOf = (deg) => {
+    const i = degrees.indexOf(deg);
+    return i < 0 ? 2 : (degrees.length - 1 - i);   // groebster Grad = Rang 0
   };
 
   state.ewtOverlayIds = [];
-  let drawn = 0;
-  // Weitester nach rechts benutzter Index — daraus wird unten der noetige
-  // Platz rechts vom letzten Bar berechnet.
-  let maxIdxUsed = data.length - 1;
+  const push = (id) => { if (id) state.ewtOverlayIds.push(Array.isArray(id) ? id[0] : id); };
+
+  // ---------- Impulse 1-2-3-4-5 ----------
+  impulses.forEach(s => {
+    try {
+      const id = chart.createOverlay({
+        name: "ewtWave",
+        points: s.points.map(p => ({ dataIndex: p.index, value: p.price })),
+        lock: true,
+        extendData: {
+          kind: "impulse", dir: s.dir, degreeRank: rankOf(s.degree),
+          labels: ["", "1", "2", "3", "4", "5"],
+          label: `Impuls ${s.dir === "bull" ? "▲" : "▼"} Grad ${s.degree}`
+               + ` · W3/W1 ${s.ratio31.toFixed(2)} · Form ${Math.round(s.quality * 100)}%`,
+        },
+        onMouseEnter: () => { setChartCursor("pointer"); showEWTWaveHint(s); return false; },
+        onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
+        onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
+      });
+      push(id);
+    } catch (e) { /* eine defekte Struktur darf den Rest nicht verhindern */ }
+  });
+
+  // ---------- Korrekturen A-B-C ----------
+  abcs.forEach(s => {
+    try {
+      const id = chart.createOverlay({
+        name: "ewtWave",
+        points: s.points.map(p => ({ dataIndex: p.index, value: p.price })),
+        lock: true,
+        extendData: {
+          kind: "abc", dir: s.dir, degreeRank: rankOf(s.degree),
+          labels: ["", "A", "B", "C"],
+          label: `Korrektur A-B-C · Grad ${s.degree}`,
+        },
+        onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
+      });
+      push(id);
+    } catch (e) {}
+  });
+
+  // ---------- Welle-3-Setups (Golden Pocket) ----------
+  const STATE_LABEL = { pending: "wartend", triggered: "getriggert",
+                        invalid: "invalidiert", timeout: "Time-Out" };
   setups.forEach(s => {
     try {
-      // ---- Rechter Rand ----
-      //
-      // ACHTUNG, im Bundle verifiziert: _drawOverlay nimmt zwar
-      // point.dataIndex, ueberschreibt es aber mit
-      // timestampToDataIndex(point.timestamp), sobald ein timestamp
-      // gesetzt ist — und diese Umrechnung KLEMMT auf den letzten Bar.
-      // Punkte mit Zukunfts-Zeitstempeln fallen dadurch alle auf dieselbe
-      // x-Position zusammen. Fuer alles rechts vom letzten Bar wird
-      // deshalb ausschliesslich dataIndex uebergeben, OHNE timestamp;
-      // dataIndexToCoordinate() rechnet ueber das Datenende hinaus korrekt
-      // weiter. Aus Gruenden der Einheitlichkeit laufen alle Punkte dieses
-      // Overlays ueber dataIndex.
-      const lastIdx = data.length - 1;
       let endIdx;
-      if (s.state === "pending") {
-        endIdx = lastIdx + 12;
-      } else if (s.resolvedAt != null) {
-        endIdx = s.resolvedAt + 3;
-      } else {
-        endIdx = lastIdx;
-      }
-      // Die Box muss immer eine sichtbare Breite haben.
+      if (s.state === "pending") endIdx = lastIdx + 12;
+      else if (s.resolvedAt != null) endIdx = s.resolvedAt + 3;
+      else endIdx = lastIdx;
       if (endIdx <= s.highIndex) endIdx = s.highIndex + 6;
       maxIdxUsed = Math.max(maxIdxUsed, endIdx);
 
@@ -4758,92 +4803,83 @@ function scanEWT() {
         { dataIndex: s.highIndex, value: s.boxTop },
         { dataIndex: endIdx,      value: s.boxBottom },
       ];
-      // Fuenfter Punkt nur bei getriggerten Setups: das Welle-3-Ziel.
       if (s.state === "triggered" && s.target != null && isFinite(s.target)) {
         pts.push({ dataIndex: endIdx, value: s.target });
       }
-
       const outTxt = s.outcome === "ziel" ? " · Ziel erreicht"
                    : s.outcome === "invalidiert" ? " · danach gebrochen"
                    : s.outcome === "offen" ? " · offen" : "";
-      const label = `W3 ${STATE_LABEL[s.state]} · ${s.risePct.toFixed(0)}%`
-                  + ` · Form ${Math.round(s.quality * 100)}%${outTxt}`;
-
-      const id = chart.createOverlay({
+      push(chart.createOverlay({
         name: "ewtZone",
         points: pts,
         lock: true,
         extendData: {
-          state: s.state,
-          outcome: s.outcome,
-          label,
+          state: s.state, outcome: s.outcome,
+          label: `W3 ${STATE_LABEL[s.state]} · ${s.risePct.toFixed(0)}%`
+               + ` · Form ${Math.round(s.quality * 100)}%${outTxt}`,
           targetLabel: s.target != null && isFinite(s.target)
-            ? "Ziel " + s.target.toLocaleString("de-CH", { maximumFractionDigits: 2 })
-            : null,
+            ? "Ziel " + s.target.toLocaleString("de-CH", { maximumFractionDigits: 2 }) : null,
         },
         onMouseEnter: () => { setChartCursor("pointer"); showEWTHint(s); return false; },
         onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
         onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
-      });
-      if (id) { state.ewtOverlayIds.push(Array.isArray(id) ? id[0] : id); drawn++; }
+      }));
 
       // ---- Projektion der Folgewellen ----
       const pr = s.projection;
       if (showProj && pr) {
-        // Startpunkt auf der Zeitachse: bei getriggerten Setups der
-        // Beruehrungspunkt, bei wartenden der letzte Bar ("ab jetzt").
-        // Alles ueber dataIndex, siehe Begruendung bei der Box oben.
         const i0 = pr.startIdx != null ? pr.startIdx : lastIdx;
-        const i3 = i0 + pr.barsW3;
-        const i4 = i3 + pr.barsW4;
-        const i5 = i4 + pr.barsW5;
-        const iA = i5 + pr.barsA;
-        const iB = iA + pr.barsB;
-        const iC = iB + pr.barsC;
+        const i3 = i0 + pr.barsW3, i4 = i3 + pr.barsW4, i5 = i4 + pr.barsW5;
+        const iA = i5 + pr.barsA,  iB = iA + pr.barsB,  iC = iB + pr.barsC;
         maxIdxUsed = Math.max(maxIdxUsed, iC);
-
-        // Das Fragezeichen ist Absicht: eine Fibonacci-Fortschreibung
-        // ist eine Hypothese, keine Vorhersage.
         const konflikt = pr.w4Conflict ? " · ⚠ W4 überlappt W1" : "";
-        const projLabel = `Projektion? W3–W5 + A-B-C · Basis ${pr.basis}${konflikt}`;
-
-        const pid = chart.createOverlay({
+        push(chart.createOverlay({
           name: "ewtProjection",
           points: [
-            { dataIndex: i0, value: pr.anchor },
-            { dataIndex: i3, value: pr.w3    },
-            { dataIndex: i3, value: pr.w3x   },
-            { dataIndex: i4, value: pr.w4Bot },
-            { dataIndex: i5, value: pr.w5    },
-            { dataIndex: iA, value: pr.waveA },
-            { dataIndex: iB, value: pr.waveB },
-            { dataIndex: iC, value: pr.waveC },
+            { dataIndex: i0, value: pr.anchor }, { dataIndex: i3, value: pr.w3 },
+            { dataIndex: i3, value: pr.w3x },    { dataIndex: i4, value: pr.w4Bot },
+            { dataIndex: i5, value: pr.w5 },     { dataIndex: iA, value: pr.waveA },
+            { dataIndex: iB, value: pr.waveB },  { dataIndex: iC, value: pr.waveC },
           ],
           lock: true,
-          extendData: { basis: pr.basis, label: projLabel },
+          extendData: { basis: pr.basis,
+            label: `Projektion? W3–W5 + A-B-C · Basis ${pr.basis}${konflikt}` },
           onMouseEnter: () => { setChartCursor("pointer"); showEWTProjHint(s, pr); return false; },
           onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
           onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
-        });
-        if (pid) state.ewtOverlayIds.push(Array.isArray(pid) ? pid[0] : pid);
+        }));
       }
-    } catch (e) { /* ein defektes Setup darf den Rest nicht verhindern */ }
+    } catch (e) {}
   });
 
   // Rechts Platz schaffen, damit Boxen und Projektionen nicht am Rand
   // abgeschnitten werden. Nur vergroessern, nie verkleinern — sonst
   // springt die Ansicht bei jedem Scan.
   try {
-    const over = maxIdxUsed - (data.length - 1);
+    const over = maxIdxUsed - lastIdx;
     if (over > 0) {
       const need = (over + 3) * chart.getBarSpace().bar;
       if (need > chart.getOffsetRightDistance()) chart.setOffsetRightDistance(need);
     }
-  } catch (e) { /* aeltere Bundles ohne diese API: dann eben knapper */ }
+  } catch (e) { /* aeltere Bundles ohne diese API */ }
 
-  if (!drawn) { setStatus("Keine EWT-Setups gezeichnet"); return; }
-  const offen = setups.filter(s => s.state === "pending").length;
-  setStatus(`${drawn} EWT-Setups (${offen} wartend) · log. Golden Pocket 0.5–0.618 · Rechtsklick löscht einzelne`);
+  setStatus(`${impulses.length} Impulse · ${abcs.length} Korrekturen · ${setups.length} W3-Setups`
+    + ` · Grade ${degrees.join("/")} · log. Fibonacci · Rechtsklick löscht einzelne`);
+}
+
+// Kurz-Info zu einem Wellenzug: die Regelpruefung im Klartext, damit die
+// Zaehlung nachvollziehbar ist statt behauptet.
+function showEWTWaveHint(s) {
+  if (_patHintPrev == null) _patHintPrev = document.getElementById("statusline").textContent;
+  const R = s.rules;
+  setStatus(
+    `Impuls Grad ${s.degree} · ${s.dir === "bull" ? "bullisch" : "bärisch"}`
+    + ` · W3 = ${s.ratio31.toFixed(2)}× W1 · W5 = ${s.ratio51.toFixed(2)}× W1`
+    + `  ·  Regeln: W2 hält Start ${R.r1 ? "✓" : "✗"}`
+    + ` · W3 nicht kürzeste ${R.r2 ? "✓" : "✗"}`
+    + ` · W4 ohne Überlappung ${R.r3 ? "✓" : "✗"}`
+    + ` · W5 neues Extrem ${R.r4 ? "✓" : "✗"}`
+  );
 }
 
 // Kurz-Info beim Ueberfahren, wie bei Mustern und SMC-Zonen.
@@ -5501,10 +5537,15 @@ document.getElementById("patStrictness").addEventListener("change", (e) => {
     const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
     const chk = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.checked = !!v; };
     set("ewtSwing",   o.swingLength);
-    set("ewtMinPct",  o.minSwingPercent);
+    set("ewtMinPct",  o.setupMinPercent);
     set("ewtTimeout", o.timeoutBars);
     set("ewtRsiPeriod", o.rsiPeriod);
     set("ewtRsiOs",   o.rsiOversold);
+    set("ewtMinPivotPct", o.minPivotPercent);
+    if (Array.isArray(o.degrees) && o.degrees.length) set("ewtSwing", o.degrees[0]);
+    chk("ewtMultiDegree", o.degrees ? o.degrees.length > 1 : true);
+    chk("ewtRule4",   o.requireWave5NewExtreme);
+    chk("ewtDiagonal", o.allowDiagonal);
     chk("ewtUseRsi",  o.requireRsi);
     chk("ewtUseVol",  o.requireVolume);
     chk("ewtUseEff",  o.requireEfficiency);
@@ -5558,7 +5599,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m33";
+const TV_BUILD = "m34";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

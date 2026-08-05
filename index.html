@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m33">
-  <link rel="stylesheet" href="css/style.css?v=m33">
+  <link rel="manifest" href="manifest.webmanifest?v=m34">
+  <link rel="stylesheet" href="css/style.css?v=m34">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m33"></script>
+  <script src="js/lib/klinecharts.min.js?v=m34"></script>
 </head>
 <body>
 
@@ -263,27 +263,40 @@
         </svg>
       </button>
       <div class="dd-panel dd-panel--right" id="ewtPanel">
-        <div class="pat-header">Elliott-Wellen · Welle 3</div>
+        <div class="pat-header">Elliott-Wellen</div>
         <div class="pat-types">
-          <div class="pat-group">Zustände</div>
+          <div class="pat-group">Strukturen</div>
+          <label><input type="checkbox" id="ewtShowImpulse" checked> Impuls 1–2–3–4–5</label>
+          <label><input type="checkbox" id="ewtShowAbc" checked> Korrektur A–B–C</label>
+          <label><input type="checkbox" id="ewtShowSetup" checked> Welle-3-Setup (Golden Pocket)</label>
+          <label><input type="checkbox" id="ewtShowProj" checked> Projektion W3–W5 + A-B-C</label>
+          <div class="pat-group">Regeln</div>
+          <label><input type="checkbox" id="ewtRule4" checked> Welle 5 muss neues Extrem setzen</label>
+          <label><input type="checkbox" id="ewtDiagonal"> Diagonalen zulassen (Regel 3 aus)</label>
+          <div class="pat-group">Setup-Zustände</div>
           <label><input type="checkbox" id="ewtShowPending" checked> Wartend (gelb)</label>
           <label><input type="checkbox" id="ewtShowTriggered" checked> Getriggert (grün)</label>
           <label><input type="checkbox" id="ewtShowInvalid" checked> Invalidiert (rot)</label>
           <label><input type="checkbox" id="ewtShowTimeout" checked> Time-Out (grau)</label>
-          <div class="pat-group">Qualitäts-Filter</div>
-          <label><input type="checkbox" id="ewtUseRsi" checked> RSI überverkauft o. Divergenz</label>
-          <label><input type="checkbox" id="ewtUseVol" checked> Volumen-Konfluenz</label>
-          <label><input type="checkbox" id="ewtUseEff" checked> Impuls-Effizienz (ER)</label>
-          <div class="pat-group">Projektion</div>
-          <label><input type="checkbox" id="ewtShowProj" checked> Welle 3–5 fortschreiben</label>
+          <div class="pat-group">Zusatzfilter (verwerfen Strukturen)</div>
+          <label><input type="checkbox" id="ewtUseRsi"> RSI überverkauft o. Divergenz</label>
+          <label><input type="checkbox" id="ewtUseVol"> Volumen-Konfluenz</label>
+          <label><input type="checkbox" id="ewtUseEff"> Impuls-Effizienz (ER)</label>
         </div>
         <div class="pat-row">
-          <label>Swing-Länge</label>
+          <label>Wellengrad</label>
           <input type="number" id="ewtSwing" value="5" min="2" max="50">
         </div>
         <div class="pat-row">
-          <label>Min. Impuls %</label>
-          <input type="number" id="ewtMinPct" value="5" min="0" max="500" step="0.5">
+          <label><input type="checkbox" id="ewtMultiDegree" checked> 3 Grade gleichzeitig</label>
+        </div>
+        <div class="pat-row">
+          <label>Min. Pivot-Bewegung %</label>
+          <input type="number" id="ewtMinPivotPct" value="1.5" min="0" max="50" step="0.5">
+        </div>
+        <div class="pat-row">
+          <label>Setup: min. Impuls %</label>
+          <input type="number" id="ewtMinPct" value="3" min="0" max="500" step="0.5">
         </div>
         <div class="pat-row">
           <label>RSI-Periode</label>
@@ -298,19 +311,20 @@
           <input type="number" id="ewtTimeout" value="60" min="1" max="500">
         </div>
         <div class="pat-info">
-          <b>Kontext, kein Signal.</b> Sucht abgeschlossene Impulse (Welle&nbsp;1) und
-          zeichnet die <b>logarithmische</b> Golden Pocket (0.5–0.618) der Korrektur.
-          Nur bestätigte Fraktale — kein Repainting, keine Zukunftsdaten.
-          Die gestrichelte rote Linie ist das Start-Tief: bricht der Kurs darunter,
-          ist das Setup nach EWT-Regel ungültig.
+          <b>Kontext, kein Signal.</b> Geprüft werden die drei kardinalen
+          Elliott-Regeln: Welle&nbsp;2 hält den Start von Welle&nbsp;1,
+          Welle&nbsp;3 ist nicht die kürzeste, Welle&nbsp;4 überlappt
+          Welle&nbsp;1 nicht. Nur bestätigte Fraktale — kein Repainting.
           <br><br>
-          <b>Die Projektion ist keine Prognose.</b> Sie schreibt nur die
-          Fibonacci-Verhältnisse fort, die die Elliott-Lehre unterstellt, und
-          enthält keine Information, die nicht schon in Welle&nbsp;1 steckt.
-          Bei noch nicht getriggerten Setups ist auch das Welle-2-Tief bloss
-          angenommen — solche Projektionen sind blasser gezeichnet.
-          Die Zeitachse ist der schwächste Teil und sagt nichts darüber aus,
-          <i>wann</i> etwas eintritt.
+          Die <b>Zusatzfilter</b> sind bewusst aus. Gemessen an 2000&nbsp;Kerzen
+          verwarf der RSI-Filter 76&nbsp;% der Kandidaten und das Volumen
+          nochmals 53&nbsp;% vom Rest. Sie bewerten die Güte — einschalten
+          nur, wenn du gezielt weniger und schärfere Treffer willst.
+          <br><br>
+          <b>Die Projektion ist keine Prognose.</b> Sie schreibt nur
+          Fibonacci-Verhältnisse fort und enthält keine Information, die
+          nicht schon in Welle&nbsp;1 steckt. Die Zeitachse sagt nichts
+          darüber aus, <i>wann</i> etwas eintritt.
         </div>
         <div class="pat-actions">
           <button id="ewtScanBtn" class="pat-scan">Scannen</button>
@@ -1182,16 +1196,16 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m33"></script>
-<script src="js/indicators.js?v=m33"></script>
-<script src="js/overlays.js?v=m33"></script>
-<script src="js/data.js?v=m33"></script>
-<script src="js/settings.js?v=m33"></script>
-<script src="js/derivatives.js?v=m33"></script>
-<script src="js/gridbot.js?v=m33"></script>
-<script src="js/patterns.js?v=m33"></script>
-<script src="js/smc.js?v=m33"></script>
-<script src="js/ewt.js?v=m33"></script>
-<script src="js/app.js?v=m33"></script>
+<script src="js/config.js?v=m34"></script>
+<script src="js/indicators.js?v=m34"></script>
+<script src="js/overlays.js?v=m34"></script>
+<script src="js/data.js?v=m34"></script>
+<script src="js/settings.js?v=m34"></script>
+<script src="js/derivatives.js?v=m34"></script>
+<script src="js/gridbot.js?v=m34"></script>
+<script src="js/patterns.js?v=m34"></script>
+<script src="js/smc.js?v=m34"></script>
+<script src="js/ewt.js?v=m34"></script>
+<script src="js/app.js?v=m34"></script>
 </body>
 </html>
