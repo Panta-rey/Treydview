@@ -1195,6 +1195,25 @@
         attrs: { x: c.x, y: c.y, r: 3.5 },
         styles: { style: "fill", color: col },
       }));
+      // Welle 1 beschriften. Die Projektion zaehlt ab Welle 2 weiter,
+      // zusammen ergibt das die durchgehende Folge 1-2-3-4-5-A-B-C.
+      figs.push({
+        type: "text",
+        attrs: { x: c1.x + 6, y: c1.y, text: "1", align: "left", baseline: "middle" },
+        styles: { style: "fill", color: col, size: 10,
+                  family: "IBM Plex Mono, monospace" },
+        ignoreEvent: true,
+      });
+      // Welle 2 sitzt in der Box — bei getriggerten Setups am gemessenen
+      // Tief, sonst mittig als Erwartungswert.
+      figs.push({
+        type: "text",
+        attrs: { x: Math.min(c2.x, c3.x) + 6, y: (c2.y + c3.y) / 2,
+                 text: "2", align: "left", baseline: "middle" },
+        styles: { style: "fill", color: col, size: 10,
+                  family: "IBM Plex Mono, monospace" },
+        ignoreEvent: true,
+      });
 
       // Invalidierungs-Niveau: Waagrechte auf Hoehe des Start-Tiefs bis an
       // den rechten Rand der Box. Bricht der Kurs darunter, ist die
@@ -1268,9 +1287,15 @@
   // blasse Linie sieht, liest sie anders als eine kraeftige durchgezogene.
   //
   // Punkt-Reihenfolge:
-  //   0  Anker (Welle-2-Tief)        3  Welle-4-Tief
-  //   1  Welle-3-Ziel                4  Welle-5-Ziel
-  //   2  Welle-3-Zielband oben       5  rechter Rand (nur fuer die x-Weite)
+  // Vollstaendiger Elliott-Zyklus: fuenf Impulswellen, dann die
+  // dreiteilige Korrektur. Welle 1 und 2 liegen bereits als Fakten im
+  // ewtZone-Overlay (Linie und Box) — hier wird ab Welle 2 weitergezaehlt,
+  // sodass zusammen 1-2-3-4-5-A-B-C lesbar ist.
+  //
+  //   0  Anker = Welle-2-Tief      4  Welle 5
+  //   1  Welle 3                   5  Welle A
+  //   2  Welle-3-Zielband oben     6  Welle B
+  //   3  Welle-4-Tief              7  Welle C
   klinecharts.registerOverlay({
     name: "ewtProjection",
     totalStep: 1,
@@ -1278,15 +1303,19 @@
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
     createPointFigures: ({ coordinates, overlay, bounding }) => {
-      if (coordinates.length < 5) return [];
+      if (coordinates.length < 8) return [];
       const ed = overlay.extendData || {};
       // Angenommene Basis (Welle-2-Tief noch nicht bekannt) wird noch
       // blasser gezeichnet als eine gemessene.
       const weak = ed.basis !== "gemessen";
       const a    = weak ? 0.42 : 0.68;
+      // Impulswellen blau, Korrekturwellen warm — damit auf einen Blick
+      // erkennbar ist, wo der Impuls endet und die Korrektur beginnt.
       const col  = `rgba(90,169,230,${a})`;
+      const colC = `rgba(208,138,94,${a})`;
       const c0 = coordinates[0], c1 = coordinates[1], c2 = coordinates[2];
       const c3 = coordinates[3], c4 = coordinates[4];
+      const cA = coordinates[5], cB = coordinates[6], cC = coordinates[7];
       const figs = [];
 
       // Zielband Welle 3 (1.618 bis 2.618)
@@ -1295,32 +1324,39 @@
         attrs: rectAttrs({ x: c0.x, y: c1.y }, { x: c1.x, y: c2.y }),
         styles: {
           style: "stroke_fill",
-          color: `rgba(90,169,230,${weak ? 0.05 : 0.09})`,
+          color: `rgba(90,169,230,${weak ? 0.03 : 0.06})`,
           borderColor: `rgba(90,169,230,${a * 0.6})`,
           borderSize: 1, borderStyle: "dashed", dashedValue: [2, 3],
         },
         ignoreEvent: true,
       });
 
-      // Wellenzug 2 -> 3 -> 4 -> 5, gepunktet
+      // Impulsteil 2 -> 3 -> 4 -> 5, gepunktet
       figs.push({
         type: "line",
         attrs: { coordinates: [c0, c1, c3, c4] },
         styles: { style: "dashed", dashedValue: [2, 4], color: col, size: 1.5, smooth: false },
       });
+      // Korrekturteil 5 -> A -> B -> C
+      figs.push({
+        type: "line",
+        attrs: { coordinates: [c4, cA, cB, cC] },
+        styles: { style: "dashed", dashedValue: [2, 4], color: colC, size: 1.5, smooth: false },
+      });
 
-      // Wendepunkte
-      [[c1, "3"], [c3, "4"], [c4, "5"]].forEach(([c, n]) => {
+      // Wendepunkte mit Zaehlung
+      [[c1, "3", col], [c3, "4", col], [c4, "5", col],
+       [cA, "A", colC], [cB, "B", colC], [cC, "C", colC]].forEach(([c, n, k]) => {
         figs.push({
           type: "circle",
           attrs: { x: c.x, y: c.y, r: 3 },
           styles: { style: "stroke_fill", color: "rgba(13,17,23,0.9)",
-                    borderColor: col, borderSize: 1.5 },
+                    borderColor: k, borderSize: 1.5 },
         });
         figs.push({
           type: "text",
           attrs: { x: c.x + 6, y: c.y, text: n, align: "left", baseline: "middle" },
-          styles: { style: "fill", color: col, size: 10,
+          styles: { style: "fill", color: k, size: 10,
                     family: "IBM Plex Mono, monospace" },
           ignoreEvent: true,
         });

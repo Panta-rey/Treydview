@@ -84,6 +84,14 @@
     w4Top:    0.236,   // Welle 4 korrigiert 0.236 - 0.382 von Welle 3
     w4Bottom: 0.382,
     w5Ratio:  1.0,     // Welle 5 = 1.0 x Welle 1 (ab Welle-4-Tief)
+    // Korrekturzyklus A-B-C nach dem abgeschlossenen Impuls
+    waveARatio: 0.382, // A korrigiert 0.382 des GESAMTEN Impulses (1-5)
+    waveBRatio: 0.5,   // B holt die Haelfte von A zurueck
+    waveCRatio: 1.0,   // C = 1.0 x A, ab dem B-Hoch
+    // Obergrenze fuer die Zeitachse der Projektion. Ohne Deckel wird bei
+    // langen Wellen 1 eine Projektion ueber hunderte Bars gezeichnet, die
+    // niemand mehr lesen kann.
+    maxProjBars: 90,
 
     // ---- Ausgabe ----
     // Der eigentliche FPS-Schutz. Nicht die Rechnung ist teuer, sondern
@@ -290,20 +298,54 @@
     // Welle 5: 1.0 x Welle 1 ab dem Welle-4-Tief.
     const w5 = logExtend(w4Bot, s.H, s.L, opts.w5Ratio);
 
-    // Zeitachse: Vielfache der Welle-1-Dauer. Bewusst grob.
+    // ---- Korrekturzyklus A-B-C ----
+    //
+    // Nach fuenf Impulswellen folgt nach Elliott die dreiteilige
+    // Korrektur. A und C laufen mit dem Korrekturtrend (abwaerts), B
+    // dagegen (aufwaerts) — deshalb wird B hier zwischen A und C
+    // eingehaengt und nicht als eigener Impuls behandelt.
+    //
+    //   A: korrigiert einen Teil des GESAMTEN Impulses, also von Welle 5
+    //      zurueck Richtung Startpunkt Welle 1.
+    //   B: holt die Haelfte der A-Strecke zurueck.
+    //   C: noch einmal die Laenge von A, ab dem B-Hoch.
+    //
+    // Alles wieder geometrisch, aus demselben Grund wie oben.
+    const waveA = logRetrace(w5, s.L, opts.waveARatio);
+    const waveB = logRetrace(w5, waveA, opts.waveBRatio);
+    // C laeuft abwaerts: die A-Ratio (waveA/w5 < 1) ab dem B-Hoch.
+    const waveC = waveA > 0 && w5 > 0
+      ? waveB * Math.pow(waveA / w5, opts.waveCRatio)
+      : waveB - opts.waveCRatio * (w5 - waveA);
+
+    // Zeitachse: Vielfache der Welle-1-Dauer. Der schwaechste Teil der
+    // ganzen Projektion — Wellen-Zeitrelationen streuen empirisch weit
+    // staerker als die Preisverhaeltnisse. Dient nur der Breite der
+    // Zeichnung, nicht einer Aussage ueber den Zeitpunkt.
     const barsW1 = Math.max(1, s.h - s.l);
-    const startIdx = s.state === "triggered" && s.resolvedAt != null
-      ? s.resolvedAt : null;   // null = "ab jetzt", app.js setzt den letzten Bar
+    const raw = {
+      w3: barsW1 * 1.618, w4: barsW1 * 0.618, w5: barsW1 * 1.0,
+      a:  barsW1 * 1.0,   b:  barsW1 * 0.618, c:  barsW1 * 1.0,
+    };
+    // Auf maxProjBars herunterskalieren, statt hunderte Bars zu zeichnen.
+    const totalRaw = raw.w3 + raw.w4 + raw.w5 + raw.a + raw.b + raw.c;
+    const k = totalRaw > opts.maxProjBars ? opts.maxProjBars / totalRaw : 1;
+    const bars = {
+      w3: Math.max(1, Math.round(raw.w3 * k)), w4: Math.max(1, Math.round(raw.w4 * k)),
+      w5: Math.max(1, Math.round(raw.w5 * k)), a:  Math.max(1, Math.round(raw.a  * k)),
+      b:  Math.max(1, Math.round(raw.b  * k)), c:  Math.max(1, Math.round(raw.c  * k)),
+    };
 
     return {
       basis: measured ? "gemessen" : "angenommen",
       anchor,
       w3, w3x, w4Top, w4Bot, w5,
+      waveA, waveB, waveC,
       w4Conflict,
-      startIdx,
-      barsW3: Math.round(barsW1 * 1.618),
-      barsW4: Math.round(barsW1 * 0.618),
-      barsW5: Math.round(barsW1 * 1.0),
+      startIdx: s.state === "triggered" && s.resolvedAt != null ? s.resolvedAt : null,
+      barsW3: bars.w3, barsW4: bars.w4, barsW5: bars.w5,
+      barsA:  bars.a,  barsB:  bars.b,  barsC:  bars.c,
+      totalBars: bars.w3 + bars.w4 + bars.w5 + bars.a + bars.b + bars.c,
     };
   }
 
@@ -507,8 +549,22 @@
         // ---- Projektion der Folgewellen ----
         // Nur fuer Setups, die noch leben. Eine Projektion aus einem
         // invalidierten oder abgelaufenen Setup waere sinnlos.
+        //
+        // Und zwar NUR fuer Setups, die noch laufen. Eine Projektion aus
+        // einem Setup, dessen Zeitfenster laengst abgelaufen ist, haengt
+        // mitten im Chart und behauptet eine Zukunft, die schon
+        // Vergangenheit ist. Kriterium ist dasselbe timeoutBars-Fenster,
+        // das auch den Time-Out-Zustand bestimmt:
+        //   wartend    -> laeuft per Definition noch
+        //   getriggert -> nur wenn weder Ziel noch Bruch eingetreten sind
+        //                 UND das Fenster ab Einstieg noch nicht abgelaufen ist
+        const stillRunning =
+          state === "pending" ||
+          (state === "triggered" && outcome === "offen" &&
+           resolvedAt != null && resolvedAt + opts.timeoutBars >= len - 1);
+
         let projection = null;
-        if (opts.projectWaves && (state === "pending" || state === "triggered")) {
+        if (opts.projectWaves && stillRunning) {
           projection = buildProjection(s_ctx(l, h, L, H, boxTop, boxBottom,
                                              state, resolvedAt, w2Low), opts);
         }

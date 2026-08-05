@@ -100,8 +100,16 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 #drawbar .action-btn.active{color:var(--accent);border-color:rgba(232,182,76,.4);}
 #drawbar .dropdown{width:36px;display:flex;justify-content:center;}
 /* Panels werden von placeDropdownPanel() fixiert positioniert — .drawbar
-   traegt overflow-y:auto und wuerde ein absolutes Panel abschneiden. */
-#drawbar .dd-panel{max-height:78vh;overflow-y:auto;}
+   traegt overflow-y:auto und wuerde ein absolutes Panel abschneiden.
+
+   BREITE: mit position:fixed ist der umgebende Block das Sichtfenster,
+   nicht mehr die 36px schmale .dropdown. Ohne Deckel zieht sich das Panel
+   deshalb auf die gesamte Restbreite des Bildschirms auf — genau das war
+   bei SMC und Elliott zu sehen, waehrend die Muster-Erkennung mit ihrer
+   reinen Kastenliste zufaellig schmal blieb. Der Deckel gilt fuer alle
+   Panels der Leiste gleichermassen. */
+#drawbar .dd-panel{max-height:78vh;overflow-y:auto;width:max-content;max-width:min(320px,33vw);}
+#drawbar .dd-panel .pat-info{white-space:normal;}
 .draw-popup{display:none;position:fixed;background:var(--bg-raised);border:1px solid var(--border);border-radius:8px;padding:6px;min-width:240px;max-width:280px;z-index:500;box-shadow:0 8px 32px rgba(0,0,0,.6);}
 .draw-popup.open{display:flex;flex-direction:column;gap:2px;}
 /* Symbol links, Text rechts — Garnitur aus der Handy-Fassung uebernommen.
