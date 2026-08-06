@@ -371,8 +371,11 @@ function buildCreate(ind) {
   const inp = sv.inputs;
   const create = { name: ind.name, extendData: { plots: sv.plots } };
   switch (ind.key) {
-    case "sma":      create.calcParams = [inp.p1||20, inp.p2||50, inp.p3||100, inp.p4||200]; break;
-    case "ema":      create.calcParams = [inp.p1||21, inp.p2||50, inp.p3||100, inp.p4||200]; break;
+    // Fuenfter Parameter = Intervall des Durchschnitts ("auto" oder z. B. "1w").
+    // KLineCharts behandelt calcParams als undurchsichtige Liste und erkennt
+    // Aenderungen darin als neue Instanz — genau das wollen wir hier.
+    case "sma":      create.calcParams = [inp.p1||20, inp.p2||50, inp.p3||100, inp.p4||200, inp.tf||"auto"]; break;
+    case "ema":      create.calcParams = [inp.p1||21, inp.p2||50, inp.p3||100, inp.p4||200, inp.tf||"auto"]; break;
     case "boll":     create.calcParams = [inp.period||20, inp.stddev||2.0, inp.maType||"SMA", inp.offset||0]; break;
     case "gc":       create.calcParams = [inp.period||144, inp.mult||1.414, inp.poles||4]; break;
     case "hull":     create.calcParams = [inp.mode||"HMA", inp.period||55, inp.lengthMult||1.0]; break;
@@ -618,6 +621,47 @@ chart.subscribeAction("onVisibleRangeChange", () => {
 // die LANGSAMSTE Antwort und der Chart zeigt ein anderes Asset als das Label.
 let _loadSeq = 0;
 
+// Tageskerzen zu Wochen- oder Monatskerzen zusammenfassen.
+//
+// Noetig fuer Quellen, die nur Tagesdaten liefern (Bitstamp, LBMA-Gold).
+// Wochen beginnen Montag 00:00 UTC — der Unix-Epochenstart war ein
+// Donnerstag, daher der Versatz von vier Tagen. Monate nach Kalender.
+function aggregateCandles(candles, tfId) {
+  if (!Array.isArray(candles) || candles.length === 0) return candles;
+  const D = 86400000;
+  // Der 1. Januar 1970 war ein DONNERSTAG. Montage liegen damit bei
+  // Tagesindex ≡ 4 (mod 7). Der Versatz muss deshalb ABGEZOGEN werden —
+  // mit +4 landen die Wochengrenzen auf Sonntag.
+  const bucket = (ts) => {
+    if (tfId === "1w") return Math.floor((ts - 4 * D) / (7 * D));
+    const d = new Date(ts);
+    return d.getUTCFullYear() * 12 + d.getUTCMonth();
+  };
+  const start = (ts) => {
+    if (tfId === "1w") return Math.floor((ts - 4 * D) / (7 * D)) * (7 * D) + 4 * D;
+    const d = new Date(ts);
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+  };
+  const out = [];
+  let cur = null, key = null;
+  for (const c of candles) {
+    const k = bucket(c.timestamp);
+    if (k !== key) {
+      if (cur) out.push(cur);
+      key = k;
+      cur = { timestamp: start(c.timestamp), open: c.open, high: c.high,
+              low: c.low, close: c.close, volume: c.volume || 0 };
+    } else {
+      cur.high = Math.max(cur.high, c.high);
+      cur.low  = Math.min(cur.low, c.low);
+      cur.close = c.close;
+      cur.volume += (c.volume || 0);
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
 async function loadData() {
   const seq = ++_loadSeq;
   if (state.closeStream) { state.closeStream(); state.closeStream = null; }
@@ -635,6 +679,17 @@ async function loadData() {
       // Indizes kommen als Tageskerzen ueber den Worker (Stooq erlaubt
       // keinen Direktabruf aus dem Browser).
       candles = await DataLayer.fetchStooqHistory(state.symbol.stooqSymbol);
+    } else if (state.symbol.type === "bitstamp") {
+      // Bitstamp liefert nur 1h, 4h und 1d. Groebere Intervalle entstehen
+      // aus Tageskerzen: Wochen- und Monatskerzen liessen sich zwar
+      // anfragen, waeren aber je Boerse anders geschnitten.
+      const stepMap = { "15m": 3600, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 86400, "1M": 86400 };
+      const step = stepMap[state.timeframe.id] || 86400;
+      candles = await DataLayer.fetchBitstampHistory(state.symbol.bitstampPair, step);
+      if (state.timeframe.id === "1w" || state.timeframe.id === "1M") {
+        candles = aggregateCandles(candles, state.timeframe.id);
+      }
+      if (!candles || candles.length === 0) throw new Error(`Bitstamp: keine Kerzen für ${state.symbol.bitstampPair}`);
     } else if (state.symbol.type === "bybit") {
       candles = await DataLayer.fetchBybitKlines(state.symbol.bybitSymbol, state.timeframe.bybitInterval, CONFIG.CANDLE_LIMIT);
       if (!candles || candles.length === 0) throw new Error(`Bybit: keine Kerzen für ${state.symbol.bybitSymbol} / ${state.timeframe.bybitInterval}`);
@@ -645,7 +700,8 @@ async function loadData() {
     if (seq !== _loadSeq) return;   // inzwischen wurde neu geladen
     // HTTP 500 heisst: der Worker ist erreichbar und wirft einen Fehler.
     // Die URL zu prüfen führt dann in die Irre — sie stimmt ja.
-    const isWorker = state.symbol.type === "worker" || state.symbol.type === "stooq";
+    const isWorker = state.symbol.type === "worker" || state.symbol.type === "stooq"
+                  || state.symbol.type === "bitstamp";
     // Binance HTTP 400 = "Invalid symbol": das Paar existiert dort nicht.
     // Ohne diesen Hinweis sieht es wie ein Netzwerkfehler aus (AERO-Fall).
     if (!isWorker && /HTTP 4\d\d/.test(err.message)) {
@@ -1471,7 +1527,12 @@ function updateLegend(hoverData) {
         .filter(p => sv.plots[p.key] && sv.plots[p.key].visible !== false)
         .map(p => `<span class="lg-dot" style="background:${sv.plots[p.key].color}"></span>`)
         .join("");
-      html += `<div class="legend-line"><span class="lg-name">${ind.label}</span>${dots}</div>`;
+      // Rechnet der Durchschnitt auf einem anderen Intervall, gehoert das
+      // sichtbar in die Legende — sonst wundert man sich, warum die Linie
+      // nicht zum Chart passt.
+      const tfSuffix = (sv.inputs && sv.inputs.tf && sv.inputs.tf !== "auto")
+        ? ` <span class="lg-tf">${sv.inputs.tf.toUpperCase()}</span>` : "";
+      html += `<div class="legend-line"><span class="lg-name">${ind.label}</span>${tfSuffix}${dots}</div>`;
     });
   }
   body.innerHTML = html;
@@ -5679,7 +5740,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m42";
+const TV_BUILD = "m44";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

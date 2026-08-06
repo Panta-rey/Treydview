@@ -304,6 +304,30 @@ const DataLayer = {
     })).sort((a, b) => a.timestamp - b.timestamp);
   },
 
+  // ---------- Bitstamp via Worker (BTC ab 2011) ----------
+  // Der Worker blaettert die Historie serverseitig durch und liefert sie
+  // in EINER Antwort im gleichen candles-Format wie die Gold-Route.
+  async fetchBitstampHistory(pair, step) {
+    const base = CONFIG.WORKER_BASE_URL.replace(/\/$/, "") + CONFIG.BITSTAMP_ENDPOINT;
+    const url  = `${base}?pair=${encodeURIComponent(pair)}&step=${step}`;
+    const res  = await fetch(url);
+    if (!res.ok) throw new Error(`Worker HTTP ${res.status}`);
+    const json = await res.json();
+    if (json && json.error) throw new Error(String(json.error));
+    if (!json || !Array.isArray(json.candles)) throw new Error("Worker: kein candles-Array");
+    return json.candles
+      .map(([ts, o, h, l, cl, v]) => (isFinite(ts) && isFinite(cl))
+        ? { timestamp: ts,
+            open:  isFinite(o) ? o : cl,
+            high:  isFinite(h) ? h : cl,
+            low:   isFinite(l) ? l : cl,
+            close: cl,
+            volume: isFinite(v) ? v : 0 }
+        : null)
+      .filter(Boolean)
+      .sort((a, b) => a.timestamp - b.timestamp);
+  },
+
   // ---------- Gold via Worker ----------
   // Toleranter Parser — Details siehe README. Bei abweichendem
   // Worker-Format NUR normalizeGoldRow() anpassen.

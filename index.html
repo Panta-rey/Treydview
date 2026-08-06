@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m42">
-  <link rel="stylesheet" href="css/style.css?v=m42">
+  <link rel="manifest" href="manifest.webmanifest?v=m44">
+  <link rel="stylesheet" href="css/style.css?v=m44">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m42"></script>
+  <script src="js/lib/klinecharts.min.js?v=m44"></script>
 </head>
 <body>
 
@@ -728,6 +728,9 @@
           <p>14 Indikatoren, über das Menü oben zuschaltbar. Das Zahnrad je Zeile öffnet Parameter, Farben und Sichtbarkeit einzelner Linien. Alles bleibt pro Indikator gespeichert.</p>
           <p><b>Im Hauptchart:</b> Money Noodle, BMSB, SMA, EMA, Bollinger, Gaussian Channel, Hull, RVWAP, VRVP.<br>
           <b>Eigene Fläche darunter:</b> RSI, Stoch RSI, Volumen, MACD, ATR.</p>
+          <p><b>Eigenes Intervall bei SMA und EMA:</b> Im Zahnrad unter <i>Inputs</i> lässt sich das Intervall des Durchschnitts getrennt vom Chart wählen. So zeigt man den 200-Wochen-SMA im Tageschart, ohne den Zeitrahmen zu wechseln. Steht es nicht auf <i>Chart-Intervall</i>, erscheint das gewählte Intervall in der Legende.</p>
+          <p>Gerechnet wird dabei nicht mit einer umgerechneten Periode: die Chartkerzen werden zum Zielintervall zusammengefasst, und der Durchschnitt läuft über <i>diese</i> Schlusskurse. Das ergibt exakt den Wert, den man auf dem Wochenchart sähe. Eine SMA(1400) auf Tagesbasis wäre etwas anderes — sie mittelt 1400 Tagesschlüsse statt 200 Wochenschlüsse.</p>
+          <p>Reicht die geladene Historie nicht für die Periode auf dem gewählten Intervall, bleibt die Linie leer, statt aus zu wenigen Werten gezeichnet zu werden. Für 200 Wochen braucht es rund 1400 Tageskerzen.</p>
           <p><b>Hinweis EMA 21:</b> Money Noodle (Medium EMA 21), BMSB (21 EMA) und EMA (Periode 1 = 21) zeigen alle dieselbe Linie. Sie stehen in drei verschiedenen Kontexten — als Band-Mittellinie, als Zyklus-Unterstützung und als Einzellinie — und sind bewusst nicht als drei unabhängige Bestätigungen zu lesen.</p></div>
 
         <div class="faq-block"><h4>Money Noodle</h4>
@@ -1126,6 +1129,11 @@
 
       <section class="faq-sec hidden" data-sec="limits">
         <h3>Grenzen</h3>
+        <div class="faq-block"><h4>Kerzenhistorie und Datenquellen</h4>
+          <p><b>BTC/USDT (Binance)</b> beginnt im August&nbsp;2017 — weiter zurück gibt es dort nichts. Für längere Historie steht <b>BTC/USD (Bitstamp)</b> bereit: eine durchgehende Reihe seit 2011, ohne zusammengeklebte Nahtstellen. Bewusst ein eigenes Symbol, denn USD und USDT sind verschiedene Märkte mit eigenen Preisen.</p>
+          <p>Bitstamp liefert 1h-, 4h- und Tageskerzen. Wochen und Monate werden im Browser aus Tageskerzen zusammengefasst; Wochen beginnen Montag&nbsp;00:00&nbsp;UTC.</p>
+          <p><b>Gold</b> kommt neu vom LBMA-Direktfeed und reicht bis <b>1968</b> zurück. Wichtig zur Einordnung: das sind <i>Auktionspreise</i>, zwei je Handelstag (AM und PM), keine fortlaufenden Kurse. Die Tageskerze wird daraus gebildet — Eröffnung&nbsp;=&nbsp;AM, Schluss&nbsp;=&nbsp;PM, Hoch und Tief das Extrem der beiden. Das sind <b>keine echten Tagesextreme</b>: der Kurs schwankte dazwischen mehr. Für Trend- und Strukturbetrachtung über Jahrzehnte reicht es, für Docht-Analyse nicht. Volumen gibt es nicht.</p></div>
+
         <div class="faq-block"><h4>Was das Werkzeug nicht kann</h4>
           <p>Es trifft keine Entscheidungen. Es zeigt Struktur und rechnet Zahlen — beides beruht auf Annahmen, die du unter „Einstellungen" ändern kannst. Änderst du sie, ändert sich das Ergebnis. Das allein zeigt, wie viel auf Setzungen beruht.</p></div>
         <div class="faq-block"><h4>Muster sind keine Prognosen</h4>
@@ -1288,16 +1296,16 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m42"></script>
-<script src="js/indicators.js?v=m42"></script>
-<script src="js/overlays.js?v=m42"></script>
-<script src="js/data.js?v=m42"></script>
-<script src="js/settings.js?v=m42"></script>
-<script src="js/derivatives.js?v=m42"></script>
-<script src="js/gridbot.js?v=m42"></script>
-<script src="js/patterns.js?v=m42"></script>
-<script src="js/smc.js?v=m42"></script>
-<script src="js/ewt.js?v=m42"></script>
-<script src="js/app.js?v=m42"></script>
+<script src="js/config.js?v=m44"></script>
+<script src="js/indicators.js?v=m44"></script>
+<script src="js/overlays.js?v=m44"></script>
+<script src="js/data.js?v=m44"></script>
+<script src="js/settings.js?v=m44"></script>
+<script src="js/derivatives.js?v=m44"></script>
+<script src="js/gridbot.js?v=m44"></script>
+<script src="js/patterns.js?v=m44"></script>
+<script src="js/smc.js?v=m44"></script>
+<script src="js/ewt.js?v=m44"></script>
+<script src="js/app.js?v=m44"></script>
 </body>
 </html>

@@ -628,6 +628,103 @@ klinecharts.registerIndicator({
   },
 });
 
+// ============================================================
+// Durchschnitte auf einem anderen Intervall  (m43)
+// ============================================================
+//
+// Damit laesst sich z. B. der 200-Wochen-SMA im Tageschart zeichnen.
+//
+// Der Weg: die Chartkerzen werden zum Zielintervall aggregiert (je
+// Zeitfenster der letzte Schlusskurs), der Durchschnitt wird auf DIESEN
+// Werten gerechnet und danach auf die Chartkerzen zurueckgelegt.
+//
+// Warum nicht einfach die Periode umrechnen? SMA(1400) auf Tagesbasis
+// mittelt 1400 TAGESschluesse, SMA(200) auf Wochenbasis mittelt 200
+// WOCHENschluesse. Bei langen Durchschnitten liegen die Kurven nah
+// beieinander, identisch sind sie nicht — und der Nutzer erwartet den
+// Wert, den er auf dem Wochenchart saehe.
+//
+// Zeitfenster werden ueber Zeitstempel gebildet, nicht ueber Kerzenzahl:
+// sieben Chartkerzen sind bei Datenluecken keine Woche.
+
+// Zeitfenster-Schluessel. Fuer Wochen wird auf Montag 00:00 UTC
+// ausgerichtet (der Unix-Epochenstart war ein Donnerstag, deshalb der
+// Versatz von 4 Tagen), fuer Monate auf den Kalendermonat.
+function htfBucket(ts, tf) {
+  const D = 86400000;
+  switch (tf) {
+    case "15m": return Math.floor(ts / 900000);
+    case "1h":  return Math.floor(ts / 3600000);
+    case "4h":  return Math.floor(ts / 14400000);
+    case "1d":  return Math.floor(ts / D);
+    // Der 1. Januar 1970 war ein DONNERSTAG, Montage liegen also bei
+    // Tagesindex ≡ 4 (mod 7). Der Versatz wird ABGEZOGEN; mit +4 laegen
+    // die Wochengrenzen auf Sonntag.
+    case "1w":  return Math.floor((ts - 4 * D) / (7 * D));
+    case "1M": {
+      const d = new Date(ts);
+      return d.getUTCFullYear() * 12 + d.getUTCMonth();
+    }
+    default: return null;
+  }
+}
+
+// Aggregiert die Chartkerzen auf das Zielintervall.
+// Rueckgabe: { closes, bucketOf } — closes je Zeitfenster, und fuer jede
+// Chartkerze der Index ihres Zeitfensters.
+//
+// Der letzte, noch unvollstaendige Bucket laeuft mit: der Durchschnitt
+// aktualisiert sich also innerhalb der laufenden Woche, so wie man es vom
+// Wochenchart kennt. Abgeschlossene Werte aendern sich nie mehr.
+function aggregateToTf(dataList, tf) {
+  const closes = [], bucketOf = new Array(dataList.length);
+  let lastKey = null, idx = -1;
+  for (let i = 0; i < dataList.length; i++) {
+    const k = htfBucket(dataList[i].timestamp, tf);
+    if (k === null) return null;
+    if (k !== lastKey) { lastKey = k; idx++; closes.push(dataList[i].close); }
+    else { closes[idx] = dataList[i].close; }
+    bucketOf[i] = idx;
+  }
+  return { closes, bucketOf };
+}
+
+// Rechnet eine Serienfunktion auf dem gewaehlten Intervall und legt das
+// Ergebnis auf die Chartkerzen zurueck.
+//
+// Ist das Zielintervall gleich oder feiner als das Chartintervall, waere
+// die Aggregation wirkungslos oder falsch — dann wird direkt auf den
+// Chartkerzen gerechnet. Gemessen wird das am Median der Kerzenabstaende,
+// nicht am ersten: einzelne Luecken sollen die Erkennung nicht kippen.
+function seriesOnTf(dataList, closes, tf, period, seriesFn) {
+  if (!tf || tf === "auto") return seriesFn(closes, period);
+
+  const deltas = [];
+  for (let i = Math.max(1, dataList.length - 40); i < dataList.length; i++) {
+    const d = dataList[i].timestamp - dataList[i - 1].timestamp;
+    if (d > 0) deltas.push(d);
+  }
+  deltas.sort((a, b) => a - b);
+  const chartMs = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 0;
+  const TF_MS = { "15m": 9e5, "1h": 3.6e6, "4h": 1.44e7, "1d": 8.64e7,
+                  "1w": 6.048e8, "1M": 2.592e9 };
+  const targetMs = TF_MS[tf] || 0;
+  if (!targetMs || !chartMs || targetMs <= chartMs * 1.5) {
+    return seriesFn(closes, period);
+  }
+
+  const agg = aggregateToTf(dataList, tf);
+  if (!agg || agg.closes.length < period) {
+    // Zu wenig Historie fuer diese Periode auf diesem Intervall —
+    // lieber nichts zeichnen als eine Linie aus zu wenigen Werten.
+    return new Array(dataList.length).fill(null);
+  }
+  const htf = seriesFn(agg.closes, period);
+  const out = new Array(dataList.length);
+  for (let i = 0; i < dataList.length; i++) out[i] = htf[agg.bucketOf[i]];
+  return out;
+}
+
 // ---------- MYSMA (4-Level SMA) ----------
 klinecharts.registerIndicator({
   name: "MYSMA",
@@ -641,10 +738,11 @@ klinecharts.registerIndicator({
     { key: "s4", title: "SMA4: ", type: "line", styles: (d, ind) => plotStyle(ind, "s4", "#3fb68b", 2) },
   ],
   calc: (dataList, indicator) => {
-    const [p1, p2, p3, p4] = indicator.calcParams;
+    // Fuenfter Parameter: Intervall des Durchschnitts ("auto" = Chart).
+    const [p1, p2, p3, p4, tf] = indicator.calcParams;
     const closes = dataList.map(d => d.close);
-    const s1 = smaSeries2(closes, p1), s2 = smaSeries2(closes, p2);
-    const s3 = smaSeries2(closes, p3), s4 = smaSeries2(closes, p4);
+    const S = (p) => seriesOnTf(dataList, closes, tf, p, smaSeries2);
+    const s1 = S(p1), s2 = S(p2), s3 = S(p3), s4 = S(p4);
     return dataList.map((_, i) => ({
       s1: s1[i] ?? undefined, s2: s2[i] ?? undefined,
       s3: s3[i] ?? undefined, s4: s4[i] ?? undefined,
@@ -665,9 +763,12 @@ klinecharts.registerIndicator({
     { key: "ema4", title: "EMA4: ", type: "line", styles: (d, ind) => plotStyle(ind, "e4", "#3fb68b", 2) },
   ],
   calc: (dataList, indicator) => {
+    // Fuenfter Parameter: Intervall des Durchschnitts ("auto" = Chart).
     const params = indicator.calcParams;
+    const tf = typeof params[4] === "string" ? params[4] : "auto";
     const closes = dataList.map(d => d.close);
-    const results = params.map(p => emaSeries(closes, p));
+    const results = params.slice(0, 4)
+      .map(p => seriesOnTf(dataList, closes, tf, p, emaSeries));
     return dataList.map((_, i) => ({
       ema1: results[0][i] ?? undefined, ema2: results[1][i] ?? undefined,
       ema3: results[2][i] ?? undefined, ema4: results[3] ? (results[3][i] ?? undefined) : undefined,

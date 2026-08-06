@@ -90,10 +90,15 @@ const Settings = {
       if (inp.type === "select") {
         input = document.createElement("select");
         input.className = "settings-input";
+        // Optionen duerfen einfache Strings sein oder {value,label} —
+        // letzteres, wenn der gespeicherte Wert kurz sein soll ("1w"),
+        // die Beschriftung aber lesbar ("1 Woche").
         (inp.options || []).forEach(opt => {
+          const val = (opt && typeof opt === "object") ? opt.value : opt;
+          const lbl = (opt && typeof opt === "object") ? opt.label : opt;
           const o = document.createElement("option");
-          o.value = opt; o.textContent = opt;
-          if (opt === current.inputs[inp.key]) o.selected = true;
+          o.value = val; o.textContent = lbl;
+          if (val === current.inputs[inp.key]) o.selected = true;
           input.appendChild(o);
         });
       } else {

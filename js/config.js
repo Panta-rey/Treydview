@@ -6,6 +6,7 @@ const CONFIG = {
   // >>> HIER deine Cloudflare-Worker-Basis-URL eintragen <<<
   WORKER_BASE_URL: "https://pantarey.rey-gafner.workers.dev",
   GOLD_ENDPOINT:   "/goldhistory",
+  BITSTAMP_ENDPOINT: "/bitstamp",
   // Allgemeine Stooq-Zeitreihe ueber denselben Worker. Erwartet
   //   GET <WORKER_BASE_URL>/stooq?s=<symbol>
   // und liefert entweder Stooq-CSV (date,open,high,low,close,volume) oder
@@ -24,7 +25,12 @@ const CONFIG = {
     { id: "ETHUSDT",  label: "ETH/USDT (Binance)",  type: "binance" },
     { id: "SOLUSDT",  label: "SOL/USDT (Binance)",  type: "binance" },
     { id: "AEROUSDT", label: "AERO/USDT (Binance)", type: "binance" },
-    { id: "XAUUSD",   label: "Gold XAU/USD", type: "worker" },
+    { id: "XAUUSD",   label: "Gold XAU/USD (ab 1968)", type: "worker" },
+    // Binance beginnt bei BTC/USDT im August 2017. Bitstamp handelt
+    // BTC/USD seit 2011 — eine durchgehende Reihe ohne Nahtstellen.
+    // Bewusst ein EIGENES Symbol statt einer zusammengeklebten Historie:
+    // USD und USDT sind verschiedene Maerkte mit eigenen Preisen.
+    { id: "BTCUSD_BS", label: "BTC/USD (Bitstamp, ab 2011)", type: "bitstamp", bitstampPair: "btcusd" },
     // Aktienindizes ueber den Worker (Stooq). Nur Tageskerzen — Stooq
     // liefert fuer Indizes keine Intraday-Daten.
     { id: "^SPX", label: "S&P 500",   type: "stooq", stooqSymbol: "^spx" },
@@ -101,6 +107,26 @@ const CONFIG = {
     {
       key: "sma", name: "MYSMA", pane: "main", label: "SMA 20 / 50 / 100 / 200",
       inputs: [
+        // Eigenes Intervall fuer den Durchschnitt.
+        //
+        // "auto" rechnet auf den Kerzen des Charts. Waehlt man ein
+        // groeberes Intervall, werden die Chartkerzen dorthin aggregiert
+        // und der Durchschnitt auf DIESEN Schlusskursen gerechnet — so
+        // sieht man z. B. den 200-Wochen-SMA im Tageschart.
+        //
+        // Nicht dasselbe wie eine umgerechnete Periode: SMA(1400) auf
+        // Tagesbasis mittelt 1400 Tagesschluesse, SMA(200) auf Wochenbasis
+        // mittelt 200 Wochenschluesse. Aehnlich, aber nicht gleich.
+        { key: "tf", label: "Intervall", type: "select", default: "auto",
+          options: [
+            { value: "auto", label: "Chart-Intervall" },
+            { value: "15m",  label: "15 Minuten" },
+            { value: "1h",   label: "1 Stunde" },
+            { value: "4h",   label: "4 Stunden" },
+            { value: "1d",   label: "1 Tag" },
+            { value: "1w",   label: "1 Woche" },
+            { value: "1M",   label: "1 Monat" },
+          ] },
         { key: "p1", label: "Periode 1", default: 20  },
         { key: "p2", label: "Periode 2", default: 50  },
         { key: "p3", label: "Periode 3", default: 100 },
@@ -116,6 +142,26 @@ const CONFIG = {
     {
       key: "ema", name: "EMA", pane: "main", label: "EMA 21 / 50 / 100 / 200",
       inputs: [
+        // Eigenes Intervall fuer den Durchschnitt.
+        //
+        // "auto" rechnet auf den Kerzen des Charts. Waehlt man ein
+        // groeberes Intervall, werden die Chartkerzen dorthin aggregiert
+        // und der Durchschnitt auf DIESEN Schlusskursen gerechnet — so
+        // sieht man z. B. den 200-Wochen-SMA im Tageschart.
+        //
+        // Nicht dasselbe wie eine umgerechnete Periode: SMA(1400) auf
+        // Tagesbasis mittelt 1400 Tagesschluesse, SMA(200) auf Wochenbasis
+        // mittelt 200 Wochenschluesse. Aehnlich, aber nicht gleich.
+        { key: "tf", label: "Intervall", type: "select", default: "auto",
+          options: [
+            { value: "auto", label: "Chart-Intervall" },
+            { value: "15m",  label: "15 Minuten" },
+            { value: "1h",   label: "1 Stunde" },
+            { value: "4h",   label: "4 Stunden" },
+            { value: "1d",   label: "1 Tag" },
+            { value: "1w",   label: "1 Woche" },
+            { value: "1M",   label: "1 Monat" },
+          ] },
         { key: "p1", label: "Periode 1", default: 21  },
         { key: "p2", label: "Periode 2", default: 50  },
         { key: "p3", label: "Periode 3", default: 100 },

@@ -70,12 +70,13 @@ export default {
     try {
       if (url.pathname === "/macro"       && request.method === "GET")  return await getMacro(env);
       if (url.pathname === "/goldhistory" && request.method === "GET")  return await getGoldHistory(env);
+      if (url.pathname === "/bitstamp"    && request.method === "GET")  return await getBitstamp(request, env);
       if (url.pathname === "/stooq"       && request.method === "GET")  return await getStooq(request, env);
       if (url.pathname === "/m2"          && request.method === "GET")  return await getM2(env);
       if (url.pathname === "/history"     && request.method === "GET")  return await getHistory(env);
       if (url.pathname === "/snapshot"    && request.method === "POST") return await postSnapshot(request, env);
       if (url.pathname === "/")
-        return json({ ok: true, service: "panta-rey", routes: ["/macro", "/goldhistory", "/stooq", "/m2", "/history", "/snapshot"] });
+        return json({ ok: true, service: "panta-rey", routes: ["/macro", "/goldhistory", "/bitstamp", "/stooq", "/m2", "/history", "/snapshot"] });
       return json({ error: "not found" }, 404);
     } catch (e) {
       return json({ error: String(e && e.message || e) }, 500);
@@ -198,58 +199,76 @@ const GOLD_HISTORY_TTL_MS = 24 * 60 * 60 * 1000;
 // ([[ms,close],...]) fuer bestehende Verbraucher, `candles` kommt neu
 // hinzu ([[ms,o,h,l,c,v],...]) und erlaubt erstmals echte Kerzen.
 async function buildGoldHistory() {
-  const quelle = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F?range=max&interval=1d";
-  const headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                + "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  // ── Vierter Anlauf: LBMA-Direktfeed ────────────────────────────────
+  //
+  // Vorgeschichte, damit niemand dieselben Wege noch einmal geht:
+  //   1. Stooq          → JavaScript-Challenge-Seite, serverseitig nicht loesbar
+  //   2. Yahoo Finance  → HTTP 429 schon beim ersten Abruf mit leerem Cache
+  //   3. FRED           → die LBMA-Goldreihen (GOLDAMGBD228NLBM /
+  //                       GOLDPMGBD228NLBM) wurden aus FRED ENTFERNT.
+  //                       FRED weist im eigenen Blog darauf hin.
+  //   4. LBMA selbst    → veroeffentlicht die Fixings als offenes JSON,
+  //                       ohne Schluessel, zurueck bis 1968.
+  //
+  // Format je Eintrag: { "d": "1968-04-01", "v": [USD, GBP, EUR] }
+  // Wir nehmen Index 0 (USD). In den ersten Jahren steht bei EUR eine 0 —
+  // deshalb NICHT auf Vollstaendigkeit des Arrays pruefen.
+  //
+  // WICHTIG zur Ehrlichkeit der Kerzen: Das sind Auktionspreise, keine
+  // fortlaufenden Kurse. Es gibt zwei je Handelstag (AM und PM). Daraus
+  // wird eine Tageskerze gebaut: open = AM, close = PM, high/low = das
+  // Extrem der beiden. Das ist KEIN echtes Tages-Hoch/-Tief — der Kurs
+  // schwankte dazwischen mehr. Fuer Struktur- und Trendbetrachtung ueber
+  // Jahrzehnte reicht es, fuer Docht-Analyse nicht.
+  const quellen = {
+    am: "https://prices.lbma.org.uk/json/gold_am.json",
+    pm: "https://prices.lbma.org.uk/json/gold_pm.json",
   };
-  let r = await fetch(quelle, { headers, cf: { cacheTtl: 21600 } });
-  if (r.status === 429) {
-    await new Promise(res => setTimeout(res, 400));
-    r = await fetch(quelle, { headers, cf: { cacheTtl: 21600 } });
+  const headers = { "User-Agent": "Mozilla/5.0 (compatible; TreydView/1.0)" };
+
+  async function hole(url) {
+    const r = await fetch(url, { headers, cf: { cacheTtl: 21600 } });
+    if (!r.ok) throw new Error(`LBMA HTTP ${r.status} (${url})`);
+    const j = await r.json();
+    if (!Array.isArray(j)) throw new Error("LBMA: unerwartetes Format");
+    const m = new Map();
+    for (const row of j) {
+      const d = row && row.d;
+      const usd = row && Array.isArray(row.v) ? Number(row.v[0]) : NaN;
+      if (!d || !isFinite(usd) || usd <= 0) continue;   // Feiertage tragen null
+      m.set(d, usd);
+    }
+    return m;
   }
-  if (!r.ok) throw new Error(`Yahoo Finance HTTP ${r.status} für Gold`);
 
-  let json2;
-  try { json2 = await r.json(); }
-  catch (e) { throw new Error("Yahoo Finance: ungültiges JSON für Gold"); }
+  const [am, pm] = await Promise.all([hole(quellen.am), hole(quellen.pm)]);
+  if (am.size === 0 && pm.size === 0) throw new Error("LBMA lieferte keine Werte");
 
-  const result = json2?.chart?.result?.[0];
-  if (!result) {
-    const grund = json2?.chart?.error?.description || "unbekannter Fehler";
-    throw new Error(`Yahoo Finance lieferte keine Gold-Daten: ${grund}`);
-  }
-
-  const zeitstempel = result.timestamp || [];
-  const q = result.indicators?.quote?.[0] || {};
-  const rows = [];      // [[ms, close]]            — bisheriges Format
-  const kerzen = [];    // [[ms, o, h, l, c, v]]    — neu, fuer echte Kerzen
+  // Vereinigung beider Tagesmengen — an manchen Tagen fehlt eine Auktion.
+  const tage = [...new Set([...am.keys(), ...pm.keys()])].sort();
+  const kerzen = [];
+  const rows = [];
   const r2 = (x) => Math.round(x * 100) / 100;
-  for (let i = 0; i < zeitstempel.length; i++) {
-    const cl = q.close?.[i];
-    if (cl == null) continue;   // Feiertage/Luecken auslassen
-    const ms = zeitstempel[i] * 1000;
+  for (const d of tage) {
+    const a = am.get(d), p = pm.get(d);
+    const o = a != null ? a : p;
+    const cl = p != null ? p : a;
+    if (!isFinite(o) || !isFinite(cl)) continue;
+    const ms = Date.parse(d + "T00:00:00Z");
+    if (!isFinite(ms)) continue;
+    kerzen.push([ms, r2(o), r2(Math.max(o, cl)), r2(Math.min(o, cl)), r2(cl), 0]);
     rows.push([ms, r2(cl)]);
-    // Fehlt ein einzelner Teilwert, auf den Schlusskurs zurueckfallen —
-    // besser eine flache Kerze als gar keine an dieser Stelle.
-    const o = q.open?.[i]  ?? cl;
-    const h = q.high?.[i]  ?? cl;
-    const l = q.low?.[i]   ?? cl;
-    kerzen.push([ms, r2(o), r2(h), r2(l), r2(cl), q.volume?.[i] ?? 0]);
   }
-  if (!rows.length) throw new Error("Yahoo Finance: 0 Gold-Kerzen erhalten");
-  rows.sort((a, b) => a[0] - b[0]);
-  kerzen.sort((a, b) => a[0] - b[0]);
+  if (kerzen.length === 0) throw new Error("LBMA: keine verwertbaren Tage");
 
-  const from = new Date(rows[0][0]).toISOString().slice(0, 10);
-  const to   = new Date(rows[rows.length - 1][0]).toISOString().slice(0, 10);
-  // `series` bleibt unveraendert, damit das andere Projekt (BTTF), das
-  // diese Route ebenfalls nutzt, nicht bricht. `candles` kommt zusaetzlich
-  // dazu — nur damit sind bei Gold echte Kerzen moeglich. Bisher enthielt
-  // die Antwort ausschliesslich Schlusskurse, jede Kerze waere also ein
-  // koerperloser Strich gewesen.
-  return { series: rows, candles: kerzen, from, to, n: rows.length,
-           _fetchedAt: new Date().toISOString() };
+  return {
+    source: "LBMA (London Bullion Market Association) — Auktionspreise AM/PM",
+    note: "Kerzen aus zwei Fixings je Tag; High/Low sind keine echten Tagesextreme.",
+    from: kerzen[0][0], to: kerzen[kerzen.length - 1][0],
+    count: kerzen.length,
+    candles: kerzen,
+    series: rows,
+  };
 }
 
 async function getGoldHistory(env) {
@@ -270,6 +289,97 @@ async function getGoldHistory(env) {
 
   try { await env.PANTA.put(goldKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
   return json(data);
+}
+
+/* ============================================================
+   /bitstamp?pair=btcusd&step=86400
+   Vollstaendige Kerzenhistorie von Bitstamp.
+
+   Warum Bitstamp: Binance beginnt bei BTC/USDT im August 2017.
+   Weiter zurueck kommt man dort nicht, egal was man am Worker baut.
+   Bitstamp handelt BTC/USD seit 2011 und laeuft bis heute — eine
+   durchgehende Reihe ohne Nahtstellen, statt zusammengeklebter
+   Boersendaten mit Preissprüngen an den Uebergaengen.
+
+   Bitstamp gibt hoechstens 1000 Kerzen je Anfrage zurueck. 2011 bis
+   heute sind rund 5400 Tageskerzen, also wird hier serverseitig
+   durchgeblaettert — der Browser stellt EINE Anfrage.
+   ============================================================ */
+const BITSTAMP_PAIRS = new Set(["btcusd", "ethusd", "ltcusd", "xrpusd", "btceur", "etheur"]);
+const BITSTAMP_TTL_MS = 6 * 60 * 60 * 1000;
+
+async function getBitstamp(request, env) {
+  const url  = new URL(request.url);
+  const pair = (url.searchParams.get("pair") || "btcusd").toLowerCase();
+  const step = parseInt(url.searchParams.get("step") || "86400", 10);
+
+  // Ohne Weissliste waere die Route ein offener Proxy.
+  if (!BITSTAMP_PAIRS.has(pair)) return json({ error: `Paar nicht erlaubt: ${pair}` }, 400);
+  const ERLAUBTE_STEPS = new Set([3600, 14400, 86400]);
+  if (!ERLAUBTE_STEPS.has(step)) return json({ error: `step nicht erlaubt: ${step}` }, 400);
+
+  const key = `bitstamp_${pair}_${step}_${CACHE_VERSION}`;
+  let cached = null;
+  try { cached = JSON.parse(await env.PANTA.get(key)); } catch (_) {}
+  if (cached && cached.data && (Date.now() - cached.ts) < BITSTAMP_TTL_MS) return json(cached.data);
+
+  let data;
+  try {
+    data = await buildBitstampHistory(pair, step);
+  } catch (e) {
+    if (cached && cached.data) return json(cached.data);   // lieber alt als gar nichts
+    return json({ error: String(e && e.message || e) }, 500);
+  }
+  try { await env.PANTA.put(key, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
+  return json(data);
+}
+
+async function buildBitstampHistory(pair, step) {
+  const BASE = `https://www.bitstamp.net/api/v2/ohlc/${pair}/`;
+  const LIMIT = 1000;
+  // 2011-08-01 — kurz vor dem ersten BTC/USD-Handel auf Bitstamp.
+  let start = Math.floor(Date.UTC(2011, 7, 1) / 1000);
+  const jetzt = Math.floor(Date.now() / 1000);
+  const alle = new Map();       // ms -> Kerze, entdoppelt ueber den Zeitstempel
+
+  // Obergrenze als Notbremse: bei Stundenkerzen ueber 15 Jahre waeren es
+  // ueber 130 Seiten. Der Worker hat ein CPU-Limit.
+  const MAX_SEITEN = step >= 86400 ? 12 : 60;
+
+  for (let seite = 0; seite < MAX_SEITEN && start < jetzt; seite++) {
+    const u = `${BASE}?step=${step}&limit=${LIMIT}&start=${start}`;
+    const r = await fetch(u, { cf: { cacheTtl: 3600 } });
+    if (!r.ok) throw new Error(`Bitstamp HTTP ${r.status} (Seite ${seite + 1})`);
+    const j = await r.json();
+    const ohlc = j && j.data && Array.isArray(j.data.ohlc) ? j.data.ohlc : null;
+    if (!ohlc) throw new Error("Bitstamp: unerwartetes Format");
+    if (ohlc.length === 0) break;
+
+    let letzterTs = start;
+    for (const k of ohlc) {
+      const ts = parseInt(k.timestamp, 10);
+      const o = parseFloat(k.open), h = parseFloat(k.high);
+      const l = parseFloat(k.low),  cl = parseFloat(k.close);
+      const v = parseFloat(k.volume);
+      if (!isFinite(ts) || !isFinite(cl) || cl <= 0) continue;
+      alle.set(ts * 1000, [ts * 1000, o, h, l, cl, isFinite(v) ? v : 0]);
+      if (ts > letzterTs) letzterTs = ts;
+    }
+    // Kommt keine neue Kerze mehr, ist das Ende erreicht — sonst laeuft
+    // die Schleife bis MAX_SEITEN ohne Fortschritt.
+    if (letzterTs <= start) break;
+    start = letzterTs + step;
+  }
+
+  const kerzen = [...alle.values()].sort((a, b) => a[0] - b[0]);
+  if (kerzen.length === 0) throw new Error("Bitstamp: keine Kerzen erhalten");
+
+  return {
+    source: `Bitstamp ${pair.toUpperCase()} (step ${step}s)`,
+    from: kerzen[0][0], to: kerzen[kerzen.length - 1][0],
+    count: kerzen.length,
+    candles: kerzen,
+  };
 }
 
 /* ============================================================
