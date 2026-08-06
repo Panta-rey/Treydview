@@ -526,6 +526,34 @@
       const from = Math.max(0, range && range.from != null ? range.from : 0);
       const to   = Math.min(len - 1, range && range.to != null ? range.to : len - 1);
 
+      // ---- Wellengrade an die Datenmenge anpassen ----
+      //
+      // Ein Grad n erzeugt ungefaehr len/(2n) Pivots. Fuer eine
+      // Fuenferzaehlung braucht es sechs aufeinanderfolgende davon, und
+      // damit ueberhaupt eine Auswahl entsteht, realistisch etwa 15.
+      // Daraus folgt n <= len/30.
+      //
+      // Gemessen an 110 Kerzen (Monatschart ueber neun Jahre):
+      //   Grad 2 -> 22 Pivots -> 2 Zaehlungen
+      //   Grad 3 -> 13 Pivots -> 1 Zaehlung
+      //   Grad 5 ->  8 Pivots -> 0 Zaehlungen
+      //   Grad 9 ->  5 Pivots -> 0 Zaehlungen
+      // Grade jenseits der Grenze kosten nur Rechenzeit und liefern
+      // garantiert nichts. Statt sie stumm mitlaufen zu lassen, werden
+      // sie uebersprungen und gemeldet — sonst sucht man den Fehler im
+      // Scanner, wo schlicht die Datenmenge nicht reicht.
+      const degMax = Math.max(2, Math.floor(len / 30));
+      const degreesUsed = [], degreesSkipped = [];
+      for (const n of opts.degrees) {
+        (n <= degMax ? degreesUsed : degreesSkipped).push(n);
+      }
+      // Mindestens der feinste Grad laeuft immer, sonst faende man nie etwas.
+      if (!degreesUsed.length && opts.degrees.length) {
+        degreesUsed.push(Math.min(...opts.degrees));
+        const i = degreesSkipped.indexOf(degreesUsed[0]);
+        if (i >= 0) degreesSkipped.splice(i, 1);
+      }
+
       // ---- Kennzahlen einmal ueber den vollen Datensatz ----
       const closes = new Array(len), logCloses = new Array(len);
       for (let i = 0; i < len; i++) {
@@ -567,7 +595,7 @@
       const impulses = [], abcs = [], setups = [];
 
       // ---- Je Wellengrad einmal durchgehen ----
-      for (const n of opts.degrees) {
+      for (const n of degreesUsed) {
         if (len < 2 * n + 8) continue;
         const degScale = opts.scalePivotWithDegree
           ? Math.sqrt(n / Math.max(1, opts.degrees[0])) : 1;
@@ -823,7 +851,7 @@
         // Eigener Modus: EIN bestaetigtes Bein, danach die logarithmische
         // Golden Pocket und die Zustandsmaschine. Das ist die urspruengliche
         // Fassung — jetzt aber ohne die Filter, die alles verworfen haben.
-        if (opts.detectSetups && n === opts.degrees[0]) {
+        if (opts.detectSetups && n === degreesUsed[0]) {
           for (let k = 0; k + 1 < chain.length; k++) {
             const lp = chain[k], hp = chain[k + 1];
             if (lp.type !== "low" || hp.type !== "high") continue;
@@ -1048,7 +1076,7 @@
       })), opts.maxSetups);
       set.sort((a, b) => a.highIndex - b.highIndex);
 
-      return { impulses: imp, abcs: abc, setups: set };
+      return { impulses: imp, abcs: abc, setups: set, degreesUsed, degreesSkipped, degMax };
     },
 
     // ── NULL-HYPOTHESEN-TEST ────────────────────────────────────────
