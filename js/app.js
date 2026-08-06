@@ -670,7 +670,24 @@ async function loadData() {
   let candles;
   try {
     if (state.symbol.type === "binance") {
-      candles = await DataLayer.fetchBinanceKlines(state.symbol.id, state.timeframe.binanceInterval, CONFIG.CANDLE_LIMIT);
+      // Momentaufnahme aus dem Repo + Zuwachs direkt von Binance.
+      //
+      // Ohne sie liefen bei jedem Laden bis zu fuenf sequenzielle
+      // Binance-Anfragen (CANDLE_LIMIT 5000, max. 1000 je Anfrage) —
+      // dasselbe Muster, das wir bei Bitstamp und Gold abgeschafft haben,
+      // hier nur unauffaelliger, weil Binance direkt aus dem Browser
+      // erreichbar ist und keinen Worker braucht.
+      //
+      // Nur fuer Tageskerzen: die gespeicherte Datei enthaelt Tagesdaten.
+      const snapBn = state.timeframe.id === "1d"
+        ? (CONFIG.HISTORY_SNAPSHOTS || {})[state.symbol.id] : null;
+      if (snapBn) {
+        candles = await DataLayer.fetchHistoryCached(snapBn,
+          (from) => DataLayer.fetchBinanceKlinesSince(
+            state.symbol.id, state.timeframe.binanceInterval, from));
+      } else {
+        candles = await DataLayer.fetchBinanceKlines(state.symbol.id, state.timeframe.binanceInterval, CONFIG.CANDLE_LIMIT);
+      }
     } else if (state.symbol.type === "kraken") {
       candles = await DataLayer.fetchKrakenKlines(state.symbol.krakenPair, state.timeframe.krakenInterval, CONFIG.CANDLE_LIMIT);
     } else if (state.symbol.type === "coinbase") {
@@ -5750,7 +5767,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m45";
+const TV_BUILD = "m46";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

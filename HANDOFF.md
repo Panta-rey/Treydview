@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 1. August 2026 · Build m32**
+**Stand: 6. August 2026 · Build m46**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -111,33 +111,32 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m32)
+## Datei-MD5 (Build m46)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | 508842413f1f8403303e09e831d7778b | 1118 |
-| style.css | 797786129ed9bbe9d03fc00944109660 | 1389 |
-| app.js | 0112beea585b294b03555a13055da30d | 6408 |
-| overlays.js | 6b3d89df6b0963cd948987e32209253a | 1152 |
-| config.js | a2cf44f15b73d3d3221b716730a57ad8 | 412 |
-| data.js | 6eba3416df52f8966d58f89d579464e5 | 465 |
-| indicators.js | b03959e571421be134a3504fbd68cf00 | 1050 |
+| index.html | 5f49639f68acbec0a3a708df545cf505 | 1312 |
+| style.css | de5eecca837c1be1961d1659fc623036 | 1417 |
+| app.js | 5bc79e293ef7f72cceaf002d493f914e | 6999 |
+| overlays.js | 0fe65a446d07bbf9f9f5a2e944642c94 | 1570 |
+| ewt.js | 6a45297f526fddd02a9b27161189c9ed | 1294 |
+| config.js | eedee9e84b8b5a15aff9da2430bc3faf | 493 |
+| data.js | c932ef72973d9b3e4573d4e5a7bedbca | 582 |
+| indicators.js | b7440008bbf4db30475c2a12bef727f8 | 1069 |
+| settings.js | 3efe9991a71992127e885e549e9e491e | 255 |
 | smc.js | 95601db23d23cf8f2cf19eb161c33dc6 | 248 |
 | gridbot.js | 3a65ff885ee6d55480deb166d9717b04 | 502 |
 | patterns.js | e94d7c6a70b598fe1bfeecb67c4cc82c | 1016 |
-| settings.js | a0a42e402cbf44a755b469cb004a3836 | 250 |
 | derivatives.js | d44aac15f1dc1cc5410801b84f2aa81d | 157 |
+| worker-komplett.js | 1b21194f549ce90f9b9bacbd8d6653f2 | — |
+| snapshot.sh | 19b8c1e054a82780d7371ee89af53552 | — |
 
-`overlays.js` unveraendert seit m25, `indicators.js`/`smc.js`/`gridbot.js`/
-`patterns.js`/`settings.js`/`derivatives.js` unveraendert seit vor m17 —
-keine dieser Dateien war in den juengeren Builds Teil der Auslieferung.
+`snapshot.sh` liegt im Repo-Wurzelverzeichnis, erzeugt `data/*.json`.
+`smc.js`, `gridbot.js`, `patterns.js`, `derivatives.js` sind seit vor m17
+unveraendert.
 
-**Diese Tabelle ersetzt fruehere Fassungen vollstaendig.** Sie enthielt
-zuvor stehengelassene Zeilen aus mehreren Sitzungen mit widerspruechlichen
-Pruefsummen fuer dieselben Dateien (u. a. `manifest.webmanifest`, das es
-in diesem Projekt gar nicht gibt — Verwechslung mit einem anderen Projekt
-in einer frueheren Sitzung). Immer nur DIESE, oberste Tabelle als Stand
-nehmen.
+**Diese Tabelle ersetzt fruehere Fassungen vollstaendig.** Immer nur DIESE,
+oberste Tabelle als Stand nehmen.
 
 ### Cloudflare-Worker — eigene Datei, eigenes Deployment
 
@@ -280,6 +279,367 @@ Information ueber richtigen Daten zu zeigen.
 `mobile-web-app-capable` steht seit m28 zusaetzlich daneben (index.html).
 
 
+
+# Elliott-Wellen-Scanner  (m33–m38)
+
+Sechs Builds lang das Hauptthema. Wer hier weiterarbeitet, sollte den
+Abschnitt ganz lesen — die Sackgassen sind lehrreicher als das Ergebnis.
+
+## Was der Scanner ist
+
+`ewt.js` ist ein eigenstaendiges Modul im Muster von `patterns.js`: reine
+Rechnung, kein DOM, kein Chart. Aufruf ueber `EWTEngine.scan(data, range,
+opts)`, Rueckgabe `{ impulses, abcs, setups }`. Gezeichnet wird in
+`scanEWT()` in `app.js`; drei Overlays in `overlays.js`:
+
+| Overlay | Zweck |
+|---|---|
+| `ewtWave` | Wellenzug fuer Impuls (6 Punkte) UND Korrektur (4 Punkte), Beschriftung aus `extendData.labels` |
+| `ewtZone` | Golden-Pocket-Box des Welle-3-Setups, vier Zustandsfarben |
+| `ewtProjection` | Fortschreibung W3–W5 + A-B-C, 8 Punkte |
+
+## Die vier Sackgassen — bitte nicht wiederholen
+
+**1. Ein Bein statt einer Struktur (m33/m34).**
+Die erste Fassung suchte nur Welle 1 (Tief→Hoch) und legte eine Golden
+Pocket darueber. Das ist ein Golden-Pocket-Signalgeber, kein
+Elliott-Scanner. Erkannt wird jetzt die vollstaendige Fuenferstruktur,
+geprueft gegen die drei kardinalen Regeln.
+
+**2. Oszillatoren als harte Filter (m34).**
+RSI, Volumen und Efficiency Ratio waren Ausschlusskriterien. Gemessen an
+2000 Kerzen: von 93 Kandidatenpaaren blieben 5.6 uebrig — der RSI-Filter
+allein verwarf 76 % der bis dahin Ueberlebenden, das Volumen 53 % vom Rest.
+Sie sind jetzt **Bewertung, nicht Filter**, und standardmaessig aus.
+Weder LuxAlgo noch der Detector Pro noch Frost/Prechter benutzen
+Oszillatoren zur Erkennung. Eine Wellenstruktur ist eine geometrische
+Aussage.
+
+**3. Feste Wellengrenzen (m35).**
+Eine Fraktal-Laenge pro Grad zwingt den ganzen Zug in eine Aufloesung.
+Aus dem Python-Projekt `ElliottWaveAnalyzer` uebernommen: jede Teilwelle
+darf einzeln Zwischenextrema ueberspringen (`maxSkip`, Default 2).
+Gemessen brauchen **73 % der gefundenen Impulse einen Skip > 0**, meist
+Welle 3. Rohe Treffer: 17 ohne Skip, 64 mit. Der `WaveOptionsGenerator5`
+des Originals erzeugt bei `up_to=10` rund 66'000 Kombinationen pro
+Startindex — im Browser undenkbar, deshalb gedeckelt.
+
+**4. Nur eine Korrekturform (m37).**
+Modelliert war nur der Zigzag; die Bedingung `B.price < p5v` verbot Flats
+sogar ausdruecklich. **82 % aller ABC-Kandidaten fielen durch**, Median des
+B/A-Verhaeltnisses 1.25 — mitten im Expanded-Flat-Bereich. Jetzt drei
+Formen mit eigenen Baendern. Ergebnis: 0.6 -> 10.7 Korrekturen pro
+Datensatz.
+
+## Zwei Messfehler, die die Diagnose verfaelscht haben
+
+Beide traten beim Einbau der Skip-Suche auf und sahen aus wie
+Eigenschaften des Algorithmus:
+
+**Gieriges Blockieren.** Nach jedem Fund wurden benachbarte Startpunkte
+gesperrt. Frueh verworfene Kandidaten blockierten dann nichts mehr,
+weshalb *strengere* Regeln paradox *mehr* Treffer lieferten. Entfernt.
+
+**Deduplizierung ueber alle Grade.** Sie kollabierte 64 Strukturen auf 11,
+womit die Skip-Suche wirkungslos erschien. Dedupliziert wird jetzt **je
+Grad**; ueber die Grade hinweg nur bei >90 % Ueberlappung, denn dieselbe
+Bewegung auf mehreren Ebenen zu zeigen ist der Sinn der Mehrskalen-Suche.
+
+## KLineCharts: dataIndex statt timestamp — kritisch
+
+Im Bundle verifiziert, `_drawOverlay`:
+
+```js
+var n = t.dataIndex;
+O(t.timestamp) && (n = g.timestampToDataIndex(t.timestamp));
+```
+
+`timestamp` **ueberschreibt** `dataIndex`, und `timestampToDataIndex`
+klemmt auf den letzten Bar. Jeder Zukunfts-Zeitstempel landet damit auf
+derselben x-Position — im Chart sichtbar als vertikal gestapelte Punkte am
+rechten Rand. **Alle EWT-Overlays uebergeben ausschliesslich `dataIndex`,
+ohne `timestamp`.** `dataIndexToCoordinate` extrapoliert ueber das
+Datenende hinaus korrekt.
+
+Zusaetzlich wird beim Scan der rechte Offset vergroessert
+(`setOffsetRightDistance`), sonst werden Projektionen abgeschnitten.
+
+**Offen:** `scanSMC` hat denselben Fehler (`extendTs = lastTs + barMs*30`),
+die SMC-Zonen verlaengern sich faktisch nicht nach rechts. Eigene Sitzung.
+
+## Mathematik
+
+**Logarithmisches Retracement.** `retrace(H,L,r) = H^(1−r) · L^r`, wobei
+`r` der zurueckgegebene Anteil ist. Achtung: die Fassung `H^r · L^(1−r)`
+liefert bei r = 0.618 das 0.382-Level — bei einer 10x-Welle 41.50 statt
+24.10. Beide Schreibweisen kursieren; die zweite stammt aus einer Quelle,
+die den Exponenten als *Gewicht zum Hoch* meint, nicht als Retracement.
+
+**Anpassungsfehler** (`fitError`). Beantwortet objektiv, welche von
+mehreren konkurrierenden Zaehlungen am Kursverlauf liegt: RMS-Abweichung
+des Kurses von den Wellenlinien. Zwei Details:
+
+- Gerechnet im **Log-Raum**, sonst haengt der Wert am Kursniveau und ist
+  zwischen Assets nicht vergleichbar.
+- Normiert mit **sqrt(Spanne)**, nicht mit der Spanne. Der rohe Fehler
+  waechst mit der Wellenlaenge (rho = 0.78); ohne Normierung gaelten lange
+  Wellen pauschal als schlecht. Ueber 205 Impulse gemessen: sqrt-Normierung
+  laesst rho = 0.05 zurueck, Normierung mit der Spanne selbst
+  ueberkorrigiert auf −0.28. Random-Walk-Skalierung, theoretisch motiviert
+  und empirisch am besten.
+- Berechnung ueber Praefixsummen (O(1) je Segment statt O(Spanne)) und auf
+  den Segmentanfang **zentriert** — ohne Zentrierung entstehen bei Index
+  5000 Summen um 1e7, aus denen ein Ergebnis der Groessenordnung 0.1
+  herausgezogen werden muesste. Ausloeschung. Gegen die Direktberechnung
+  geprueft: groesste relative Abweichung 8.4e-8.
+
+## Was aus welcher Quelle stammt
+
+| Quelle | Uebernommen |
+|---|---|
+| LuxAlgo (Pine) | Drei kardinale Regeln als einzige Erkennungsbedingung; mehrere Wellengrade gleichzeitig |
+| Elliott Wave Detector Pro (Pine) | Mindest-Pivot-Bewegung beim **Aufbau** der Kette statt als Nachfilter |
+| ElliottWaveAnalyzer (Python) | Skip-Suche je Teilwelle; erweiterter Regelsatz (Proportionen, Dauer); `legClean` als Nachbau von `find_end` + np.min/max-Pruefungen; ABC-Baender |
+| elliottwaves.py (Python) | Anpassungsfehler als Auswahlkriterium — in korrigierter Form, siehe oben |
+| Frost/Prechter (Kanon) | Korrekturformen Zigzag/Flat/Expanded; Alternation; verlaengerte Welle und Gleichheitsregel |
+| Erfahrungsbericht (X) | Momentum-Divergenz W5 gegen W3 als Erschoepfungszeichen (68 % der Impulse zeigen sie) |
+
+**Bewusst NICHT uebernommen:** die neunfach verschachtelte Brute-Force aus
+`elliottwaves.py` (O(P^9)) und deren euklidische Wellenlaenge
+`sqrt((x2−x1)² + (y2−y1)²)` — die addiert Bars² zu Dollar², ist dimensional
+inkohaerent und massstabsabhaengig.
+
+## Benennung: „W3" war ein Relikt  (m42)
+
+Die erste Fassung suchte ausschliesslich nach Welle-3-Setups, daher
+hiessen die Etiketten „W3 wartend/getriggert/invalidiert". Neben
+ausgezaehlten Impulsen mit eigenen Wellen 1 bis 5 war das
+missverstaendlich. Jetzt **W2→W3**: die Box ist die Golden Pocket der
+Welle 2, der Einstieg zielt auf Welle 3. Sie ist eine EINSTIEGSZONE,
+keine Zielzone — ein invalidierter Zustand bedeutet genau, dass der Kurs
+hindurchgelaufen ist.
+
+Die Ziellinie erscheint nur, solange das Ziel erreichbar ist. Bei
+Ausgang „danach gebrochen" entfaellt sie: eine Linie, die ein nie
+erreichbares Ziel behauptet, ist irrefuehrend.
+
+## Offene Punkte
+
+- **Kanalisierung**: Linie durch 2 und 4, Parallele ab 3; Welle 5 endet oft
+  an der oberen Kanallinie. Wuerde die Projektion deutlich verbessern.
+- **Triangles** (A–B–C–D–E, fuenfteilig): kommen vor allem in Welle-4- und
+  B-Position vor, unser Dreier-Schema kann sie strukturell nicht erfassen.
+- **Doppelte/dreifache Korrekturen** (W-X-Y).
+- **Truncated Fifth**: derzeit ueber `requireWave5NewExtreme` ausgeschlossen.
+- **Unterwellenstruktur** innerhalb einer Welle.
+
+## Logarithmische Preisskala  (m33)
+
+Knopf `L` unten an der Preisskala, Default linear, Zustand im Workspace.
+Im Bundle verifiziert: `YAxis.getType()` liest `getStyles().yAxis.type`
+**nur fuer die Kerzen-Pane** (`isInCandle()`), Subpanes geben fest
+`Normal` zurueck — Indikatoren koennen also nicht verzerrt werden.
+
+Wichtig zum Verstaendnis: Die EWT-Rechnung ist ohnehin logarithmisch. Der
+Schalter aendert **nichts** an der Mathematik, er macht sie sichtbar.
+
+## Panel-Knoepfe in der Seitenleiste  (m33) — BEABSICHTIGTE Desktop-Aenderung
+
+Grid Bot, Long/Short, Muster, SMC und Elliott sind aus der Topbar in die
+Seitenleiste ueber die Zeichenwerkzeuge gewandert. `#drawStyleBtn` wurde
+entfernt (Stil laeuft ueber den Schwebebalken).
+
+**Die Falle:** `renderDrawbar()` laeuft bei jedem Werkzeugwechsel, Magnet-
+und Pin-Klick erneut. Lag frueher `bar.innerHTML = ""` an, wurden die
+verschobenen Knoepfe samt ihrer Handler vernichtet. Deshalb zwei
+Container: `.drawbar-panels` wird **einmal** befuellt und nie wieder
+angefasst, `.drawbar-tools` wird bei jedem Aufruf neu gebaut. Auf dem Handy
+bleiben die Knoepfe in der Topbar (die Bottom Bar holt sie spaeter).
+
+Dropdown-Panels in der Leiste brauchen `position: fixed`
+(`placeDropdownPanel`): `.drawbar` traegt `overflow-y: auto` und wuerde ein
+absolut positioniertes Panel abschneiden, und `.dd-panel--right` mit
+`right: 0` zeigt in der schmalen Leiste nach links aus dem Bild.
+Breite gedeckelt auf `min(320px, 33vw)` — mit `position: fixed` ist der
+umgebende Block das Sichtfenster, ohne Deckel zieht sich das Panel auf die
+gesamte Restbreite.
+
+## Diagnose in der Konsole
+
+```js
+EWTEngine.diagnose(window.__tvGetDataList())
+```
+
+Liefert je Wellengrad: Pivot-Anzahl, gepruefte Startpunkte, wie oft jede
+Regel scheiterte, wie viele Zaehlungen gueltig und bestaetigt sind, und ein
+Histogramm der gewinnenden Skip-Tupel. Beantwortet „warum finde ich nichts"
+mit Zahlen statt Vermutungen.
+
+# Pruefschritte vor jeder Lieferung
+
+Zu den vier bestehenden Pruefungen (Desktop-CSS-Diff, jsdom-DOM-Vergleich,
+Mobil-Selektoren, Funktionstest) kommt eine fuenfte:
+
+## ESLint mit `no-undef` — nicht optional
+
+```bash
+npm install eslint
+node_modules/.bin/eslint js/app.js js/ewt.js js/overlays.js js/data.js \
+                        js/config.js js/indicators.js js/settings.js
+```
+
+**Warum das noetig wurde:** In m40 stand in `scanEWT()` eine Variable
+`labelMode`, die benutzt, aber nie deklariert war. `node -c` prueft nur
+SYNTAX und meldet so etwas nie. Der `try/catch` um die Setup-Schleife
+verschluckte den ReferenceError, und die Folge war zwei Builds lang
+unbemerkt: **es wurden ueberhaupt keine Projektionen mehr gezeichnet.**
+Die Fehlersuche ging zunaechst in die falsche Richtung ("kein Impuls
+gefunden"), weil das Symptom plausibel anders erklaerbar war.
+
+Vier Meldungen sind bekannte Fehlalarme und duerfen ignoriert werden —
+sie stammen aus dateiuebergreifenden Globals, die der Browser aufloest:
+`FIB_LEVEL_SETS` und `textOn` (aus config.js), `hexToRgba`,
+`devicePixelRatio`.
+
+# Werkzeug-Fallstricke, die Zeit gekostet haben
+
+## Python-Skripte muessen nach JEDEM Schritt schreiben
+
+Ein Skript mit mehreren `assert`-gesicherten Ersetzungen und EINEM
+Schreibvorgang am Ende verliert bei einem spaeten Abbruch **auch alle
+vorherigen erfolgreichen Ersetzungen** — waehrend deren Erfolgsmeldungen
+schon auf dem Schirm stehen. Genau so ging der Etikett-Modus in m40
+verloren und hinterliess den `labelMode`-ReferenceError.
+
+Richtig: eine `rep()`-Hilfsfunktion, die Datei lesen, ersetzen und
+zurueckschreiben in einem Schritt macht, und bei fehlendem Suchtext eine
+Meldung ausgibt statt abzubrechen.
+
+## Der 1. Januar 1970 war ein DONNERSTAG
+
+Montage liegen damit bei `Tagesindex ≡ 4 (mod 7)`. Fuer Wochengrenzen
+wird der Versatz ABGEZOGEN:
+
+```js
+bucket = Math.floor((ts - 4 * D) / (7 * D));
+start  = bucket * (7 * D) + 4 * D;
+```
+
+Mit `+ 4 * D` beginnen die Wochen sonntags. Der Fehler steckte an drei
+Stellen (app.js `aggregateCandles`, indicators.js `htfBucket`) und
+verschob den 200-Wochen-SMA um rund 25 Punkte.
+
+## Tests duerfen die eigene Formel nicht als Referenz benutzen
+
+Der erste Wochen-SMA-Test stimmte auf 7·10⁻¹² — weil die Referenzrechnung
+DIESELBE falsche Wochenformel verwendete. Ein zirkulaerer Test prueft
+nichts. Die Referenz muss unabhaengig sein: hier `getUTCDay()` statt
+Modulo-Arithmetik.
+
+Dieselbe Falle gilt fuer den EWT-Anpassungsfehler: der Normierungsexponent
+0.5 wurde an synthetischen Zufallspfaden bestaetigt, wo er per
+Konstruktion 0.5 sein MUSS. `EWTEngine.calibrateBeta()` misst ihn an
+echten Daten nach.
+
+# Historie und Datenquellen  (m44–m46)
+
+## Harte Grenzen der Quellen
+
+| Quelle | Beginn | Anmerkung |
+|---|---|---|
+| Binance BTC/USDT | Aug 2017 | harte Grenze, unabhaengig vom Worker |
+| Bitstamp BTC/USD | 2011 | durchgehend bis heute, keine Nahtstelle |
+| Bitstamp ETH/USD | ~2015 (unbestaetigt) | Indizien deuten auf Herbst 2015; das Feld `from` der Worker-Antwort verraet das echte Datum |
+| LBMA Gold | 1968 | Auktionspreise, siehe unten |
+| Yahoo `GC=F` | ~2000 | Gold-FUTURES, nicht Spot |
+
+## Gold: vier Anlaeufe, damit niemand dieselben Wege noch einmal geht
+
+1. **Stooq** → JavaScript-Challenge-Seite, serverseitig nicht loesbar
+2. **Yahoo Finance** → HTTP 429 schon beim ersten Abruf mit leerem Cache
+3. **FRED** → die LBMA-Goldreihen (`GOLDAMGBD228NLBM`,
+   `GOLDPMGBD228NLBM`) wurden **aus FRED ENTFERNT**. FRED weist im
+   eigenen Blog darauf hin. Kein Konfigurationsfehler, die Serien
+   existieren schlicht nicht mehr.
+4. **LBMA direkt** → `https://prices.lbma.org.uk/json/gold_am.json` bzw.
+   `gold_pm.json`, offen, ohne Schluessel, zurueck bis 1968.
+   Format: `{ "d": "1968-04-01", "v": [USD, GBP, EUR] }`.
+   In den Anfangsjahren steht bei EUR eine 0 — NICHT auf Vollstaendigkeit
+   des Arrays pruefen.
+
+**Ehrlichkeit der Gold-Kerzen:** Das sind Auktionspreise, zwei je
+Handelstag. Die Tageskerze entsteht daraus als open = AM, close = PM,
+high/low = Extrem der beiden. Das sind **keine echten Tagesextreme** —
+der Kurs schwankte dazwischen mehr. Fuer Struktur- und Trendbetrachtung
+ueber Jahrzehnte reicht es, fuer Docht-Analyse nicht. Volumen gibt es
+nicht.
+
+## Momentaufnahme + Zuwachs statt Vollabruf
+
+Die Altdaten liegen als statische Dateien im Repo (`data/*.json`) und
+kommen vom GitHub-Pages-CDN; vom Server kommt nur noch, was seit der
+letzten gespeicherten Kerze dazugekommen ist.
+
+Gemessene Groessen: BTC 233 KB roh / **62 KB gzip**, Gold 529 KB roh /
+**109 KB gzip**. Zum Vergleich: `klinecharts.min.js` ist 201 KB und wird
+ohnehin geladen.
+
+`DataLayer.fetchHistoryCached()` hat **drei Rueckfallebenen**:
+
+1. Momentaufnahme + Zuwachs — der Normalfall
+2. **nur Momentaufnahme** — Worker oder Quelle nicht erreichbar, der
+   Chart zeigt die Historie trotzdem
+3. nur Worker/API — Datei fehlt, verhaelt sich wie vor m45
+
+Damit ist die Abhaengigkeit von den Quellen nicht nur kleiner, sondern
+optional. Faellt LBMA oder Bitstamp aus, funktioniert der Chart weiter.
+
+Zwei Bezugswege im `snapshot.sh`, weil die Quellen sich unterscheiden:
+Bitstamp und LBMA ueber den Worker (kein CORS, Weissliste), Binance
+direkt (oeffentlicher Endpunkt mit CORS, ein Worker waere ein Umweg).
+
+**Nur Tageskerzen.** Fuer 1h und 4h waeren es Hunderttausende Kerzen; dort
+laeuft weiter der volle Abruf.
+
+## Boersen-Duplikate entfernt  (m46)
+
+Kraken BTC/USD und ETH/USD, Coinbase BTC/USD und ETH/USD sowie Bybit
+BTC/USDT sind aus `DEFAULT_SYMBOLS` **entfallen**. Sie standen dort
+ausschliesslich, weil sie mehr Historie boten als Binance (Kraken 2013
+bzw. 2016). Seit Bitstamp ab 2011 liefert, ist das ueberholt: weder mehr
+Tiefe noch ein anderer Zweck, aber je ein eigener Ladepfad mit eigenen
+Fehlerfaellen.
+
+**Nicht entfernt:** Kraken SOL/USD (keine Alternative), Coinbase AERO/USD
+und Bybit AERO/USDT (eigene Begruendung — Coinbase listet AERO seit 2024,
+Binance erst Dez 2024).
+
+Wichtige Unterscheidung fuer kuenftige Entscheide: Liquiditaet entscheidet
+**einmal**, bei der Auswahl der Quelle. Danach ist sie fixiert. Ein
+laufender Boersenwechsel wuerde an der Nahtstelle genau den Preissprung
+erzeugen, den die Bitstamp-Entscheidung gegen Binance vermeiden soll.
+
+## CACHE_VERSION
+
+Bei jedem Quellenwechsel im Worker hochzaehlen. Sonst liefert der
+KV-Cache weiter die alten Daten und der Fehler sieht wie ein
+Code-Problem aus. Fuer den LBMA-Wechsel: `v2` → `v3`.
+
+# Indikatoren auf fremdem Intervall  (m43)
+
+SMA und EMA haben unter *Inputs* ein Auswahlfeld **Intervall**. Auf
+`auto` rechnen sie auf den Chartkerzen; sonst werden die Chartkerzen zum
+Zielintervall aggregiert und der Durchschnitt laeuft ueber DIESE
+Schlusskurse. So zeigt man den 200-Wochen-SMA im Tageschart.
+
+**Nicht dasselbe wie eine umgerechnete Periode:** SMA(1400) auf
+Tagesbasis mittelt 1400 Tagesschluesse, SMA(200) auf Wochenbasis mittelt
+200 Wochenschluesse. Aehnlich, aber nicht gleich — und der Nutzer erwartet
+den Wert, den er auf dem Wochenchart saehe.
+
+Zeitfenster ueber Zeitstempel, nicht ueber Kerzenzahl: sieben Chartkerzen
+sind bei Datenluecken keine Woche. Reicht die Historie nicht, bleibt die
+Linie leer statt aus zu wenigen Werten gezeichnet zu werden.
 
 ## Build-Abgleich — zuerst prüfen, wenn etwas „nicht wirkt"
 

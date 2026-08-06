@@ -35,6 +35,42 @@ const DataLayer = {
     return this._dedupe(all);
   },
 
+  // Kerzen AB einem Zeitstempel nachladen — der Zuwachs zur gespeicherten
+  // Momentaufnahme.
+  //
+  // Gegenrichtung zu fetchBinanceKlines(): das paginiert rueckwaerts ueber
+  // endTime, weil es "die letzten N Kerzen" will. Hier ist die Untergrenze
+  // bekannt und die Obergrenze offen, also vorwaerts ueber startTime.
+  //
+  // Die Kerze AM Stichtag wird mitgeholt (nicht +1ms): die letzte
+  // gespeicherte war moeglicherweise noch unvollstaendig und wird vom
+  // Zuwachs ueberschrieben.
+  async fetchBinanceKlinesSince(symbol, interval, startTime) {
+    const MAX_PER_REQ = 1000;
+    const out = [];
+    let from = startTime;
+    // Bei Tageskerzen deckt eine Seite knapp drei Jahre ab. Zehn Seiten
+    // sind reichlich; laeuft es dagegen, stimmt etwas anderes nicht.
+    let guard = 10;
+    while (guard-- > 0) {
+      let url = `${CONFIG.BINANCE_REST}/klines?symbol=${symbol}&interval=${interval}&limit=${MAX_PER_REQ}`;
+      if (from) url += `&startTime=${from}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Binance HTTP ${res.status}`);
+      const raw = await res.json();
+      if (!Array.isArray(raw) || raw.length === 0) break;
+      for (const k of raw) {
+        out.push([k[0], parseFloat(k[1]), parseFloat(k[2]),
+                        parseFloat(k[3]), parseFloat(k[4]), parseFloat(k[5])]);
+      }
+      if (raw.length < MAX_PER_REQ) break;
+      const letzte = raw[raw.length - 1][0];
+      if (letzte <= from) break;          // kein Fortschritt, Schleife stoppen
+      from = letzte + 1;
+    }
+    return out;
+  },
+
   // Ältere Kerzen VOR einem Timestamp nachladen (Lazy Loading beim Zurückscrollen)
   async fetchBinanceKlinesBefore(symbol, interval, beforeTimestamp, limit = 1000) {
     const chunk = await this._fetchKlineChunk(symbol, interval, Math.min(1000, limit), beforeTimestamp - 1);

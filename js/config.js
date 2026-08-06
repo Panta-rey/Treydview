@@ -23,8 +23,13 @@ const CONFIG = {
   // Fehlt eine Datei, faellt der Ladeweg automatisch auf den vollen
   // Worker-Abruf zurueck — nichts geht kaputt, es wird nur langsamer.
   // Erzeugen: siehe tools/snapshot.sh
+  // Nur Tageskerzen — fuer 1h/4h waeren es Hunderttausende Kerzen, die
+  // gehoeren nicht ins Repo. Dort laeuft weiter der volle Abruf.
   HISTORY_SNAPSHOTS: {
     BTCUSD_BS: "data/btcusd-bitstamp.json",
+    ETHUSD_BS: "data/ethusd-bitstamp.json",
+    BTCUSDT:   "data/btcusdt-binance.json",
+    ETHUSDT:   "data/ethusdt-binance.json",
     XAUUSD:    "data/gold-lbma.json",
   },
   // Allgemeine Stooq-Zeitreihe ueber denselben Worker. Erwartet
@@ -51,6 +56,12 @@ const CONFIG = {
     // Bewusst ein EIGENES Symbol statt einer zusammengeklebten Historie:
     // USD und USDT sind verschiedene Maerkte mit eigenen Preisen.
     { id: "BTCUSD_BS", label: "BTC/USD (Bitstamp, ab 2011)", type: "bitstamp", bitstampPair: "btcusd" },
+    // ETH/USD ebenfalls ueber Bitstamp. Das genaue Listing-Datum liess
+    // sich vorab nicht zweifelsfrei belegen — zwei unabhaengige Indizien
+    // deuten auf Herbst 2015, also kurz nach dem Ethereum-Start und
+    // frueher als Kraken (2016). Der Worker liefert das tatsaechliche
+    // Startdatum im Feld "from" mit; danach richtet sich das Label.
+    { id: "ETHUSD_BS", label: "ETH/USD (Bitstamp)", type: "bitstamp", bitstampPair: "ethusd" },
     // Aktienindizes ueber den Worker (Stooq). Nur Tageskerzen — Stooq
     // liefert fuer Indizes keine Intraday-Daten.
     { id: "^SPX", label: "S&P 500",   type: "stooq", stooqSymbol: "^spx" },
@@ -59,17 +70,21 @@ const CONFIG = {
     // Beschriftung waere falsche Information unter richtigem Chart.
     { id: "^NDQ", label: "Nasdaq Composite", type: "stooq", stooqSymbol: "^ndq" },
     { id: "^DJI", label: "Dow Jones",  type: "stooq", stooqSymbol: "^dji" },
-    // Kraken: längere Geschichte (BTC seit 2013, ETH seit 2016)
-    { id: "XBTUSD_KR",  label: "BTC/USD (Kraken)",  type: "kraken", krakenPair: "XXBTZUSD" },
-    { id: "ETHUSD_KR",  label: "ETH/USD (Kraken)",  type: "kraken", krakenPair: "XETHZUSD" },
+    // Kraken BTC/USD und ETH/USD sind ENTFALLEN. Sie standen nur hier,
+    // weil sie mehr Historie boten als Binance (2013 bzw. 2016). Seit
+    // Bitstamp ab 2011 liefert, sind sie ueberholt: weder mehr Tiefe noch
+    // ein anderer Zweck, aber je ein eigener Ladepfad mit eigenen
+    // Fehlerfaellen. SOL bleibt — dafuer gibt es keine Alternative.
     { id: "SOLUSD_KR",  label: "SOL/USD (Kraken)",  type: "kraken", krakenPair: "SOLUSD"   },
     // Coinbase: AERO seit 2024 gelistet (mehr Historie als Binance Dez 2024)
+    // AERO bleibt: eigene Begruendung (Coinbase listet seit 2024, Binance
+    // erst Dez 2024). BTC/USD und ETH/USD sind entfallen — siehe Kraken.
     { id: "AERO-USD", label: "AERO/USD (Coinbase)", type: "coinbase", coinbaseProduct: "AERO-USD" },
-    { id: "BTC-USD",  label: "BTC/USD (Coinbase)",  type: "coinbase", coinbaseProduct: "BTC-USD"  },
-    { id: "ETH-USD",  label: "ETH/USD (Coinbase)",  type: "coinbase", coinbaseProduct: "ETH-USD"  },
     // Bybit: listet AERO/USDT (Spot)
+    // AERO bleibt, BTC/USDT entfaellt — Binance ist dort in Tiefe und
+    // Historie ueberlegen und liefert jetzt zusaetzlich aus der
+    // Momentaufnahme.
     { id: "AEROUSDT_BY", label: "AERO/USDT (Bybit)", type: "bybit", bybitSymbol: "AEROUSDT" },
-    { id: "BTCUSDT_BY",  label: "BTC/USDT (Bybit)",  type: "bybit", bybitSymbol: "BTCUSDT"  },
   ],
 
   TIMEFRAMES: [
