@@ -4731,6 +4731,11 @@ function scanEWT() {
   const showAbc = document.getElementById("ewtShowAbc")?.checked !== false;
   const showSet = document.getElementById("ewtShowSetup")?.checked !== false;
   const showProj = document.getElementById("ewtShowProj")?.checked !== false;
+  // Etikett-Modus. Diese Zeile fehlte in m40: labelMode wurde weiter unten
+  // benutzt, aber nie deklariert. Der try/catch um die Setup-Schleife
+  // verschluckte den ReferenceError — sichtbar nur daran, dass gar keine
+  // Projektionen mehr gezeichnet wurden.
+  const labelMode = (document.getElementById("ewtLabels") || {}).value || "kurz";
   const show = {
     pending:   document.getElementById("ewtShowPending")   ?.checked !== false,
     triggered: document.getElementById("ewtShowTriggered") ?.checked !== false,
@@ -4779,9 +4784,13 @@ function scanEWT() {
         extendData: {
           kind: "impulse", dir: s.dir, degreeRank: rankOf(s.degree),
           labels: ["", "1", "2", "3", "4", "5"],
-          label: `Impuls ${s.dir === "bull" ? "▲" : "▼"} Grad ${s.degree}`
-               + (s.truncated ? " · verkürzte 5" : "")
-               + ` · W3/W1 ${s.ratio31.toFixed(2)} · Form ${Math.round(s.quality * 100)}%`,
+          label: labelMode === "aus" ? null
+            : labelMode === "kurz"
+              ? `${s.dir === "bull" ? "▲" : "▼"} G${s.degree} · ${Math.round(s.quality * 100)}%`
+                + (s.truncated ? " · verk.5" : "")
+              : `Impuls ${s.dir === "bull" ? "▲" : "▼"} Grad ${s.degree}`
+                + (s.truncated ? " · verkürzte 5" : "")
+                + ` · W3/W1 ${s.ratio31.toFixed(2)} · Form ${Math.round(s.quality * 100)}%`,
         },
         onMouseEnter: () => { setChartCursor("pointer"); showEWTWaveHint(s); return false; },
         onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
@@ -4795,6 +4804,7 @@ function scanEWT() {
   // Zigzag, Flat und Expanded Flat unterscheiden sich im Verhalten von
   // Welle B — deshalb steht die Form im Etikett, nicht nur "A-B-C".
   const EWT_FORM = { zigzag: "Zigzag", flat: "Flat", expanded: "Expanded Flat" };
+  const EWT_FORM_SHORT = { zigzag: "ZZ", flat: "FL", expanded: "EF" };
   abcs.forEach(s => {
     try {
       const id = chart.createOverlay({
@@ -4804,8 +4814,11 @@ function scanEWT() {
         extendData: {
           kind: "abc", dir: s.dir, degreeRank: rankOf(s.degree),
           labels: ["", "A", "B", "C"],
-          label: `${EWT_FORM[s.form] || "Korrektur"} · Grad ${s.degree}`
-               + ` · B ${(s.ratioBA * 100).toFixed(0)}% · C ${s.ratioCA.toFixed(2)}×A`,
+          label: labelMode === "aus" ? null
+            : labelMode === "kurz"
+              ? `${EWT_FORM_SHORT[s.form] || "ABC"} G${s.degree}`
+              : `${EWT_FORM[s.form] || "Korrektur"} · Grad ${s.degree}`
+                + ` · B ${(s.ratioBA * 100).toFixed(0)}% · C ${s.ratioCA.toFixed(2)}×A`,
         },
         onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
       });
@@ -4831,7 +4844,15 @@ function scanEWT() {
         { dataIndex: s.highIndex, value: s.boxTop },
         { dataIndex: endIdx,      value: s.boxBottom },
       ];
-      if (s.state === "triggered" && s.target != null && isFinite(s.target)) {
+      // Ziel nur zeichnen, solange es erreichbar ist.
+      //
+      // Ein Setup, das nach dem Einstieg unter das Start-Tief gebrochen
+      // ist, hat kein gueltiges Ziel mehr. Die Linie blieb trotzdem stehen
+      // und schwebte weit ueber dem Kurs — sie behauptete ein Ziel, das
+      // nie erreichbar war. Bei "invalidiert" entfaellt sie deshalb.
+      const zielSinnvoll = s.state === "triggered" && s.outcome !== "invalidiert"
+                        && s.target != null && isFinite(s.target);
+      if (zielSinnvoll) {
         pts.push({ dataIndex: endIdx, value: s.target });
       }
       const outTxt = s.outcome === "ziel" ? " · Ziel erreicht"
@@ -4843,9 +4864,16 @@ function scanEWT() {
         lock: true,
         extendData: {
           state: s.state, outcome: s.outcome,
-          label: `W3 ${STATE_LABEL[s.state]} · ${s.risePct.toFixed(0)}%`
-               + ` · Form ${Math.round(s.quality * 100)}%${outTxt}`,
-          targetLabel: s.target != null && isFinite(s.target)
+          // "W3" stammt aus der ersten Fassung, als der Scanner nur nach
+          // Welle-3-Setups suchte. Neben ausgezaehlten Impulsen mit eigenen
+          // Wellen 1 bis 5 war das missverstaendlich: die Box ist die
+          // Golden Pocket der Welle 2, der Einstieg zielt auf Welle 3.
+          label: labelMode === "aus" ? null
+            : labelMode === "kurz"
+              ? `W2→W3 ${STATE_LABEL[s.state]} · ${Math.round(s.quality * 100)}%`
+              : `W2→W3 ${STATE_LABEL[s.state]} · ${s.risePct.toFixed(0)}%`
+                + ` · Form ${Math.round(s.quality * 100)}%${outTxt}`,
+          targetLabel: zielSinnvoll
             ? "Ziel " + s.target.toLocaleString("de-CH", { maximumFractionDigits: 2 }) : null,
         },
         onMouseEnter: () => { setChartCursor("pointer"); showEWTHint(s); return false; },
@@ -4904,7 +4932,7 @@ function scanEWT() {
   const skipTxt = (res.degreesSkipped && res.degreesSkipped.length)
     ? ` · Grad ${res.degreesSkipped.join("/")} übersprungen (zu wenig Kerzen)` : "";
   const usedTxt = (res.degreesUsed || degrees).join("/");
-  setStatus(`${impulses.length} Impulse · ${abcs.length} Korrekturen · ${setups.length} W3-Setups`
+  setStatus(`${impulses.length} Impulse · ${abcs.length} Korrekturen · ${setups.length} W2-Zonen`
     + ` · Grade ${usedTxt}${skipTxt} · log. Fibonacci · Rechtsklick löscht einzelne`);
 }
 
@@ -4942,7 +4970,7 @@ function showEWTHint(s) {
   grund.push(`ER ${nf(s.er, 2)}`);
   const ziel = s.target != null && isFinite(s.target) ? ` · Ziel ${nf(s.target)}` : "";
   setStatus(
-    `Welle 3 · ${{ pending: "wartend", triggered: "getriggert",
+    `Welle-2-Zone, Einstieg für Welle 3 · ${{ pending: "wartend", triggered: "getriggert",
                    invalid: "invalidiert", timeout: "Time-Out" }[s.state]}`
     + ` · Box ${nf(s.boxBottom)}–${nf(s.boxTop)} (log)`
     + ` · ungültig unter ${nf(s.invalidLevel)}${ziel}`
@@ -5651,7 +5679,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m41";
+const TV_BUILD = "m42";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m41">
-  <link rel="stylesheet" href="css/style.css?v=m41">
+  <link rel="manifest" href="manifest.webmanifest?v=m42">
+  <link rel="stylesheet" href="css/style.css?v=m42">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m41"></script>
+  <script src="js/lib/klinecharts.min.js?v=m42"></script>
 </head>
 <body>
 
@@ -250,7 +250,7 @@
 
     <!-- Elliott-Wellen-Scanner: Welle 3 / Golden Pocket -->
     <div class="dropdown" id="ewtDropdown">
-      <button class="action-btn" id="ewtTrigger" title="Elliott-Wellen: Welle-3-Setups">
+      <button class="action-btn" id="ewtTrigger" title="Elliott-Wellen">
         <!-- Impulswelle mit markierten Wendepunkten. Die Punkte nehmen die
              Leistenfarbe als Fuellung und wirken so als Aussparung — gleiche
              Garnitur wie die Zeichenwerkzeuge. -->
@@ -268,7 +268,7 @@
           <div class="pat-group">Strukturen</div>
           <label><input type="checkbox" id="ewtShowImpulse" checked> Impuls 1–2–3–4–5</label>
           <label><input type="checkbox" id="ewtShowAbc" checked> Korrektur A–B–C (Zigzag/Flat/Expanded)</label>
-          <label><input type="checkbox" id="ewtShowSetup" checked> Welle-3-Setup (Golden Pocket)</label>
+          <label><input type="checkbox" id="ewtShowSetup" checked> W2→W3-Zone (Golden Pocket)</label>
           <label><input type="checkbox" id="ewtShowProj" checked> Projektion W3–W5 + A-B-C</label>
           <div class="pat-group">Regeln</div>
           <label><input type="checkbox" id="ewtRule4"> Welle 5 muss neues Extrem setzen</label>
@@ -850,7 +850,7 @@
 
         <div class="faq-block"><h4>Was der Scanner sucht</h4>
           <p>Auf Knopfdruck durchsucht er den sichtbaren Bereich nach drei Dingen:</p>
-          <p><b>Impuls 1–2–3–4–5</b> — die vollständige Fünferstruktur. <b>Korrektur A–B–C</b> — die Dreierkorrektur im Anschluss daran. <b>Welle-3-Setup</b> — ein einzelner bestätigter Impuls mit der Golden Pocket der folgenden Korrektur.</p>
+          <p><b>Impuls 1–2–3–4–5</b> — die vollständige Fünferstruktur. <b>Korrektur A–B–C</b> — die Dreierkorrektur im Anschluss daran. <b>W2→W3-Zone</b> — ein einzelner bestätigter Impuls mit der Golden Pocket der folgenden Korrektur.</p>
           <p>Das Ergebnis ist Kontext, kein Handelssignal. Elliott beschreibt Struktur, nicht Zeitpunkte.</p></div>
 
         <div class="faq-block"><h4>Die drei Regeln</h4>
@@ -895,14 +895,16 @@
           <p>RSI, Volumen-Konfluenz und Impuls-Effizienz lassen sich als harte Filter zuschalten. Gemessen an 2000 Kerzen verwarf der RSI-Filter 76 % der Kandidaten und das Volumen nochmals 53 % vom Rest.</p>
           <p>Deshalb sind sie aus: eine Wellenstruktur ist eine geometrische Aussage. Ob gleichzeitig der RSI unter 30 stand, ist eine andere Frage und darf die Zählung nicht unterdrücken. Einschalten nur, wenn du gezielt weniger und schärfere Treffer willst.</p></div>
 
-        <div class="faq-block"><h4>Welle-3-Setup und die vier Zustände</h4>
+        <div class="faq-block"><h4>Die W2→W3-Zone und ihre vier Zustände</h4>
           <p>Aus einem bestätigten Impulsbein wird die <b>logarithmische</b> Golden Pocket (0.5–0.618) der folgenden Korrektur berechnet und in die Zukunft gezeichnet.</p>
+          <p><b>Was heisst W2→W3?</b> Die Box markiert, wo Welle&nbsp;2 typischerweise endet — dort wäre der Einstieg, und das Ziel ist Welle&nbsp;3. Die Box ist also <i>keine</i> Zielzone, sondern eine Einstiegszone. Läuft der Kurs durch sie hindurch und unter das Start-Tief, steht sie auf <i>invalidiert</i>; genau das bedeutet dann, dass der Kurs „schon durch" ist.</p>
           <p><b>Gelb</b> wartend — Kurs fällt vom Hoch, ist aber noch über der Box.<br>
              <b>Grün</b> getriggert — Kurs hat die Box berührt.<br>
              <b>Rot</b> invalidiert — Kurs unter dem Start-Tief, EWT-Regelbruch.<br>
              <b>Grau</b> Time-Out — Box nach der eingestellten Bar-Zahl nicht berührt.</p>
           <p>Die gestrichelte rote Linie ist das Start-Tief. Berührt eine Kerze die Box <i>und</i> schliesst darunter, gilt sie als invalidiert — ein Bar, der unter der Grenze schliesst, darf keinen sauberen Einstieg behaupten.</p>
-          <p>Bei getriggerten Setups steht im Etikett, was danach geschah: <i>Ziel erreicht</i>, <i>danach gebrochen</i> oder <i>offen</i>. Ohne diese Angabe sähe im Rückblick jede grüne Box wie ein Treffer aus.</p></div>
+          <p>Bei getriggerten Zonen steht im Etikett, was danach geschah: <i>Ziel erreicht</i>, <i>danach gebrochen</i> oder <i>offen</i>. Ohne diese Angabe sähe im Rückblick jede grüne Box wie ein Treffer aus.</p>
+          <p>Die gestrichelte Ziellinie erscheint nur, solange das Ziel erreichbar ist. Bei <i>danach gebrochen</i> entfällt sie — eine Linie, die ein nie erreichbares Ziel behauptet, ist irreführend.</p></div>
 
         <div class="faq-block"><h4>Die Projektion ist keine Prognose</h4>
           <p>Sie schreibt die Fibonacci-Verhältnisse fort, die die Elliott-Lehre unterstellt — Welle 3 bis 5, dann A–B–C. Es kommt <b>keine Information</b> aus den Daten hinzu, die nicht schon in Welle 1 steckt.</p>
@@ -1286,16 +1288,16 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m41"></script>
-<script src="js/indicators.js?v=m41"></script>
-<script src="js/overlays.js?v=m41"></script>
-<script src="js/data.js?v=m41"></script>
-<script src="js/settings.js?v=m41"></script>
-<script src="js/derivatives.js?v=m41"></script>
-<script src="js/gridbot.js?v=m41"></script>
-<script src="js/patterns.js?v=m41"></script>
-<script src="js/smc.js?v=m41"></script>
-<script src="js/ewt.js?v=m41"></script>
-<script src="js/app.js?v=m41"></script>
+<script src="js/config.js?v=m42"></script>
+<script src="js/indicators.js?v=m42"></script>
+<script src="js/overlays.js?v=m42"></script>
+<script src="js/data.js?v=m42"></script>
+<script src="js/settings.js?v=m42"></script>
+<script src="js/derivatives.js?v=m42"></script>
+<script src="js/gridbot.js?v=m42"></script>
+<script src="js/patterns.js?v=m42"></script>
+<script src="js/smc.js?v=m42"></script>
+<script src="js/ewt.js?v=m42"></script>
+<script src="js/app.js?v=m42"></script>
 </body>
 </html>

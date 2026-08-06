@@ -694,7 +694,7 @@
           attrs: { x: x0 + 6, y: yStop, text: `SL ${fmtPrice(ed.stopLoss)}`, align: "left", baseline: "middle" },
           styles: {
             style: "stroke_fill", color: "#d05e5e", backgroundColor: labelColors().bg,
-            borderColor: "rgba(208,94,94,0.4)", borderSize: 1, borderRadius: 2, size: 10,
+            borderColor: "rgba(232,106,106,0.5)", borderSize: 1, borderRadius: 2, size: 10,
             family: "IBM Plex Mono, monospace",
             paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2,
           },
@@ -1145,7 +1145,7 @@
     needDefaultPointFigure: false,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: true,
-    createPointFigures: ({ coordinates, overlay, bounding }) => {
+    createPointFigures: ({ coordinates, overlay, bounding, barSpace }) => {
       if (coordinates.length < 4) return [];
       const ed = overlay.extendData || {};
 
@@ -1153,8 +1153,11 @@
       const PAL = {
         pending:   "232,182,76",
         triggered: "63,182,139",
-        invalid:   "208,94,94",
-        timeout:   "143,163,184",
+        // Heller als die Kerzenfarbe --down (#d05e5e): fuer duenne Linien
+        // und kleine Schrift auf dunklem Grund ist die dunkle Variante
+        // schlecht lesbar.
+        invalid:   "232,106,106",
+        timeout:   "150,170,190",
       };
       const rgb = PAL[ed.state] || PAL.pending;
       const done = ed.state === "invalid" || ed.state === "timeout";
@@ -1176,7 +1179,7 @@
         styles: {
           style: "stroke_fill",
           color: `rgba(${rgb},${done ? 0.07 : 0.16})`,
-          borderColor: broke ? "rgba(208,94,94,0.95)" : col,
+          borderColor: broke ? "rgba(232,106,106,0.95)" : col,
           borderSize: 1,
           borderStyle: (done || broke) ? "dashed" : "solid",
           dashedValue: [4, 3],
@@ -1202,7 +1205,7 @@
         style: "stroke_fill", color: col,
         backgroundColor: "rgba(13,17,23,0.85)",
         borderColor: col, borderSize: 1, borderRadius: 3,
-        size: 10, family: "IBM Plex Mono, monospace",
+        size: zoomSize(barSpace, 10), family: "IBM Plex Mono, monospace",
         paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
       };
       figs.push({
@@ -1229,7 +1232,7 @@
         type: "line",
         attrs: { coordinates: [{ x: c0.x, y: c0.y }, { x: c3.x, y: c0.y }] },
         styles: { style: "dashed", dashedValue: [3, 4],
-                  color: `rgba(208,94,94,${done ? 0.35 : 0.6})`, size: 1 },
+                  color: `rgba(232,106,106,${done ? 0.45 : 0.75})`, size: 1 },
       });
 
       // ---- Welle-3-Ziel (nur bei getriggerten Setups) ----
@@ -1249,7 +1252,7 @@
               style: "stroke_fill", color: "rgba(63,182,139,0.95)",
               backgroundColor: "rgba(13,17,23,0.85)",
               borderColor: "rgba(63,182,139,0.6)", borderSize: 1, borderRadius: 3,
-              size: 10, family: "IBM Plex Mono, monospace",
+              size: zoomSize(barSpace, 10), family: "IBM Plex Mono, monospace",
               paddingLeft: 5, paddingRight: 5, paddingTop: 1, paddingBottom: 1,
             },
             ignoreEvent: true,
@@ -1276,7 +1279,7 @@
             borderColor: col,
             borderSize: 1,
             borderRadius: 3,
-            size: 10,
+            size: zoomSize(barSpace, 10),
             family: "IBM Plex Mono, monospace",
             paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
           },
@@ -1311,7 +1314,7 @@
     needDefaultPointFigure: false,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, overlay, bounding }) => {
+    createPointFigures: ({ coordinates, overlay, bounding, barSpace }) => {
       if (coordinates.length < 8) return [];
       const ed = overlay.extendData || {};
       // Angenommene Basis (Welle-2-Tief noch nicht bekannt) wird noch
@@ -1321,7 +1324,7 @@
       // Impulswellen blau, Korrekturwellen warm — damit auf einen Blick
       // erkennbar ist, wo der Impuls endet und die Korrektur beginnt.
       const col  = `rgba(90,169,230,${a})`;
-      const colC = `rgba(208,138,94,${a})`;
+      const colC = `rgba(224,150,102,${a})`;
       const c0 = coordinates[0], c1 = coordinates[1], c2 = coordinates[2];
       const c3 = coordinates[3], c4 = coordinates[4];
       const cA = coordinates[5], cB = coordinates[6], cC = coordinates[7];
@@ -1377,7 +1380,7 @@
             style: "stroke_fill", color: k,
             backgroundColor: "rgba(13,17,23,0.85)",
             borderColor: k, borderSize: 1, borderRadius: 3,
-            size: 10, family: "IBM Plex Mono, monospace",
+            size: zoomSize(barSpace, 10), family: "IBM Plex Mono, monospace",
             paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
           },
           ignoreEvent: true,
@@ -1395,7 +1398,7 @@
           styles: {
             style: "stroke_fill", color: col,
             backgroundColor: lc.bg, borderColor: col,
-            borderSize: 1, borderRadius: 3, size: 10,
+            borderSize: 1, borderRadius: 3, size: zoomSize(barSpace, 10),
             family: "IBM Plex Mono, monospace",
             paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
           },
@@ -1417,6 +1420,18 @@
   // Rueckgabe null = gar nicht zeichnen. Sonst { x, align }: liegt das
   // Etikett nahe am rechten Rand, wird rechtsbuendig ausgerichtet, damit
   // der Text nach INNEN laeuft statt aus dem Bild.
+  // Schriftgroesse an den Zoom koppeln.
+  //
+  // KLineCharts uebergibt barSpace an createPointFigures — daraus laesst
+  // sich der Zoomgrad direkt ablesen (Pixel je Kerze). Feste Groessen
+  // bleiben beim Hineinzoomen winzig, waehrend die Kerzen wachsen.
+  // Ausgezoomt (barSpace ~3) bleibt es klein, stark hineingezoomt
+  // (barSpace ~30) wird es sichtbar groesser, gedeckelt auf base+8.
+  function zoomSize(barSpace, base) {
+    const bar = (barSpace && barSpace.bar) || 6;
+    return Math.round(Math.max(base, Math.min(base + 8, base - 2 + bar * 0.45)));
+  }
+
   function labelAnchor(coordinates, bounding, preferX) {
     const W = (bounding && bounding.width) || 1200;
     let minX = Infinity, maxX = -Infinity;
@@ -1446,12 +1461,15 @@
     needDefaultPointFigure: false,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, overlay, bounding }) => {
+    createPointFigures: ({ coordinates, overlay, bounding, barSpace }) => {
       if (coordinates.length < 2) return [];
       const ed = overlay.extendData || {};
       const bull = ed.dir === "bull";
       // Impuls in Richtungsfarbe, Korrektur warm abgesetzt.
-      const rgb = ed.kind === "abc" ? "208,138,94" : (bull ? "63,182,139" : "208,94,94");
+      // Das Rot ist heller als die Kerzenfarbe --down (#d05e5e). Fuer
+      // Kerzenkoerper ist die dunkle Variante richtig, fuer duenne Linien
+      // und kleine Schrift auf dunklem Grund aber schlecht lesbar.
+      const rgb = ed.kind === "abc" ? "224,150,102" : (bull ? "63,182,139" : "232,106,106");
       // Feinere Wellengrade duenner und blasser: die uebergeordnete
       // Struktur soll optisch dominieren.
       const w = ed.degreeRank === 0 ? 2.2 : ed.degreeRank === 1 ? 1.7 : 1.3;
@@ -1492,7 +1510,7 @@
             style: "stroke_fill", color: col,
             backgroundColor: "rgba(13,17,23,0.85)",
             borderColor: col, borderSize: 1, borderRadius: 3,
-            size: 11, family: "IBM Plex Mono, monospace",
+            size: zoomSize(barSpace, 11), family: "IBM Plex Mono, monospace",
             paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
           },
           ignoreEvent: true,
@@ -1511,7 +1529,7 @@
           styles: {
             style: "stroke_fill", color: col,
             backgroundColor: lc.bg, borderColor: col,
-            borderSize: 1, borderRadius: 3, size: 10,
+            borderSize: 1, borderRadius: 3, size: zoomSize(barSpace, 10),
             family: "IBM Plex Mono, monospace",
             paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
           },
