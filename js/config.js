@@ -7,6 +7,26 @@ const CONFIG = {
   WORKER_BASE_URL: "https://pantarey.rey-gafner.workers.dev",
   GOLD_ENDPOINT:   "/goldhistory",
   BITSTAMP_ENDPOINT: "/bitstamp",
+
+  // ---- Historie-Momentaufnahmen ----------------------------------
+  // Statische Dateien im Repo mit der kompletten Altdatenhistorie.
+  // Der Browser laedt sie vom GitHub-Pages-CDN und fragt den Worker nur
+  // noch nach dem Zuwachs seit der letzten gespeicherten Kerze.
+  //
+  // Vorteile gegenueber dem vollen Abruf bei jedem Laden:
+  //   • gzip-Groesse ~62 KB (BTC) bzw. ~109 KB (Gold), vom Browser
+  //     zwischengespeichert — statt 233 bzw. 529 KB roh je Aufruf
+  //   • der Chart zeigt Historie auch dann, wenn Worker oder Quelle
+  //     gerade nicht erreichbar sind
+  //   • weniger Worker-Aufrufe und kein Durchblaettern von 12 Seiten
+  //
+  // Fehlt eine Datei, faellt der Ladeweg automatisch auf den vollen
+  // Worker-Abruf zurueck — nichts geht kaputt, es wird nur langsamer.
+  // Erzeugen: siehe tools/snapshot.sh
+  HISTORY_SNAPSHOTS: {
+    BTCUSD_BS: "data/btcusd-bitstamp.json",
+    XAUUSD:    "data/gold-lbma.json",
+  },
   // Allgemeine Stooq-Zeitreihe ueber denselben Worker. Erwartet
   //   GET <WORKER_BASE_URL>/stooq?s=<symbol>
   // und liefert entweder Stooq-CSV (date,open,high,low,close,volume) oder

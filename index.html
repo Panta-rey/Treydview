@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m44">
-  <link rel="stylesheet" href="css/style.css?v=m44">
+  <link rel="manifest" href="manifest.webmanifest?v=m45">
+  <link rel="stylesheet" href="css/style.css?v=m45">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m44"></script>
+  <script src="js/lib/klinecharts.min.js?v=m45"></script>
 </head>
 <body>
 
@@ -1132,6 +1132,7 @@
         <div class="faq-block"><h4>Kerzenhistorie und Datenquellen</h4>
           <p><b>BTC/USDT (Binance)</b> beginnt im August&nbsp;2017 — weiter zurück gibt es dort nichts. Für längere Historie steht <b>BTC/USD (Bitstamp)</b> bereit: eine durchgehende Reihe seit 2011, ohne zusammengeklebte Nahtstellen. Bewusst ein eigenes Symbol, denn USD und USDT sind verschiedene Märkte mit eigenen Preisen.</p>
           <p>Bitstamp liefert 1h-, 4h- und Tageskerzen. Wochen und Monate werden im Browser aus Tageskerzen zusammengefasst; Wochen beginnen Montag&nbsp;00:00&nbsp;UTC.</p>
+          <p><b>Wie die Historie geladen wird:</b> Die Altdaten liegen als statische Datei im Repo und kommen vom CDN — rund 62&nbsp;KB für BTC, 109&nbsp;KB für Gold, vom Browser zwischengespeichert. Vom Server kommt nur noch, was seit der letzten gespeicherten Kerze dazugekommen ist. Fällt der Server oder die Quelle aus, zeigt der Chart die gespeicherte Historie trotzdem; fehlt die Datei, wird alles wie zuvor vollständig geladen.</p>
           <p><b>Gold</b> kommt neu vom LBMA-Direktfeed und reicht bis <b>1968</b> zurück. Wichtig zur Einordnung: das sind <i>Auktionspreise</i>, zwei je Handelstag (AM und PM), keine fortlaufenden Kurse. Die Tageskerze wird daraus gebildet — Eröffnung&nbsp;=&nbsp;AM, Schluss&nbsp;=&nbsp;PM, Hoch und Tief das Extrem der beiden. Das sind <b>keine echten Tagesextreme</b>: der Kurs schwankte dazwischen mehr. Für Trend- und Strukturbetrachtung über Jahrzehnte reicht es, für Docht-Analyse nicht. Volumen gibt es nicht.</p></div>
 
         <div class="faq-block"><h4>Was das Werkzeug nicht kann</h4>
@@ -1296,16 +1297,16 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m44"></script>
-<script src="js/indicators.js?v=m44"></script>
-<script src="js/overlays.js?v=m44"></script>
-<script src="js/data.js?v=m44"></script>
-<script src="js/settings.js?v=m44"></script>
-<script src="js/derivatives.js?v=m44"></script>
-<script src="js/gridbot.js?v=m44"></script>
-<script src="js/patterns.js?v=m44"></script>
-<script src="js/smc.js?v=m44"></script>
-<script src="js/ewt.js?v=m44"></script>
-<script src="js/app.js?v=m44"></script>
+<script src="js/config.js?v=m45"></script>
+<script src="js/indicators.js?v=m45"></script>
+<script src="js/overlays.js?v=m45"></script>
+<script src="js/data.js?v=m45"></script>
+<script src="js/settings.js?v=m45"></script>
+<script src="js/derivatives.js?v=m45"></script>
+<script src="js/gridbot.js?v=m45"></script>
+<script src="js/patterns.js?v=m45"></script>
+<script src="js/smc.js?v=m45"></script>
+<script src="js/ewt.js?v=m45"></script>
+<script src="js/app.js?v=m45"></script>
 </body>
 </html>

@@ -304,18 +304,38 @@ const DataLayer = {
     })).sort((a, b) => a.timestamp - b.timestamp);
   },
 
-  // ---------- Bitstamp via Worker (BTC ab 2011) ----------
-  // Der Worker blaettert die Historie serverseitig durch und liefert sie
-  // in EINER Antwort im gleichen candles-Format wie die Gold-Route.
-  async fetchBitstampHistory(pair, step) {
-    const base = CONFIG.WORKER_BASE_URL.replace(/\/$/, "") + CONFIG.BITSTAMP_ENDPOINT;
-    const url  = `${base}?pair=${encodeURIComponent(pair)}&step=${step}`;
-    const res  = await fetch(url);
-    if (!res.ok) throw new Error(`Worker HTTP ${res.status}`);
-    const json = await res.json();
-    if (json && json.error) throw new Error(String(json.error));
-    if (!json || !Array.isArray(json.candles)) throw new Error("Worker: kein candles-Array");
-    return json.candles
+  // ---------- Historie aus Momentaufnahme + Zuwachs ----------
+  //
+  // Laedt die statische Altdatenhistorie aus dem Repo und holt beim
+  // Worker nur, was seither dazugekommen ist.
+  //
+  // Robustheit ist hier wichtiger als Eleganz, deshalb drei Ebenen:
+  //   1. Momentaufnahme + Zuwachs  → der Normalfall
+  //   2. nur Momentaufnahme        → Worker/Quelle nicht erreichbar,
+  //                                  Historie steht trotzdem
+  //   3. nur Worker                → Datei fehlt (noch nicht erzeugt)
+  // Erst wenn beides scheitert, gibt es einen Fehler.
+  async fetchHistoryCached(snapshotPath, deltaFetch) {
+    let snapshot = null;
+    if (snapshotPath) {
+      try {
+        const res = await fetch(snapshotPath, { cache: "default" });
+        if (res.ok) {
+          const j = await res.json();
+          if (j && Array.isArray(j.candles) && j.candles.length) snapshot = j.candles;
+        }
+      } catch (_) { /* Datei fehlt oder ist defekt — Ebene 3 */ }
+    }
+
+    // Der Zuwachs kann als Rohfelder [[ms,o,h,l,c,v]] oder als fertige
+    // Kerzenobjekte kommen — fetchGoldHistory hat einen eigenen,
+    // toleranten Parser fuer aeltere Worker-Formate. Beides wird hier auf
+    // Rohfelder gebracht, damit das Zusammenfuehren einheitlich laeuft.
+    const toRaw = (arr) => (arr || []).map(k => Array.isArray(k)
+      ? k
+      : [k.timestamp, k.open, k.high, k.low, k.close, k.volume || 0]);
+
+    const toRows = (arr) => arr
       .map(([ts, o, h, l, cl, v]) => (isFinite(ts) && isFinite(cl))
         ? { timestamp: ts,
             open:  isFinite(o) ? o : cl,
@@ -324,16 +344,53 @@ const DataLayer = {
             close: cl,
             volume: isFinite(v) ? v : 0 }
         : null)
-      .filter(Boolean)
-      .sort((a, b) => a.timestamp - b.timestamp);
+      .filter(Boolean);
+
+    if (!snapshot) return toRows(toRaw(await deltaFetch(null)));   // Ebene 3
+
+    const lastTs = snapshot[snapshot.length - 1][0];
+    let delta = [];
+    try {
+      delta = toRaw(await deltaFetch(lastTs));
+    } catch (e) {
+      console.warn("[TreydView] Zuwachs nicht abrufbar, zeige gespeicherte Historie:", e);
+      return toRows(snapshot);                              // Ebene 2
+    }
+
+    // Zusammenfuehren ueber den Zeitstempel. Der Zuwachs gewinnt: die
+    // letzte gespeicherte Kerze war moeglicherweise noch unvollstaendig.
+    const map = new Map();
+    for (const k of snapshot) map.set(k[0], k);
+    for (const k of delta)    map.set(k[0], k);
+    const merged = [...map.values()].sort((a, b) => a[0] - b[0]);
+    return toRows(merged);
+  },
+
+  // ---------- Bitstamp via Worker (BTC ab 2011) ----------
+  // Der Worker blaettert die Historie serverseitig durch und liefert sie
+  // in EINER Antwort im gleichen candles-Format wie die Gold-Route.
+  async fetchBitstampHistory(pair, step, from) {
+    const base = CONFIG.WORKER_BASE_URL.replace(/\/$/, "") + CONFIG.BITSTAMP_ENDPOINT;
+    const url  = `${base}?pair=${encodeURIComponent(pair)}&step=${step}`
+               + (from ? `&from=${from}` : "");
+    const res  = await fetch(url);
+    if (!res.ok) throw new Error(`Worker HTTP ${res.status}`);
+    const json = await res.json();
+    if (json && json.error) throw new Error(String(json.error));
+    if (!json || !Array.isArray(json.candles)) throw new Error("Worker: kein candles-Array");
+    // Rohformat [[ms,o,h,l,c,v],...] — die Umwandlung in Kerzenobjekte
+    // uebernimmt fetchHistoryCached(), damit Momentaufnahme und Zuwachs
+    // denselben Weg nehmen.
+    return json.candles;
   },
 
   // ---------- Gold via Worker ----------
   // Toleranter Parser — Details siehe README. Bei abweichendem
   // Worker-Format NUR normalizeGoldRow() anpassen.
 
-  async fetchGoldHistory() {
-    const url = CONFIG.WORKER_BASE_URL.replace(/\/$/, "") + CONFIG.GOLD_ENDPOINT;
+  async fetchGoldHistory(from) {
+    const url = CONFIG.WORKER_BASE_URL.replace(/\/$/, "") + CONFIG.GOLD_ENDPOINT
+              + (from ? `?from=${from}` : "");
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Worker HTTP ${res.status}`);
     const text = await res.text();

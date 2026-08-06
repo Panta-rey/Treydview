@@ -69,7 +69,7 @@ export default {
 
     try {
       if (url.pathname === "/macro"       && request.method === "GET")  return await getMacro(env);
-      if (url.pathname === "/goldhistory" && request.method === "GET")  return await getGoldHistory(env);
+      if (url.pathname === "/goldhistory" && request.method === "GET")  return await getGoldHistory(env, request);
       if (url.pathname === "/bitstamp"    && request.method === "GET")  return await getBitstamp(request, env);
       if (url.pathname === "/stooq"       && request.method === "GET")  return await getStooq(request, env);
       if (url.pathname === "/m2"          && request.method === "GET")  return await getM2(env);
@@ -271,11 +271,15 @@ async function buildGoldHistory() {
   };
 }
 
-async function getGoldHistory(env) {
+async function getGoldHistory(env, request) {
   let cached = null;
   const goldKey = `goldhistory_${CACHE_VERSION}`;
+  // ?from=<ms> liefert nur den Zuwachs — siehe zuschneiden().
+  const from = request ? new URL(request.url).searchParams.get("from") : null;
   try { cached = JSON.parse(await env.PANTA.get(goldKey)); } catch (_) {}
-  if (cached && cached.data && (Date.now() - cached.ts) < GOLD_HISTORY_TTL_MS) return json(cached.data);
+  if (cached && cached.data && (Date.now() - cached.ts) < GOLD_HISTORY_TTL_MS) {
+    return json(zuschneiden(cached.data, from));
+  }
 
   let data;
   try {
@@ -283,12 +287,12 @@ async function getGoldHistory(env) {
   } catch (e) {
     // Wie bei den Indizes: lieber ein Tag alte Daten als ein Fehler,
     // sofern schon einmal ein erfolgreicher Abruf vorliegt.
-    if (cached && cached.data) return json(cached.data);
+    if (cached && cached.data) return json(zuschneiden(cached.data, from));
     return json({ error: String(e && e.message || e) }, 500);
   }
 
   try { await env.PANTA.put(goldKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
-  return json(data);
+  return json(zuschneiden(data, from));
 }
 
 /* ============================================================
@@ -305,6 +309,23 @@ async function getGoldHistory(env) {
    heute sind rund 5400 Tageskerzen, also wird hier serverseitig
    durchgeblaettert — der Browser stellt EINE Anfrage.
    ============================================================ */
+// Schneidet eine fertige Historie auf den Zuwachs zu.
+//
+// Der Browser laedt die Altdaten aus einer statischen Datei im Repo und
+// fragt hier nur noch, was seither dazugekommen ist. Das spart bei BTC
+// rund 230 KB und bei Gold rund 530 KB je Aufruf — und der Chart
+// funktioniert weiter, wenn diese Route einmal ausfaellt.
+//
+// Die Kerze AM Stichtag wird mitgeliefert (>=, nicht >): die letzte
+// gespeicherte Kerze war moeglicherweise noch unvollstaendig und wird
+// vom Zuwachs ueberschrieben.
+function zuschneiden(data, fromParam) {
+  const from = parseInt(fromParam || "0", 10);
+  if (!isFinite(from) || from <= 0 || !Array.isArray(data.candles)) return data;
+  const teil = data.candles.filter(k => k[0] >= from);
+  return { ...data, candles: teil, count: teil.length, partial: true, since: from };
+}
+
 const BITSTAMP_PAIRS = new Set(["btcusd", "ethusd", "ltcusd", "xrpusd", "btceur", "etheur"]);
 const BITSTAMP_TTL_MS = 6 * 60 * 60 * 1000;
 
@@ -321,17 +342,20 @@ async function getBitstamp(request, env) {
   const key = `bitstamp_${pair}_${step}_${CACHE_VERSION}`;
   let cached = null;
   try { cached = JSON.parse(await env.PANTA.get(key)); } catch (_) {}
-  if (cached && cached.data && (Date.now() - cached.ts) < BITSTAMP_TTL_MS) return json(cached.data);
+  const from = url.searchParams.get("from");
+  if (cached && cached.data && (Date.now() - cached.ts) < BITSTAMP_TTL_MS) {
+    return json(zuschneiden(cached.data, from));
+  }
 
   let data;
   try {
     data = await buildBitstampHistory(pair, step);
   } catch (e) {
-    if (cached && cached.data) return json(cached.data);   // lieber alt als gar nichts
+    if (cached && cached.data) return json(zuschneiden(cached.data, from));   // lieber alt als gar nichts
     return json({ error: String(e && e.message || e) }, 500);
   }
   try { await env.PANTA.put(key, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
-  return json(data);
+  return json(zuschneiden(data, from));
 }
 
 async function buildBitstampHistory(pair, step) {

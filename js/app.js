@@ -685,7 +685,11 @@ async function loadData() {
       // anfragen, waeren aber je Boerse anders geschnitten.
       const stepMap = { "15m": 3600, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 86400, "1M": 86400 };
       const step = stepMap[state.timeframe.id] || 86400;
-      candles = await DataLayer.fetchBitstampHistory(state.symbol.bitstampPair, step);
+      // Momentaufnahme aus dem Repo + Zuwachs vom Worker. Nur fuer
+      // Tageskerzen — die gespeicherte Datei enthaelt Tagesdaten.
+      const snapBs = step === 86400 ? (CONFIG.HISTORY_SNAPSHOTS || {})[state.symbol.id] : null;
+      candles = await DataLayer.fetchHistoryCached(snapBs,
+        (from) => DataLayer.fetchBitstampHistory(state.symbol.bitstampPair, step, from));
       if (state.timeframe.id === "1w" || state.timeframe.id === "1M") {
         candles = aggregateCandles(candles, state.timeframe.id);
       }
@@ -694,7 +698,13 @@ async function loadData() {
       candles = await DataLayer.fetchBybitKlines(state.symbol.bybitSymbol, state.timeframe.bybitInterval, CONFIG.CANDLE_LIMIT);
       if (!candles || candles.length === 0) throw new Error(`Bybit: keine Kerzen für ${state.symbol.bybitSymbol} / ${state.timeframe.bybitInterval}`);
     } else {
-      candles = await DataLayer.fetchGoldHistory();
+      // Gold: Momentaufnahme ab 1968 aus dem Repo, Zuwachs vom Worker.
+      const snapAu = (CONFIG.HISTORY_SNAPSHOTS || {})[state.symbol.id];
+      candles = await DataLayer.fetchHistoryCached(snapAu,
+        (from) => DataLayer.fetchGoldHistory(from));
+      if (state.timeframe.id === "1w" || state.timeframe.id === "1M") {
+        candles = aggregateCandles(candles, state.timeframe.id);
+      }
     }
   } catch (err) {
     if (seq !== _loadSeq) return;   // inzwischen wurde neu geladen
@@ -5740,7 +5750,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m44";
+const TV_BUILD = "m45";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
