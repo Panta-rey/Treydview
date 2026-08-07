@@ -982,22 +982,61 @@ async function loadBinanceSymbols() {
 }
 
 // ---------- Multi-Asset-Vergleich ----------
+// Indizes und Fonds als Vergleichsmassstab immer zulassen, unabhaengig
+// von der Quote-Waehrung des angezeigten Assets.
+const VERGLEICH_IMMER = new Set(["^SPX", "^NDQ", "^DJI", "QQQ", "VTSAX"]);
+
+// Quote-Waehrung eines Symbols.
+//
+// Frueher aus dem Label geraten: `label.includes("/" + q)`. Das trifft
+// "BTC/USDT (Binance)" auch bei q = "USD", weil "/USD" darin als
+// Teilzeichenfolge steckt — die Regel war damit faktisch wirkungslos.
+// Jetzt aus den Symbolfeldern, nicht aus dem Anzeigetext.
+function quoteOf(sym) {
+  if (!sym) return "";
+  switch (sym.type) {
+    case "binance":
+    case "bybit": {
+      const id = (sym.bybitSymbol || sym.id || "").toUpperCase();
+      for (const q of ["USDT", "USDC", "BTC", "USD"]) if (id.endsWith(q)) return q;
+      return "";
+    }
+    case "bitstamp": {
+      const p = (sym.bitstampPair || "").toUpperCase();
+      for (const q of ["USDT", "USDC", "EUR", "USD"]) if (p.endsWith(q)) return q;
+      return "";
+    }
+    case "coinbase": return ((sym.coinbaseProduct || "").split("-")[1] || "").toUpperCase();
+    case "kraken": {
+      const p = (sym.krakenPair || "").toUpperCase();
+      if (p.endsWith("ZUSD") || p.endsWith("USD")) return "USD";
+      return "";
+    }
+    default: return "";
+  }
+}
+
 function renderCompareList(filter = "") {
   const list = document.getElementById("compareList");
   if (!list) return;
   list.innerHTML = "";
   const f = filter.toUpperCase().trim();
 
-  // Quote-Währung des aktiven Symbols ermitteln (aus Label: "BTC/USDT (Binance)" → "USDT")
-  const activeQuote = (["USDT","USDC","USD","BTC"]
-    .find(q => state.symbol.label.includes("/" + q)) || "").toUpperCase();
+  const activeQuote = quoteOf(state.symbol);
 
   const items = state.allSymbols.filter(s => {
-    if (s.type === "worker" || s.type === "stooq") return false;   // Gold und Indizes nie vergleichbar
     if (s.id === state.symbol.id) return false;
     if (state.compareAssets.some(c => c.id === s.id)) return false;
-    // Gleiche Quote-Währung wie aktives Symbol
-    if (activeQuote && !s.label.includes("/" + activeQuote)) return false;
+    // Indizes und Fonds sind IMMER vergleichbar — sie haben keine
+    // Quote-Waehrung im ueblichen Sinn und dienen als Referenzmassstab.
+    if (VERGLEICH_IMMER.has(s.id)) {
+      if (f) return s.id.toUpperCase().includes(f) || s.label.toUpperCase().includes(f);
+      return true;
+    }
+    if (s.type === "worker" || s.type === "stooq") return false;   // uebrige nicht
+    // Gleiche Quote-Waehrung wie das aktive Symbol.
+    const q = quoteOf(s);
+    if (activeQuote && q !== activeQuote) return false;
     if (f) return s.id.toUpperCase().includes(f) || s.label.toUpperCase().includes(f);
     return true;
   });
@@ -1094,6 +1133,15 @@ async function refreshCompareData(entry) {
       candles = await DataLayer.fetchKrakenKlines(entry.krakenPair, tf.krakenInterval || "1440", CONFIG.CANDLE_LIMIT);
     } else if (entry.type === "bybit") {
       candles = await DataLayer.fetchBybitKlines(entry.bybitSymbol, tf.bybitInterval || "D", CONFIG.CANDLE_LIMIT);
+    } else if (entry.type === "stooq") {
+      // Indizes und Fonds sind als Vergleich ausdruecklich erlaubt (siehe
+      // renderCompareList). Ohne diesen Zweig landeten sie im
+      // Binance-Abruf und schlugen fehl.
+      candles = await DataLayer.fetchStooqHistory(entry.stooqSymbol);
+    } else if (entry.type === "bitstamp") {
+      const raw = await DataLayer.fetchBitstampHistory(entry.bitstampPair, 86400);
+      candles = (raw || []).map(k => Array.isArray(k)
+        ? { timestamp: k[0], open: k[1], high: k[2], low: k[3], close: k[4], volume: k[5] } : k);
     } else {
       // Binance nutzt das reine Symbol. Sicherheitsnetz: sollte der Typ
       // einmal fehlen, wird nicht blind die interne id verschickt.
@@ -5195,18 +5243,16 @@ function applyLogScale() {
     btn.title = state.logScale ? "Preisskala: logarithmisch" : "Preisskala: linear";
     btn.setAttribute("aria-pressed", state.logScale ? "true" : "false");
   }
-  // Eigene Achse fuer den Log-Modus.
+  // Zur Log-Achse: die Ursache lag NICHT hier, sondern in KLineCharts
+  // selbst. calcRange liefert im Log-Modus realFrom/realTo als PREISE
+  // zurueck (10^log), waehrend _calcTicks daraus gleichmaessige Abstaende
+  // bildet — die Striche verteilen sich also im Preisraum, gezeichnet
+  // werden sie im Logarithmusraum. Bei BTC ab 2011 lag der kleinste
+  // Strich dadurch bei 200'000, darunter kam nichts mehr.
   //
-  // KLineCharts verteilt die Striche zwar korrekt logarithmisch, hoert
-  // aber nach wenigen Werten auf — bei BTC ab 2011 (fuenf Zehnerpotenzen)
-  // fehlte die gesamte untere Haelfte der Skala. "logSafe" ist in
-  // overlays.js registriert und erzeugt eine durchgehende Leiter.
-  try {
-    chart.setPaneOptions({
-      id: "candle_pane",
-      axis: { name: state.logScale ? "logSafe" : "default" },
-    });
-  } catch (e) { /* aeltere Bundles ohne registerYAxis */ }
+  // Behoben durch zwei chirurgische Aenderungen im Bundle, siehe HANDOFF
+  // unter "KLineCharts-Patches". Hier ist deshalb nichts mehr noetig
+  // ausser dem Neuvermessen.
   try { chart.resize(); } catch (e) {}
 
   // VRVP und Vergleichslinien zeichnen auf ein eigenes Canvas und rechnen
@@ -5909,7 +5955,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m49";
+const TV_BUILD = "m50";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 6. August 2026 · Build m47**
+**Stand: 7. August 2026 · Build m50**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -111,13 +111,13 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m47)
+## Datei-MD5 (Build m50)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | 6a7338ec2a27bf93d11a05e6266448ba | 1312 |
-| style.css | 561018399248b6f519867ad48fb1f9ac | 1417 |
-| app.js | 3d55d529f867f29e102ed08b50d02343 | 6999 |
+| index.html | d70f31c5a8afc0adc8ba971d57a51064 | 1312 |
+| style.css | ef93184e33d1635816efe8b289e89f8c | 1417 |
+| app.js | 14bf27c2385db4efa5179ae9bde3172b | 6999 |
 | overlays.js | 0fe65a446d07bbf9f9f5a2e944642c94 | 1570 |
 | ewt.js | 312c0e7f95529fbb83125cd21cf1a12b | 1294 |
 | config.js | eedee9e84b8b5a15aff9da2430bc3faf | 493 |
@@ -474,6 +474,94 @@ Liefert je Wellengrad: Pivot-Anzahl, gepruefte Startpunkte, wie oft jede
 Regel scheiterte, wie viele Zaehlungen gueltig und bestaetigt sind, und ein
 Histogramm der gewinnenden Skip-Tupel. Beantwortet „warum finde ich nichts"
 mit Zahlen statt Vermutungen.
+
+# KLineCharts-Patches im Bundle  (WICHTIG bei jedem Update)
+
+`js/lib/klinecharts.min.js` ist **modifiziert**. Bei einem Bibliotheks-
+Update gehen diese Aenderungen verloren und muessen neu angewandt werden.
+
+## 1. Overlay-Deckkraft  (alt)
+
+`var St=1` -> `St=0.2`
+
+## 2. Log-Achse: Teilstriche im falschen Raum  (m50)
+
+**Der Fehler, an dem vier Anlaeufe gescheitert sind.** Er lag NICHT im
+Projektcode, sondern in KLineCharts 9.8.12 selbst — deshalb halfen weder
+`resize()`, noch `setPaneOptions`, noch eine eigene Achse ueber
+`registerYAxis`.
+
+In `calcRange` gilt fuer den Log-Modus:
+
+```
+l = log10(min); c = log10(max);        // from/to sind LOG-Werte
+T===Log ? (A=xt(l), F=xt(c), ...)      // realFrom/realTo = 10^log = PREISE
+```
+
+`_calcTicks` rechnet aber mit `realFrom`/`realTo` und verteilt die
+Teilstriche damit gleichmaessig im **Preisraum**, waehrend
+`_innerConvertToPixel` sie im **Logarithmusraum** zeichnet.
+
+Nachgerechnet fuer BTC ab 2011 (2.22 bis 134'326, mit gap-Aufschlag
+0.74 bis 1'214'847): Tick-Intervall 200'000, Striche bei
+200k/400k/…/1.2M — **unterhalb von 200'000 kein einziger Strich**, also
+auf vier von fuenf Zehnerpotenzen nichts. Genau das war im Chart zu sehen.
+
+Zwei chirurgische Ersetzungen:
+
+```
+ALT: T===t.YAxisType.Log?(A=xt(l),F=xt(c),L=Math.abs(F-A)):(A=l,F=c,L=R)
+NEU: (A=l,F=c,L=R)
+
+ALT: case t.YAxisType.Log:r=o._innerConvertToPixel(_t(+n)),i=K(n,g);break;
+NEU: case t.YAxisType.Log:r=o._innerConvertToPixel(+n),i=K(xt(+n),g),v&&(i=l.formatBigNumber(xt(+n)));break;
+```
+
+Die erste liefert `realFrom`/`realTo` als Log-Werte, sodass `_calcTicks`
+im Logarithmusraum verteilt. Die zweite zieht daraus die Konsequenz: der
+Tick-Wert IST jetzt ein Log-Wert, also Pixel ohne nochmaliges `log10`,
+Beschriftung mit Ruecktransformation `xt` (= 10^x).
+
+Ergebnis nachgerechnet: Striche von 1.00 bis 398'107 statt nur ueber
+200'000.
+
+Pruefen nach einem Update:
+
+```bash
+grep -c 'St=0.2' js/lib/klinecharts.min.js          # 1
+grep -c '(A=l,F=c,L=R)' js/lib/klinecharts.min.js   # 1
+grep -c 'K(xt(+n),g)' js/lib/klinecharts.min.js     # 1
+```
+
+# Vergleichs-Paarung  (m50)
+
+Die Regel „nur Paare mit gleicher Quote-Waehrung" war faktisch
+wirkungslos: sie las die Waehrung aus dem ANZEIGETEXT
+(`label.includes("/" + q)`). Bei aktivem BTC/USD trifft `/USD` auch
+`"BTC/USDT (Binance)"`, weil es dort als Teilzeichenfolge steckt.
+
+`quoteOf(sym)` liest die Waehrung jetzt aus den SYMBOLFELDERN
+(`bitstampPair`, `krakenPair`, `coinbaseProduct`, `bybitSymbol`, `id`),
+nicht aus dem Label.
+
+**Ausnahme:** `VERGLEICH_IMMER` = ^SPX, ^NDQ, ^DJI, QQQ, VTSAX sind
+unabhaengig von der Quote-Waehrung immer waehlbar — sie dienen als
+Referenzmassstab. Dafuer brauchte `refreshCompareData` einen
+`stooq`-Zweig; ohne ihn landeten sie im Binance-Abruf und schlugen fehl.
+`bitstamp` fehlte dort ebenfalls.
+
+# Derivate-Symbolabbildung  (m49)
+
+Funding, Open Interest und Long/Short kommen vom Binance-Futures-Markt.
+`derivSymbolFor(sym)` bildet das angezeigte Asset darauf ab; fuer Gold,
+Indizes und Fonds liefert es `null` und der Abruf entfaellt.
+
+**Vorgeschichte, damit es nicht ein drittes Mal kippt:** urspruenglich
+stand dort `state.symbol.value` — ein Feld, das es an Symbolen nie gab.
+Der Aufruf lief mit `undefined` und traf den Vorgabewert `"BTCUSDT"` der
+Funktion, war also fuer BTC zufaellig richtig. Der naheliegende „Fix" auf
+`state.symbol.id` machte es schlimmer: `"BTCUSD_BS"` kennt die
+Futures-API nicht, Funding und OI fielen ganz aus.
 
 # Wellengrade und Unterteilung  (m47)
 
