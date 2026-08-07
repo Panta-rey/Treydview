@@ -1540,6 +1540,78 @@
     },
   });
 
+  // ---------- Y-Achse mit sauberen Log-Teilstrichen ----------
+  //
+  // KLineCharts 9.8.12 erzeugt auf der Log-Achse zwar korrekt LOGARITHMISCH
+  // verteilte Striche — im Chart nachgemessen liegen 800k/400k/200k/100k
+  // exakt 51 px auseinander — hoert damit aber nach wenigen Werten auf.
+  // Bei BTC ab 2011 (2.22 bis 134'000, also fuenf Zehnerpotenzen) fehlte
+  // dadurch die gesamte untere Haelfte der Skala, obwohl Platz da war.
+  //
+  // registerYAxis gibt uns createTicks({range, bounding, defaultTicks}).
+  // Eigene Koordinaten koennen wir darin nicht berechnen — aber aus zwei
+  // vorhandenen Strichen laesst sich die Abbildung ableiten, denn auf der
+  // Log-Achse gilt  coord = A + B * log10(preis)  exakt. Damit erzeugen
+  // wir die klassische 1-2-5-Leiter ueber alle Dekaden und rechnen ihre
+  // Positionen selbst aus.
+  //
+  // Faellt irgendetwas davon aus (weniger als zwei Striche, entartete
+  // Abbildung), bleibt es bei den Vorgabestrichen — schlimmstenfalls
+  // sieht es aus wie vorher, nie schlechter.
+  klinecharts.registerYAxis({
+    name: "logSafe",
+    createTicks: ({ range, bounding, defaultTicks }) => {
+      const dt = defaultTicks || [];
+      if (dt.length < 2) return dt;
+
+      const paare = dt
+        .map(t => ({ v: parseFloat(t.value), c: t.coord }))
+        .filter(p => isFinite(p.v) && p.v > 0 && isFinite(p.c));
+      if (paare.length < 2) return dt;
+
+      const a = paare[0], b = paare[paare.length - 1];
+      const la = Math.log10(a.v), lb = Math.log10(b.v);
+      if (!isFinite(la) || !isFinite(lb) || Math.abs(lb - la) < 1e-9) return dt;
+
+      // coord = A + B * log10(preis)
+      const B = (b.c - a.c) / (lb - la);
+      const A = a.c - B * la;
+      if (!isFinite(A) || !isFinite(B) || B === 0) return dt;
+
+      const hoehe = (bounding && bounding.height) || 0;
+      if (!hoehe) return dt;
+
+      // Sichtbare Preisspanne aus der Umkehrung der Abbildung.
+      const preisBei = (coord) => Math.pow(10, (coord - A) / B);
+      let p1 = preisBei(0), p2 = preisBei(hoehe);
+      let lo = Math.min(p1, p2), hi = Math.max(p1, p2);
+      if (!(lo > 0) || !(hi > lo)) return dt;
+
+      // 1-2-5-Leiter je Dekade. Bei sehr grossen Spannen nur die vollen
+      // Dekaden, sonst stehen die Beschriftungen uebereinander.
+      const dekaden = Math.log10(hi / lo);
+      const stufen = dekaden > 4 ? [1] : dekaden > 2 ? [1, 3] : [1, 2, 5];
+      const werte = [];
+      for (let e = Math.floor(Math.log10(lo)); e <= Math.ceil(Math.log10(hi)); e++) {
+        for (const s of stufen) {
+          const v = s * Math.pow(10, e);
+          if (v >= lo && v <= hi) werte.push(v);
+        }
+      }
+      if (werte.length < 3) return dt;
+
+      // Format: grosse Zahlen ohne Nachkommastellen, kleine mit.
+      const fmt = (v) => v >= 1000 ? Math.round(v).toLocaleString("de-CH")
+                       : v >= 1    ? String(+v.toFixed(2))
+                                   : String(+v.toPrecision(2));
+      return werte.map(v => ({
+        value: String(v),
+        text: fmt(v),
+        coord: A + B * Math.log10(v),
+      }));
+    },
+  });
+
   // ---------- Polyline (nur Rendering) ----------
   // Das Zeichnen läuft klickbasiert über eigene Handler in app.js
   // (startPolyline), analog zum Freihand-Werkzeug. Hier nur die Darstellung

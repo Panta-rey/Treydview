@@ -130,7 +130,10 @@ const state = {
     hollow:      false,
     lineColor:   "#e8b64c",
     lineWidth:   2,
-    areaFill:    true,
+    // Flaeche unter der Linie standardmaessig AUS. Bei Indizes und Fonds,
+    // die als Linie starten, verdeckt die Fuellung sonst den unteren
+    // Chartbereich, ohne Information zu liefern.
+    areaFill:    false,
     fillOpacity: 15,
   },
 
@@ -666,6 +669,7 @@ async function loadData() {
   const seq = ++_loadSeq;
   if (state.closeStream) { state.closeStream(); state.closeStream = null; }
   setLive("offline", "lädt …");
+  applyDefaultChartTypeFor(state.symbol);
   setStatus(`Lade ${state.symbol.label} (${state.timeframe.label}) …`);
   let candles;
   try {
@@ -3885,6 +3889,33 @@ function gbMarketData(dailyD) {
   };
 }
 
+// Welches Binance-Futures-Symbol passt zum angezeigten Asset?
+//
+// Funding, Open Interest und Long/Short kommen vom Binance-Futures-Markt.
+// Der Chart kann aber Bitstamp-Spot, Gold oder einen Index zeigen — dann
+// braucht es entweder eine Abbildung oder gar keinen Abruf.
+//
+// Vorgeschichte, damit es nicht ein drittes Mal kippt: urspruenglich stand
+// hier `state.symbol.value`, ein Feld, das es an Symbolen nie gab. Der
+// Aufruf lief also mit undefined und traf den Vorgabewert "BTCUSDT" der
+// Funktion — zufaellig richtig fuer BTC, falsch fuer alles andere. Der
+// naheliegende "Fix" auf state.symbol.id machte es schlimmer: "BTCUSD_BS"
+// kennt die Futures-API nicht, und Funding/OI fielen ganz aus.
+function derivSymbolFor(sym) {
+  if (!sym) return null;
+  if (sym.type === "binance") return sym.id;          // schon passend
+  // Basiswaehrung herausloesen und auf den USDT-Perpetual abbilden.
+  const basis =
+      sym.type === "bitstamp" ? (sym.bitstampPair || "").replace(/usd$/, "")
+    : sym.type === "bybit"    ? (sym.bybitSymbol || "").replace(/USDT$/, "")
+    : sym.type === "coinbase" ? (sym.coinbaseProduct || "").split("-")[0]
+    : sym.type === "kraken"   ? (sym.krakenPair || "").replace(/^X/, "").replace(/Z?USD$/, "")
+    : null;
+  if (!basis) return null;                            // Gold, Indizes, Fonds
+  const b = basis.toUpperCase().replace(/^XBT$/, "BTC");
+  return b ? b + "USDT" : null;
+}
+
 // ---------- Rechnen und rendern ----------
 async function gbRefresh(force) {
   // Tages-Kerzen separat holen — ATR/SMA/ER sollen immer auf Tagesdaten basieren,
@@ -3915,11 +3946,11 @@ async function gbRefresh(force) {
   document.getElementById("gbUpdated").textContent = "lädt…";
 
   let deriv = { funding: null, oi: null, ls: null, fng: null, errors: [] };
+  // Fuer Gold, Indizes und Fonds gibt es keinen Perpetual — dort waeren
+  // Funding und Open Interest sinnlos. Fear&Greed ist symbolunabhaengig
+  // und wird trotzdem geholt.
   try {
-    // state.symbol hat id/label/type — ein Feld "value" gab es nie.
-    // Der Aufruf lief also immer mit undefined; Fear&Greed ist
-    // symbolunabhaengig und kam trotzdem an, Funding/OI/LS nicht.
-    deriv = await Derivatives.fetchAll(state.symbol.id);
+    deriv = await Derivatives.fetchAll(derivSymbolFor(state.symbol));
   } catch (e) {
     deriv.errors = [String(e.message || e)];
   }
@@ -5164,13 +5195,18 @@ function applyLogScale() {
     btn.title = state.logScale ? "Preisskala: logarithmisch" : "Preisskala: linear";
     btn.setAttribute("aria-pressed", state.logScale ? "true" : "false");
   }
-  // Die Y-Achse behaelt nach dem Umschalten ihre alte Spanne, bis sie neu
-  // vermessen wird — beim Herauszoomen reichte sie dann nicht mehr bis
-  // zum unteren Rand. Ein erzwungenes Neuzeichnen samt Resize setzt sie
-  // zurueck.
+  // Eigene Achse fuer den Log-Modus.
+  //
+  // KLineCharts verteilt die Striche zwar korrekt logarithmisch, hoert
+  // aber nach wenigen Werten auf — bei BTC ab 2011 (fuenf Zehnerpotenzen)
+  // fehlte die gesamte untere Haelfte der Skala. "logSafe" ist in
+  // overlays.js registriert und erzeugt eine durchgehende Leiter.
   try {
-    chart.setPaneOptions({ id: "candle_pane", axis: { scrollZoomEnabled: true } });
-  } catch (e) {}
+    chart.setPaneOptions({
+      id: "candle_pane",
+      axis: { name: state.logScale ? "logSafe" : "default" },
+    });
+  } catch (e) { /* aeltere Bundles ohne registerYAxis */ }
   try { chart.resize(); } catch (e) {}
 
   // VRVP und Vergleichslinien zeichnen auf ein eigenes Canvas und rechnen
@@ -5215,6 +5251,29 @@ function whenChartReady(fn, minKerzen = 200) {
     setTimeout(tick, 200);
   };
   tick();
+}
+
+// Indizes und Fonds starten als Linie.
+//
+// Sie haben keine sinnvollen Dochte: die Worker-Quelle liefert bei
+// FRED-Rueckfall nur Schlusskurse, und auch bei Yahoo ist die Tagesspanne
+// eines breiten Index fuer die Betrachtung nebensaechlich. Als Kerze waere
+// das ein Strich, als Linie ist es korrekt.
+//
+// Nur beim ERSTEN Wechsel auf ein solches Symbol; wer danach bewusst auf
+// Kerzen stellt, behaelt das.
+const LINIEN_SYMBOLE = new Set(["^SPX", "^NDQ", "^DJI", "QQQ", "VTSAX"]);
+function applyDefaultChartTypeFor(sym) {
+  if (!sym || !LINIEN_SYMBOLE.has(sym.id)) return;
+  if (state.lineDefaultApplied === sym.id) return;
+  state.lineDefaultApplied = sym.id;
+  if (state.chartType === "area") return;      // schon Linie
+  state.chartType = "area";
+  const lbl = document.getElementById("typeLabel");
+  if (lbl) lbl.textContent = "Linie";
+  try { chart.setStyles(baseStyles()); } catch (e) {}
+  try { renderTypeList(); } catch (e) {}
+  saveWorkspace();
 }
 
 // ---------- Y-Achse entsperren ----------
@@ -5850,7 +5909,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m48";
+const TV_BUILD = "m49";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
