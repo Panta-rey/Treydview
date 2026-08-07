@@ -46,6 +46,15 @@ const DataLayer = {
   // gespeicherte war moeglicherweise noch unvollstaendig und wird vom
   // Zuwachs ueberschrieben.
   async fetchBinanceKlinesSince(symbol, interval, startTime) {
+    // OHNE startTime liefert Binance die JUENGSTEN 1000 Kerzen, nicht die
+    // aeltesten. Wer hier ohne Stichtag hereinkommt, will die volle
+    // Historie — dafuer gibt es fetchBinanceKlines(), das rueckwaerts
+    // ueber endTime blaettert. Ohne diese Weiche kam genau eine Seite
+    // zurueck und die Momentaufnahme blieb bei 1000 Kerzen stehen.
+    if (!startTime) {
+      const rows = await this.fetchBinanceKlines(symbol, interval, CONFIG.CANDLE_LIMIT);
+      return rows.map(r => [r.timestamp, r.open, r.high, r.low, r.close, r.volume]);
+    }
     const MAX_PER_REQ = 1000;
     const out = [];
     let from = startTime;

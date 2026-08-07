@@ -59,7 +59,7 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 .dd-ind-row input[type=checkbox]{accent-color:var(--accent);cursor:pointer;}
 .dd-ind-row label{flex:1;font-size:12px;color:var(--text-dim);cursor:pointer;}
 .dd-ind-row label:hover{color:var(--text);}
-.ind-gear{background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:2px 4px;border-radius:3px;}
+.ind-gear{background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:17px;line-height:1;padding:2px 5px;border-radius:3px;}
 .ind-gear:hover{color:var(--accent);background:var(--bg-hover);}
 
 /* ---- Live-Badge ---- */
@@ -141,6 +141,10 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 .log-scale-btn{position:absolute;right:6px;z-index:25;width:22px;height:22px;display:flex;align-items:center;justify-content:center;padding:0;background:var(--bg-raised);color:var(--text-dim);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-family:var(--font-mono);font-size:11px;font-weight:600;line-height:1;opacity:.75;transition:color .12s,border-color .12s,opacity .12s;}
 .log-scale-btn:hover{color:var(--text);border-color:rgba(232,182,76,.5);opacity:1;}
 .log-scale-btn.active{color:var(--accent);border-color:rgba(232,182,76,.6);opacity:1;}
+/* Vergleichs-Knopf: die Kurzform hatte nur eine Mobile-Regel, aber keine
+   Desktop-Vorgabe — dadurch waren "+ Vergleich" UND "+" gleichzeitig zu
+   sehen. Neuer Selektor, trifft kein bestehendes Element. */
+.compare-label-short{display:none;}
 
 /* Tooltip-Toggle-Row im Indikator-Dropdown */
 
@@ -823,7 +827,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m47"; }
+:root { --tv-build: "m48"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */

@@ -70,6 +70,10 @@ const CONFIG = {
     // Beschriftung waere falsche Information unter richtigem Chart.
     { id: "^NDQ", label: "Nasdaq Composite", type: "stooq", stooqSymbol: "^ndq" },
     { id: "^DJI", label: "Dow Jones",  type: "stooq", stooqSymbol: "^dji" },
+    // Fonds. Laufen ueber denselben Worker-Weg wie die Indizes, aber ohne
+    // FRED-Rueckfall — fuer Fondsanteile gibt es dort keine Reihen.
+    { id: "QQQ",   label: "Invesco QQQ Trust",     type: "stooq", stooqSymbol: "qqq"   },
+    { id: "VTSAX", label: "Vanguard VTSAX",        type: "stooq", stooqSymbol: "vtsax" },
     // Kraken BTC/USD und ETH/USD sind ENTFALLEN. Sie standen nur hier,
     // weil sie mehr Historie boten als Binance (2013 bzw. 2016). Seit
     // Bitstamp ab 2011 liefert, sind sie ueberholt: weder mehr Tiefe noch

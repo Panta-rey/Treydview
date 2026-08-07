@@ -478,6 +478,11 @@ const INDEX_QUELLEN = {
   "^spx": { yahoo: "^GSPC",  fred: "SP500"     },   // S&P 500
   "^ndq": { yahoo: "^IXIC",  fred: "NASDAQCOM" },   // Nasdaq Composite (passend zum FRED-Pendant)
   "^dji": { yahoo: "^DJI",   fred: "DJIA"      },   // Dow Jones Industrial Average
+  // Fonds statt Indizes: fuer beide gibt es kein FRED-Pendant, sie laufen
+  // also nur ueber Yahoo. Faellt Yahoo aus, bleibt der Cache — anders als
+  // bei den Indizes gibt es hier keinen zweiten Weg.
+  "qqq":   { yahoo: "QQQ",   fred: null        },   // Invesco QQQ Trust
+  "vtsax": { yahoo: "VTSAX", fred: null        },   // Vanguard Total Stock Market
 };
 
 const STOOQ_TTL_MS = 24 * 60 * 60 * 1000;   // Tagesdaten, 24h Cache reicht
@@ -524,6 +529,9 @@ async function buildIndexReihe(quellen, key, s) {
     // Dann FRED (nur Schlusskurse, aber verlaesslich). O/H/L werden gleich
     // Close gesetzt, damit das Format stimmt — als Kerze waere das ein
     // Strich, als Linie voellig korrekt.
+    // Fondsanteile (QQQ, VTSAX) haben kein FRED-Pendant — dort ist
+    // quellen.fred bewusst null und Yahoo der einzige Weg.
+    if (!quellen.fred) throw new Error(`Yahoo fehlgeschlagen (${eYahoo.message}), für dieses Symbol gibt es keinen FRED-Rückfall`);
     if (!key) throw new Error(`Yahoo fehlgeschlagen (${eYahoo.message}), FRED-Schlüssel fehlt`);
     try {
       const obs = await fredSeries(quellen.fred, key, "2010-01-01");

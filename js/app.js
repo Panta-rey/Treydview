@@ -763,7 +763,12 @@ async function loadData() {
   // zuerst starten, bevor ein zusätzlicher Derivate-Fetch losgeht.
   // Bei Symbolwechsel wird nur aktualisiert wenn der Bot eh offen ist.
   if (!state.gbResult || state.gbOpen) {
-    setTimeout(() => quiet(() => gbRefresh(false), "cycle bar init"), 800);
+    // Frueher: setTimeout(..., 800). Ein geratener Zeitwert — laedt die
+    // Historie laenger (Momentaufnahmen sind mehrere hundert KB), rechnete
+    // der Grid Bot auf einem halb gefuellten Chart und meldete "Mayer –",
+    // weil SMA200 mit unter 200 Kerzen null liefert. Jetzt haengt es am
+    // tatsaechlichen Ladeende.
+    whenChartReady(() => quiet(() => gbRefresh(false), "cycle bar init"));
   }
 
   if (state.symbol.type === "kraken" || state.symbol.type === "coinbase" || state.symbol.type === "bybit") {
@@ -3894,6 +3899,12 @@ async function gbRefresh(force) {
       dailyD = await DataLayer.fetchBybitKlines(state.symbol.bybitSymbol, "D", 210);
     } else if (state.symbol.type === "kraken") {
       dailyD = await DataLayer.fetchKrakenKlines(state.symbol.krakenPair, "1440", 210);
+    } else if (state.symbol.type === "bitstamp") {
+      // Sonst rechnete Mayer/ATR auf Wochen- oder Monatskerzen, sobald der
+      // Chart nicht auf 1D steht.
+      dailyD = await DataLayer.fetchBitstampHistory(state.symbol.bitstampPair, 86400);
+      dailyD = (dailyD || []).slice(-210).map(k => Array.isArray(k)
+        ? { timestamp: k[0], open: k[1], high: k[2], low: k[3], close: k[4], volume: k[5] } : k);
     }
   } catch (e) { dailyD = null; }   // Fallback: Chart-Kerzen
 
@@ -3905,7 +3916,10 @@ async function gbRefresh(force) {
 
   let deriv = { funding: null, oi: null, ls: null, fng: null, errors: [] };
   try {
-    deriv = await Derivatives.fetchAll(state.symbol.value);
+    // state.symbol hat id/label/type — ein Feld "value" gab es nie.
+    // Der Aufruf lief also immer mit undefined; Fear&Greed ist
+    // symbolunabhaengig und kam trotzdem an, Funding/OI/LS nicht.
+    deriv = await Derivatives.fetchAll(state.symbol.id);
   } catch (e) {
     deriv.errors = [String(e.message || e)];
   }
@@ -5150,6 +5164,15 @@ function applyLogScale() {
     btn.title = state.logScale ? "Preisskala: logarithmisch" : "Preisskala: linear";
     btn.setAttribute("aria-pressed", state.logScale ? "true" : "false");
   }
+  // Die Y-Achse behaelt nach dem Umschalten ihre alte Spanne, bis sie neu
+  // vermessen wird — beim Herauszoomen reichte sie dann nicht mehr bis
+  // zum unteren Rand. Ein erzwungenes Neuzeichnen samt Resize setzt sie
+  // zurueck.
+  try {
+    chart.setPaneOptions({ id: "candle_pane", axis: { scrollZoomEnabled: true } });
+  } catch (e) {}
+  try { chart.resize(); } catch (e) {}
+
   // VRVP und Vergleichslinien zeichnen auf ein eigenes Canvas und rechnen
   // Preise selbst in Pixel um — die muessen nach dem Achsenwechsel neu.
   try { if (state.active.has("vrvp")) requestAnimationFrame(drawVrvp); } catch (e) {}
@@ -5179,6 +5202,20 @@ function placeLogScaleBtn() {
       : "Preisskala linear");
   });
 })();
+
+// Auf geladene Kerzen warten, statt eine Ladezeit zu raten.
+// Prueft in kurzen Abstaenden, ob genug Kerzen da sind, und gibt nach
+// 20 Sekunden auf — sonst haengt der Aufrufer bei einem Ladefehler ewig.
+function whenChartReady(fn, minKerzen = 200) {
+  let versuche = 0;
+  const tick = () => {
+    let n = 0;
+    try { n = (chart.getDataList() || []).length; } catch (e) { n = 0; }
+    if (n >= minKerzen || ++versuche > 100) { fn(); return; }
+    setTimeout(tick, 200);
+  };
+  tick();
+}
 
 // ---------- Y-Achse entsperren ----------
 // KLineCharts erlaubt vertikales Draggen nur wenn autoCalcTickFlag=false ist.
@@ -5813,7 +5850,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m47";
+const TV_BUILD = "m48";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
