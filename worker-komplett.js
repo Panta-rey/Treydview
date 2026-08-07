@@ -349,7 +349,11 @@ async function getBitstamp(request, env) {
 
   let data;
   try {
-    data = await buildBitstampHistory(pair, step);
+    // Lange Historie nur bei Tageskerzen. Bei 1h/4h waeren es ueber 15
+    // Jahre hunderttausende Kerzen, die niemand braucht und die den
+    // Worker an sein CPU-Limit bringen.
+    const maxKerzen = step >= 86400 ? 0 : 6000;
+    data = await buildBitstampHistory(pair, step, maxKerzen);
   } catch (e) {
     if (cached && cached.data) return json(zuschneiden(cached.data, from));   // lieber alt als gar nichts
     return json({ error: String(e && e.message || e) }, 500);
@@ -358,20 +362,31 @@ async function getBitstamp(request, env) {
   return json(zuschneiden(data, from));
 }
 
-async function buildBitstampHistory(pair, step) {
+async function buildBitstampHistory(pair, step, maxKerzen) {
+  // ── RUECKWAERTS paginieren, nicht vorwaerts ──────────────────────
+  //
+  // Die erste Fassung startete bei August 2011 — dem BTC-Listing. Fuer
+  // ETH gab es damals nichts, Bitstamp lieferte eine leere erste Seite,
+  // die Schleife brach ab und der Worker warf 500. Der Fehler war, das
+  // Listing-Datum ANZUNEHMEN statt es herauszufinden.
+  //
+  // Rueckwaerts ab heute ueber "end" hat drei Vorteile: das Startdatum
+  // ist egal und faellt als Ergebnis heraus, unbekannte Paare
+  // funktionieren ohne Anpassung, und man kann nach genug Kerzen
+  // aufhoeren — noetig fuer kurze Intervalle, wo 15 Jahre Historie
+  // niemand braucht.
   const BASE = `https://www.bitstamp.net/api/v2/ohlc/${pair}/`;
   const LIMIT = 1000;
-  // 2011-08-01 — kurz vor dem ersten BTC/USD-Handel auf Bitstamp.
-  let start = Math.floor(Date.UTC(2011, 7, 1) / 1000);
-  const jetzt = Math.floor(Date.now() / 1000);
-  const alle = new Map();       // ms -> Kerze, entdoppelt ueber den Zeitstempel
+  const grenze = maxKerzen && maxKerzen > 0 ? maxKerzen : Infinity;
+  const alle = new Map();
+  let end = Math.floor(Date.now() / 1000);
 
-  // Obergrenze als Notbremse: bei Stundenkerzen ueber 15 Jahre waeren es
-  // ueber 130 Seiten. Der Worker hat ein CPU-Limit.
-  const MAX_SEITEN = step >= 86400 ? 12 : 60;
+  // Genug fuer 15 Jahre Tageskerzen; bei kurzen Intervallen greift
+  // vorher die Kerzengrenze.
+  const MAX_SEITEN = 20;
 
-  for (let seite = 0; seite < MAX_SEITEN && start < jetzt; seite++) {
-    const u = `${BASE}?step=${step}&limit=${LIMIT}&start=${start}`;
+  for (let seite = 0; seite < MAX_SEITEN; seite++) {
+    const u = `${BASE}?step=${step}&limit=${LIMIT}&end=${end}`;
     const r = await fetch(u, { cf: { cacheTtl: 3600 } });
     if (!r.ok) throw new Error(`Bitstamp HTTP ${r.status} (Seite ${seite + 1})`);
     const j = await r.json();
@@ -379,7 +394,7 @@ async function buildBitstampHistory(pair, step) {
     if (!ohlc) throw new Error("Bitstamp: unerwartetes Format");
     if (ohlc.length === 0) break;
 
-    let letzterTs = start;
+    let aeltester = end;
     for (const k of ohlc) {
       const ts = parseInt(k.timestamp, 10);
       const o = parseFloat(k.open), h = parseFloat(k.high);
@@ -387,16 +402,20 @@ async function buildBitstampHistory(pair, step) {
       const v = parseFloat(k.volume);
       if (!isFinite(ts) || !isFinite(cl) || cl <= 0) continue;
       alle.set(ts * 1000, [ts * 1000, o, h, l, cl, isFinite(v) ? v : 0]);
-      if (ts > letzterTs) letzterTs = ts;
+      if (ts < aeltester) aeltester = ts;
     }
-    // Kommt keine neue Kerze mehr, ist das Ende erreicht — sonst laeuft
-    // die Schleife bis MAX_SEITEN ohne Fortschritt.
-    if (letzterTs <= start) break;
-    start = letzterTs + step;
+    if (alle.size >= grenze) break;
+    // Weniger als eine volle Seite = Anfang der Historie erreicht.
+    if (ohlc.length < LIMIT) break;
+    if (aeltester >= end) break;          // kein Fortschritt
+    end = aeltester - step;
   }
 
-  const kerzen = [...alle.values()].sort((a, b) => a[0] - b[0]);
-  if (kerzen.length === 0) throw new Error("Bitstamp: keine Kerzen erhalten");
+  let kerzen = [...alle.values()].sort((a, b) => a[0] - b[0]);
+  if (kerzen.length === 0) {
+    throw new Error(`Bitstamp: keine Kerzen fuer ${pair} (Paar gelistet?)`);
+  }
+  if (kerzen.length > grenze) kerzen = kerzen.slice(-grenze);
 
   return {
     source: `Bitstamp ${pair.toUpperCase()} (step ${step}s)`,

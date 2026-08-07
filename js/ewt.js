@@ -43,11 +43,60 @@
   "use strict";
 
   const DEFAULTS = {
-    // ---- Skalen ----
-    // Mehrere Wellengrade gleichzeitig. Ohne das sieht man immer nur
-    // eine Aufloesung und verpasst sowohl die grossen Strukturen als
-    // auch die feinen. Beide Referenz-Indikatoren machen es genauso.
-    degrees: [5, 9, 17],
+    // ---- Wellengrade ----
+    //
+    // Ein Wellengrad ist NICHT durch Dauer definiert, sondern durch seine
+    // Position in der Verschachtelung: eine Welle heisst "Intermediate",
+    // weil sie einen Grad unter der Primary liegt, zu der sie gehoert.
+    // Die Dauern unten sind Faustregeln zur Verankerung, keine Definition.
+    //
+    // Entscheidend ist das VERHAELTNIS zwischen den Graden (~3.3x). Es
+    // folgt aus der Selbstaehnlichkeit: ein vollstaendiger Zyklus hat acht
+    // Beine (5+3), und jedes Bein ist selbst ein Zyklus der naechsttieferen
+    // Ebene. Die fruehere Skala (base, base*1.8, base*3.4) lag zwischen
+    // zwei Graden und traf keinen sauber.
+    //
+    // Das Fraktal-Fenster folgt aus dem KERZENINTERVALL, nicht aus der
+    // Chartlaenge. Dadurch heisst dieselbe Struktur auf 1D und 1W gleich,
+    // statt einmal "Grad 5" und einmal "Grad 26".
+    degreeDefs: [
+      { key: "primary",      label: "Primary",      days: 365 },
+      { key: "intermediate", label: "Intermediate", days: 120 },
+      { key: "minor",        label: "Minor",        days:  35 },
+      { key: "minute",       label: "Minute",       days:  10 },
+    ],
+    // Welche Grade gezeichnet werden. Der naechsttiefere wird intern
+    // ZUSAETZLICH gerechnet, weil die Unterteilungspruefung ihn braucht.
+    degrees: ["primary", "intermediate"],
+    // Gemeinsamer Faktor fuer alle Fenster. Bewusst EIN Wert statt vier
+    // Einzelzahlen: das 3.3x-Verhaeltnis ist der inhaltlich bedeutsame
+    // Teil, einzeln verschoben zerstoert man die Hierarchie, die den
+    // Gradnamen erst rechtfertigt. Krypto laeuft schneller als Aktien —
+    // ein Wert um 0.5-0.7 passt fuer BTC oft besser.
+    degreeScale: 1.0,
+
+    // ---- Zaehlbasis ----
+    //
+    // Hoch/Tief oder Schlusskurse. Die Fachwelt ist uneins: verbreitete
+    // Lehrtexte empfehlen Schlusskurse, weil Intraday-Spitzen die
+    // Wellenverhaeltnisse verzerren — Prechters eigenes System EWAVES
+    // benutzt dagegen ausdruecklich Extrema und zeigt gar keine
+    // Schlusskurse an. Deshalb waehlbar, Vorgabe wie EWAVES.
+    basis: "hl",          // "hl" = Hoch/Tief, "close" = Schlusskurse
+
+    // ---- Unterteilung ----
+    //
+    // Eine Impulswelle verlangt fuenf Unterwellen in Trendrichtung
+    // (5-3-5-3-5). Ohne diese Pruefung ist "Impuls" eine Behauptung: eine
+    // korrektive Struktur mit fuenf Beinen kann dieselbe Form haben.
+    //
+    // Die Pruefung ist DREIWERTIG. "nicht aufloesbar" ist kein
+    // Regelverstoss — EWAVES raeumt selbst ein, dass die innere Struktur
+    // ueber kurze Intervalle quantisierungsbedingt nicht erkennbar ist und
+    // ihr System deshalb ueber Datensegmente "blinzeln" muss.
+    checkSubdivision: true,
+    requireSubdivision: false,   // als Filter zuschaltbar, Vorgabe aus
+    subTolerance: 0.15,          // erlaubter Ueberhang je Wellenende
 
     // ---- Pivot-Kette ----
     // Mindestbewegung zwischen zwei aufeinanderfolgenden Pivots, in
@@ -61,7 +110,6 @@
     // Skaliert mit sqrt(Grad-Verhaeltnis) — die typische Schwungweite
     // waechst bei einem Zufallspfad mit der Wurzel der Fensterbreite.
     minPivotPercent: 1.5,
-    scalePivotWithDegree: true,
 
     // ---- Struktur ----
     // Welle 5 muss ueber Welle 3 hinaus.
@@ -213,21 +261,26 @@
   //
   // Gleichstaende: links strikt, rechts erlaubend. Ohne diese Asymmetrie
   // liefert ein Plateau aus zwei exakt gleichen Hochs GAR KEIN Fraktal.
-  function findFractals(data, n) {
+  function findFractals(data, n, basis) {
     const out = [], len = data.length;
     if (len < 2 * n + 1) return out;
+    // Auf Schlusskursbasis sind Hoch und Tief derselbe Wert — Doechte
+    // fallen weg, Ausreisser koennen die Zaehlung nicht mehr kippen.
+    const useClose = basis === "close";
+    const HI = (i) => useClose ? data[i].close : data[i].high;
+    const LO = (i) => useClose ? data[i].close : data[i].low;
     for (let i = n; i < len - n; i++) {
-      const h = data[i].high, l = data[i].low;
+      const h = HI(i), l = LO(i);
       let isHigh = true, isLow = true;
       for (let j = i - n; j < i; j++) {
-        if (data[j].high >= h) isHigh = false;
-        if (data[j].low  <= l) isLow  = false;
+        if (HI(j) >= h) isHigh = false;
+        if (LO(j) <= l) isLow  = false;
         if (!isHigh && !isLow) break;
       }
       if (!isHigh && !isLow) continue;
       for (let j = i + 1; j <= i + n; j++) {
-        if (data[j].high > h) isHigh = false;
-        if (data[j].low  < l) isLow  = false;
+        if (HI(j) > h) isHigh = false;
+        if (LO(j) < l) isLow  = false;
         if (!isHigh && !isLow) break;
       }
       if (isHigh) out.push({ index: i, price: h, type: "high", confirmIndex: i + n });
@@ -257,6 +310,33 @@
       out.push(p);
     }
     return out;
+  }
+
+  // ── WELLENGRADE AUS DEM KERZENINTERVALL ABLEITEN ────────────────
+  //
+  // n = (Wellendauer / Kerzenintervall) / 2, mal dem gemeinsamen Faktor.
+  // Ergibt sich ein Fenster unter 2, ist der Grad fuer dieses Intervall
+  // zu fein — dann gibt es dort schlicht nichts zu sehen, und das wird
+  // gemeldet statt stillschweigend uebersprungen.
+  function ableitenGrade(data, opts) {
+    const len = data.length;
+    if (len < 3) return [];
+    // Median der letzten Abstaende: einzelne Datenluecken sollen die
+    // Intervallerkennung nicht kippen.
+    const d = [];
+    for (let i = Math.max(1, len - 40); i < len; i++) {
+      const x = data[i].timestamp - data[i - 1].timestamp;
+      if (x > 0) d.push(x);
+    }
+    if (!d.length) return [];
+    d.sort((a, b) => a - b);
+    const barMs = d[Math.floor(d.length / 2)];
+    const skala = opts.degreeScale > 0 ? opts.degreeScale : 1;
+    return (opts.degreeDefs || []).map(def => {
+      const bars = (def.days * 86400000) / barMs;
+      const n = Math.round((bars / 2) * skala);
+      return { ...def, n, zuFein: n < 2, barMs };
+    });
   }
 
   // ============================================================
@@ -526,32 +606,34 @@
       const from = Math.max(0, range && range.from != null ? range.from : 0);
       const to   = Math.min(len - 1, range && range.to != null ? range.to : len - 1);
 
-      // ---- Wellengrade an die Datenmenge anpassen ----
+      // ---- Wellengrade bestimmen ----
       //
-      // Ein Grad n erzeugt ungefaehr len/(2n) Pivots. Fuer eine
-      // Fuenferzaehlung braucht es sechs aufeinanderfolgende davon, und
-      // damit ueberhaupt eine Auswahl entsteht, realistisch etwa 15.
-      // Daraus folgt n <= len/30.
+      // Die frueher hier stehende Deckelung (degMax = Kerzen/30) war ein
+      // Notbehelf gegen eine Skala, die Grade erzeugte, die es gar nicht
+      // geben konnte. Mit aus dem Intervall abgeleiteten Graden entfaellt
+      // sie: die einzige sinnvolle Bedingung ist, ob die Pivot-Kette
+      // ueberhaupt sechs Punkte fuer EINE Zaehlung hergibt.
       //
-      // Gemessen an 110 Kerzen (Monatschart ueber neun Jahre):
-      //   Grad 2 -> 22 Pivots -> 2 Zaehlungen
-      //   Grad 3 -> 13 Pivots -> 1 Zaehlung
-      //   Grad 5 ->  8 Pivots -> 0 Zaehlungen
-      //   Grad 9 ->  5 Pivots -> 0 Zaehlungen
-      // Grade jenseits der Grenze kosten nur Rechenzeit und liefern
-      // garantiert nichts. Statt sie stumm mitlaufen zu lassen, werden
-      // sie uebersprungen und gemeldet — sonst sucht man den Fehler im
-      // Scanner, wo schlicht die Datenmenge nicht reicht.
-      const degMax = Math.max(2, Math.floor(len / 30));
-      const degreesUsed = [], degreesSkipped = [];
-      for (const n of opts.degrees) {
-        (n <= degMax ? degreesUsed : degreesSkipped).push(n);
+      // Zusaetzlich zu den angezeigten Graden wird der naechsttiefere
+      // mitgerechnet — die Unterteilungspruefung braucht ihn, auch wenn
+      // er nicht gezeichnet wird.
+      const alleGrade = ableitenGrade(data, opts);
+      const gewaehlt = new Set(opts.degrees || []);
+      const zeigen = alleGrade.filter(g => gewaehlt.has(g.key) && !g.zuFein);
+      const zuFein  = alleGrade.filter(g => gewaehlt.has(g.key) && g.zuFein);
+
+      // Feinster gewaehlter Grad -> sein Nachfolger dient nur der Pruefung
+      let rechnen = zeigen.slice();
+      if (opts.checkSubdivision && zeigen.length) {
+        const idx = alleGrade.findIndex(g => g.key === zeigen[zeigen.length - 1].key);
+        const kind = alleGrade[idx + 1];
+        if (kind && !kind.zuFein && !gewaehlt.has(kind.key)) {
+          rechnen = rechnen.concat([{ ...kind, nurPruefung: true }]);
+        }
       }
-      // Mindestens der feinste Grad laeuft immer, sonst faende man nie etwas.
-      if (!degreesUsed.length && opts.degrees.length) {
-        degreesUsed.push(Math.min(...opts.degrees));
-        const i = degreesSkipped.indexOf(degreesUsed[0]);
-        if (i >= 0) degreesSkipped.splice(i, 1);
+      if (!rechnen.length) {
+        return { impulses: [], abcs: [], setups: [],
+                 degreesUsed: [], degreesTooFine: zuFein, alleGrade };
       }
 
       // ---- Kennzahlen einmal ueber den vollen Datensatz ----
@@ -595,11 +677,20 @@
       const impulses = [], abcs = [], setups = [];
 
       // ---- Je Wellengrad einmal durchgehen ----
-      for (const n of degreesUsed) {
+      for (const grad of rechnen) {
+        const n = grad.n;
         if (len < 2 * n + 8) continue;
-        const degScale = opts.scalePivotWithDegree
-          ? Math.sqrt(n / Math.max(1, opts.degrees[0])) : 1;
-        const chain = buildChain(findFractals(data, n), opts.minPivotPercent * degScale);
+        // Keine Skalierung der Pivot-Schwelle mehr nach Grad.
+        //
+        // Sie brachte gemessen fast nichts (54 -> 52 Pivots bei Grad 17)
+        // und wurde mit den abgeleiteten Graden sogar schaedlich: Scan und
+        // Diagnose bezogen sie auf unterschiedliche Referenzgrade, wodurch
+        // der Scan die Schwelle auf 4.8 % zog und Strukturen verwarf, die
+        // die Diagnose noch meldete. Das Fraktal-Fenster leistet die
+        // gradgerechte Filterung ohnehin; die Prozentschwelle raeumt nur
+        // Rauschen weg und darf fuer alle Grade gleich sein.
+        const chain = buildChain(findFractals(data, n, opts.basis),
+                                 opts.minPivotPercent);
         if (chain.length < 6) continue;
 
         // ================= Impuls 1-2-3-4-5 =================
@@ -735,7 +826,8 @@
             0.08 * (v.ratio == null ? 0.5 : Math.min(1, v.ratio / 2))));
 
           impulses.push({
-            kind: "impulse", degree: n, dir: bull ? "bull" : "bear",
+            kind: "impulse", degree: n, degreeKey: grad.key, degreeLabel: grad.label,
+            nurPruefung: !!grad.nurPruefung, dir: bull ? "bull" : "bear",
             points: p.map(x => ({ index: x.index, price: x.price })),
             chainPos: k, confirmIndex: p[5].confirmIndex,
             skips: found.skips,
@@ -832,7 +924,8 @@
             }
             if (abcFound) {
               abcs.push({
-                kind: "abc", degree: n, dir: bull ? "bear" : "bull",
+                kind: "abc", degree: n, degreeKey: grad.key, degreeLabel: grad.label,
+                nurPruefung: !!grad.nurPruefung, dir: bull ? "bear" : "bull",
                 points: [{ index: p[5].index, price: p[5].price },
                          { index: abcFound.A.index, price: abcFound.A.price },
                          { index: abcFound.B.index, price: abcFound.B.price },
@@ -851,7 +944,7 @@
         // Eigener Modus: EIN bestaetigtes Bein, danach die logarithmische
         // Golden Pocket und die Zustandsmaschine. Das ist die urspruengliche
         // Fassung — jetzt aber ohne die Filter, die alles verworfen haben.
-        if (opts.detectSetups && n === degreesUsed[0]) {
+        if (opts.detectSetups && !grad.nurPruefung && zeigen.length && grad.key === zeigen[zeigen.length - 1].key) {
           for (let k = 0; k + 1 < chain.length; k++) {
             const lp = chain[k], hp = chain[k + 1];
             if (lp.type !== "low" || hp.type !== "high") continue;
@@ -946,7 +1039,7 @@
               0.20 * Math.min(1, risePct / (opts.setupMinPercent * 3))));
 
             setups.push({
-              kind: "setup", degree: n,
+              kind: "setup", degree: n, degreeKey: grad.key, degreeLabel: grad.label,
               lowIndex: l, highIndex: h, lowPrice: L, highPrice: H,
               confirmIndex: confirmIdx, boxTop, boxBottom, invalidLevel: L,
               state, resolvedAt, target, w2Low, outcome,
@@ -957,6 +1050,71 @@
             });
           }
         }
+      }
+
+      // ---- Unterteilung pruefen ----
+      //
+      // Eine Impulswelle verlangt fuenf Unterwellen in Trendrichtung; die
+      // Korrekturwellen 2 und 4 verlangen drei. Erst damit ist "Impuls"
+      // mehr als eine Behauptung ueber die Form: eine korrektive Struktur
+      // mit fuenf Beinen kann dieselben fuenf Punkte haben.
+      //
+      // Dreiwertig, und das ist wesentlich: "nicht aufloesbar" ist KEIN
+      // Regelverstoss. Ist der naechsttiefere Grad fuer das Intervall zu
+      // fein, kann die innere Struktur prinzipiell nicht sichtbar sein.
+      // EWAVES raeumt dasselbe ein und laesst sein System deshalb ueber
+      // Datensegmente "blinzeln".
+      const pruefeUnterteilung = (s, kandidaten) => {
+        if (!opts.checkSubdivision) return null;
+        if (!kandidaten || !kandidaten.length) {
+          return { state: "nichtAufloesbar", bestaetigt: 0, von: 5,
+                   grund: "kein feinerer Grad verfügbar" };
+        }
+        const p = s.points;
+        const spanne = p[5].index - p[0].index;
+        const tol = Math.max(1, Math.round(spanne * (opts.subTolerance || 0.15) / 5));
+        let bestaetigt = 0, widerspruch = 0;
+        const details = [];
+        for (let w = 1; w <= 5; w++) {
+          const von = p[w - 1].index, bis = p[w].index;
+          const impulsWelle = (w % 2 === 1);          // 1, 3, 5
+          // Richtung der Unterwelle: Impulswellen laufen mit dem
+          // Elterntrend, die Korrekturen 2 und 4 dagegen.
+          const soll = impulsWelle ? s.dir : (s.dir === "bull" ? "bear" : "bull");
+          const treffer = kandidaten.find(k => {
+            if (impulsWelle && k.kind !== "impulse") return false;
+            if (!impulsWelle && k.kind !== "abc") return false;
+            if (k.dir !== soll) return false;
+            const a = k.points[0].index, b = k.points[k.points.length - 1].index;
+            return a >= von - tol && b <= bis + tol && (b - a) > (bis - von) * 0.4;
+          });
+          if (treffer) { bestaetigt++; details.push({ welle: w, ok: true }); }
+          else {
+            details.push({ welle: w, ok: false });
+            // Widerspruch nur, wenn im Zeitraum ueberhaupt Strukturen des
+            // feineren Grades liegen — sonst ist es Datenmangel, nicht
+            // Gegenbeweis.
+            const irgendwas = kandidaten.some(k => {
+              const a = k.points[0].index, b = k.points[k.points.length - 1].index;
+              return a >= von - tol && b <= bis + tol;
+            });
+            if (irgendwas) widerspruch++;
+          }
+        }
+        const state = bestaetigt === 5 ? "bestaetigt"
+                    : bestaetigt === 0 && widerspruch === 0 ? "nichtAufloesbar"
+                    : widerspruch > bestaetigt ? "widersprochen" : "teilweise";
+        return { state, bestaetigt, von: 5, widerspruch, details };
+      };
+
+      // Kandidaten sind alle Strukturen eines FEINEREN Grades.
+      const feinereAls = (gradN) => {
+        const imp = impulses.filter(x => x.degree < gradN);
+        const ab  = abcs.filter(x => x.degree < gradN);
+        return imp.concat(ab);
+      };
+      for (const s of impulses) {
+        s.subdivision = pruefeUnterteilung(s, feinereAls(s.degree));
       }
 
       // ---- Sichtbereich, Deduplizierung, Kappung ----
@@ -1056,12 +1214,22 @@
         return out;
       };
 
-      let imp = spread(dedupe(impulses.filter(inView)), opts.maxImpulses);
+      // Strukturen, die nur zur Pruefung gerechnet wurden, nicht zeigen.
+      let impSichtbar = impulses.filter(x => !x.nurPruefung);
+      if (opts.requireSubdivision) {
+        // Als Filter zuschaltbar. "nicht aufloesbar" faellt NICHT durch —
+        // fehlende Aufloesung ist kein Gegenbeweis.
+        impSichtbar = impSichtbar.filter(x => !x.subdivision
+          || x.subdivision.state === "bestaetigt"
+          || x.subdivision.state === "nichtAufloesbar");
+      }
+      let imp = spread(dedupe(impSichtbar.filter(inView)), opts.maxImpulses);
       imp.sort((a, b) => a.rightIndex - b.rightIndex);
 
       // Nur Korrekturen zu Impulsen zeigen, die auch gezeichnet werden
       const keep = new Set(imp.map(s => s.degree + ":" + s.points[5].index));
-      const abc = abcs.filter(inView).filter(s => keep.has(s.degree + ":" + s.parentEnd));
+      const abc = abcs.filter(x => !x.nurPruefung).filter(inView)
+                      .filter(s => keep.has(s.degree + ":" + s.parentEnd));
 
       let set = setups.filter(inView);
       const sseen = new Set();
@@ -1076,7 +1244,9 @@
       })), opts.maxSetups);
       set.sort((a, b) => a.highIndex - b.highIndex);
 
-      return { impulses: imp, abcs: abc, setups: set, degreesUsed, degreesSkipped, degMax };
+      return { impulses: imp, abcs: abc, setups: set,
+               degreesUsed: zeigen, degreesTooFine: zuFein, alleGrade,
+               degreesComputed: rechnen };
     },
 
     // ── NULL-HYPOTHESEN-TEST ────────────────────────────────────────
@@ -1247,42 +1417,62 @@
     diagnose(data, userOpts = {}) {
       const opts = { ...DEFAULTS, ...userOpts };
       const MS = Math.max(0, Math.min(4, opts.maxSkip | 0));
-      const tuples = skipTuples(MS);
-      const out = { degrees: {}, gesamt: 0 };
-      for (const n of opts.degrees) {
-        // Dieselbe Grad-Skalierung wie im Scan — sonst meldet die
-        // Diagnose andere Pivot-Zahlen als der Scanner tatsaechlich nutzt.
-        const degScale = opts.scalePivotWithDegree
-          ? Math.sqrt(n / Math.max(1, opts.degrees[0])) : 1;
-        const chain = buildChain(findFractals(data, n), opts.minPivotPercent * degScale);
-        const c = { pivots: chain.length, starts: 0, legFail: 0,
-                    r1: 0, r2: 0, r3: 0, r4: 0, rInt: 0, prop: 0, dur: 0,
+      const grade = ableitenGrade(data, opts);
+      const out = { intervallMs: grade.length ? grade[0].barMs : null,
+                    kerzen: data ? data.length : 0, grade: {}, gesamt: 0 };
+      for (const g of grade) {
+        if (g.zuFein) {
+          out.grade[g.label] = { fenster: g.n, status: "zu fein für dieses Intervall" };
+          continue;
+        }
+        const chain = buildChain(findFractals(data, g.n, opts.basis),
+                                 opts.minPivotPercent);
+        const c = { fenster: g.n, pivots: chain.length, starts: 0, legFail: 0,
+                    r1: 0, r2: 0, r3: 0, r4: 0, rInt: 0, prop: 0,
                     ok: 0, unbestaetigt: 0, skipHisto: {} };
+        if (chain.length < 6) {
+          c.status = `nur ${chain.length} Pivots — für eine Zählung braucht es 6`;
+          out.grade[g.label] = c;
+          continue;
+        }
         for (let k = 0; k + 5 < chain.length; k++) {
           const bull = chain[k].type === "low";
           c.starts++;
-          let hit = false;
-          for (const t of tuples) {
-            const i1 = k + 1 + 2*t[0], i2 = i1 + 1 + 2*t[1], i3 = i2 + 1 + 2*t[2];
-            const i4 = i3 + 1 + 2*t[3], i5 = i4 + 1 + 2*t[4];
-            if (i5 >= chain.length) continue;
-            if (!legClean(chain, k, i1, bull) || !legClean(chain, i1, i2, !bull) ||
-                !legClean(chain, i2, i3, bull) || !legClean(chain, i3, i4, !bull) ||
-                !legClean(chain, i4, i5, bull)) { c.legFail++; continue; }
-            const r = checkRules([chain[k], chain[i1], chain[i2], chain[i3],
-                                  chain[i4], chain[i5]], bull, opts);
-            if (!r.r1) c.r1++; if (!r.r2) c.r2++; if (!r.r3) c.r3++;
-            if (!r.r4) c.r4++; if (!r.rInt) c.rInt++;
-            if (!r.prop) c.prop++; if (!r.dur) c.dur++;
-            if (r.all) {
-              if (chain[i5].confirmIndex >= data.length) { c.unbestaetigt++; continue; }
-              const key = t.join("");
-              c.skipHisto[key] = (c.skipHisto[key] || 0) + 1;
-              c.ok++; hit = true; break;
+          for (let s1 = 0; s1 <= MS; s1++) {
+           const i1 = k + 1 + 2*s1; if (i1 >= chain.length) break;
+           if (!legClean(chain, k, i1, bull)) { c.legFail++; continue; }
+           for (let s2 = 0; s2 <= MS; s2++) {
+            const i2 = i1 + 1 + 2*s2; if (i2 >= chain.length) break;
+            if (!legClean(chain, i1, i2, !bull)) continue;
+            for (let s3 = 0; s3 <= MS; s3++) {
+             const i3 = i2 + 1 + 2*s3; if (i3 >= chain.length) break;
+             if (!legClean(chain, i2, i3, bull)) continue;
+             for (let s4 = 0; s4 <= MS; s4++) {
+              const i4 = i3 + 1 + 2*s4; if (i4 >= chain.length) break;
+              if (!legClean(chain, i3, i4, !bull)) continue;
+              for (let s5 = 0; s5 <= MS; s5++) {
+               const i5 = i4 + 1 + 2*s5; if (i5 >= chain.length) break;
+               if (!legClean(chain, i4, i5, bull)) continue;
+               const r = checkRules([chain[k], chain[i1], chain[i2], chain[i3],
+                                     chain[i4], chain[i5]], bull, opts);
+               if (!r.r1) c.r1++; if (!r.r2) c.r2++; if (!r.r3) c.r3++;
+               if (!r.r4) c.r4++; if (!r.rInt) c.rInt++; if (!r.prop) c.prop++;
+               if (r.all) {
+                 if (chain[i5].confirmIndex >= data.length) { c.unbestaetigt++; }
+                 else {
+                   const key = [s1,s2,s3,s4,s5].join("");
+                   c.skipHisto[key] = (c.skipHisto[key] || 0) + 1;
+                   c.ok++;
+                 }
+                 s1 = s2 = s3 = s4 = s5 = MS + 1;   // erste gueltige genuegt
+               }
+              }
+             }
             }
+           }
           }
         }
-        out.degrees[n] = c;
+        out.grade[g.label] = c;
         out.gesamt += c.ok;
       }
       return out;

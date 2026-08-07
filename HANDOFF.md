@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 6. August 2026 · Build m46**
+**Stand: 6. August 2026 · Build m47**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -111,15 +111,15 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m46)
+## Datei-MD5 (Build m47)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | 5f49639f68acbec0a3a708df545cf505 | 1312 |
-| style.css | de5eecca837c1be1961d1659fc623036 | 1417 |
-| app.js | 5bc79e293ef7f72cceaf002d493f914e | 6999 |
+| index.html | 6a7338ec2a27bf93d11a05e6266448ba | 1312 |
+| style.css | 561018399248b6f519867ad48fb1f9ac | 1417 |
+| app.js | 3d55d529f867f29e102ed08b50d02343 | 6999 |
 | overlays.js | 0fe65a446d07bbf9f9f5a2e944642c94 | 1570 |
-| ewt.js | 6a45297f526fddd02a9b27161189c9ed | 1294 |
+| ewt.js | 312c0e7f95529fbb83125cd21cf1a12b | 1294 |
 | config.js | eedee9e84b8b5a15aff9da2430bc3faf | 493 |
 | data.js | c932ef72973d9b3e4573d4e5a7bedbca | 582 |
 | indicators.js | b7440008bbf4db30475c2a12bef727f8 | 1069 |
@@ -128,7 +128,7 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 | gridbot.js | 3a65ff885ee6d55480deb166d9717b04 | 502 |
 | patterns.js | e94d7c6a70b598fe1bfeecb67c4cc82c | 1016 |
 | derivatives.js | d44aac15f1dc1cc5410801b84f2aa81d | 157 |
-| worker-komplett.js | 1b21194f549ce90f9b9bacbd8d6653f2 | — |
+| worker-komplett.js | d4d8ed708dcf288f17dc18d9d4e0b1dc | — |
 | snapshot.sh | 19b8c1e054a82780d7371ee89af53552 | — |
 
 `snapshot.sh` liegt im Repo-Wurzelverzeichnis, erzeugt `data/*.json`.
@@ -474,6 +474,87 @@ Liefert je Wellengrad: Pivot-Anzahl, gepruefte Startpunkte, wie oft jede
 Regel scheiterte, wie viele Zaehlungen gueltig und bestaetigt sind, und ein
 Histogramm der gewinnenden Skip-Tupel. Beantwortet „warum finde ich nichts"
 mit Zahlen statt Vermutungen.
+
+# Wellengrade und Unterteilung  (m47)
+
+## Grade heissen jetzt wie in der Lehre
+
+Primary, Intermediate, Minor, Minute. Das Fraktal-Fenster wird aus dem
+KERZENINTERVALL abgeleitet, nicht aus der Chartlaenge:
+
+    n = (Wellendauer_Tage / Kerzenintervall_Tage) / 2 * degreeScale
+
+| Grad | Tage | 1M | 1W | 1D |
+|---|---|---|---|---|
+| Primary | 365 | 6 | 26 | 183 |
+| Intermediate | 120 | 2 | 9 | 60 |
+| Minor | 35 | – | 3 | 18 |
+| Minute | 10 | – | – | 5 |
+
+**Warum das die alte Skala ersetzt:** `base, base*1.8, base*3.4` lag
+zwischen zwei Graden und traf keinen sauber. Das echte Verhaeltnis ist
+~3.3x und folgt aus der Selbstaehnlichkeit — ein Zyklus hat acht Beine
+(5+3), jedes Bein ist selbst ein Zyklus der naechsttieferen Ebene.
+
+**degreeScale ist EIN Wert fuer alle Grade**, bewusst nicht vier
+Einzelzahlen: das 3.3x-Verhaeltnis ist der inhaltlich bedeutsame Teil.
+Einzeln verschoben zerstoert man die Hierarchie, die den Gradnamen erst
+rechtfertigt. Krypto laeuft schneller als Aktien — fuer BTC passt oft
+0.5 bis 0.7.
+
+**Die Deckelung `degMax = Kerzen/30` ist ERSATZLOS entfallen.** Sie war
+ein Notbehelf gegen eine Skala, die Grade erzeugte, die es nicht geben
+konnte. Einzige Bedingung ist jetzt: gibt die Pivot-Kette sechs Punkte
+fuer EINE Zaehlung her?
+
+**`scalePivotWithDegree` ebenfalls entfallen.** Gemessen brachte sie fast
+nichts (54 -> 52 Pivots), und mit abgeleiteten Graden wurde sie
+schaedlich: Scan und Diagnose bezogen sie auf verschiedene
+Referenzgrade, wodurch der Scan die Schwelle auf 4.8 % zog und
+Strukturen verwarf, die die Diagnose noch meldete.
+
+## Unterteilungspruefung — „Impuls" ist keine Behauptung mehr
+
+Eine Impulswelle verlangt fuenf Unterwellen; die Korrekturen 2 und 4
+verlangen drei. Ohne Pruefung ist „Impuls" eine Aussage ueber die blosse
+Form — eine korrektive Struktur mit fuenf Beinen hat dieselben Punkte.
+
+Der Scanner rechnet **immer einen Grad feiner** als den angezeigten
+(`nurPruefung: true`, wird nicht gezeichnet) und prueft jede der fuenf
+Wellen dagegen.
+
+**Dreiwertig, und das ist wesentlich:**
+
+| Zustand | Bedeutung |
+|---|---|
+| `bestaetigt` | alle fuenf unterteilen sich regelkonform — nur DANN heisst es „Impuls" |
+| `teilweise` | ein Teil belegt |
+| `nichtAufloesbar` | feinerer Grad zu fein fuer das Intervall — **kein Regelverstoss** |
+| `widersprochen` | Unterwellen da, passen aber nicht |
+
+Unbestaetigte Strukturen heissen im Chart **„5-Punkt-Struktur"**.
+
+`requireSubdivision` filtert darauf, laesst `nichtAufloesbar` aber durch:
+fehlende Aufloesung ist kein Gegenbeweis. EWAVES raeumt dasselbe ein und
+laesst sein System ueber Datensegmente „blinzeln".
+
+## Zaehlbasis waehlbar
+
+`basis: "hl" | "close"`. Die Fachwelt ist uneins: Lehrtexte empfehlen
+Schlusskurse, Prechters eigenes EWAVES benutzt ausdruecklich Extrema und
+zeigt gar keine Schlusskurse an. Vorgabe ist `hl` wie EWAVES.
+
+# Bitstamp: rueckwaerts paginieren  (m47)
+
+Die erste Fassung startete bei August 2011 — dem BTC-Listing. Fuer ETH
+gab es damals nichts, Bitstamp lieferte eine leere erste Seite, die
+Schleife brach ab, Worker warf **HTTP 500**. Der Fehler war, das
+Listing-Datum ANZUNEHMEN statt es herauszufinden.
+
+Jetzt rueckwaerts ab heute ueber `end`. Drei Vorteile: Startdatum egal
+und faellt als Ergebnis heraus, unbekannte Paare funktionieren ohne
+Anpassung, und man kann nach genug Kerzen aufhoeren — bei 1h/4h greift
+`maxKerzen = 6000`, statt 15 Jahre Stundenkerzen zu holen.
 
 # Pruefschritte vor jeder Lieferung
 

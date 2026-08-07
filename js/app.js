@@ -880,6 +880,9 @@ document.getElementById("assetSearch").addEventListener("input", e => renderAsse
 // - Defaults: CONFIG.DEFAULT_SYMBOLS immer enthalten, nie doppelt
 // - Label: "BASE/QUOTE (Exchange)"
 const ALLOWED_QUOTES = new Set(["USDT", "USDC", "USD", "BTC"]);
+// Einzelne Paare, die trotz erlaubter Quote nicht in die Liste sollen.
+// ETHUSDC ist neben ETHUSDT reine Doppelung mit duennerem Buch.
+const BLOCKED_SYMBOLS = new Set(["ETHUSDC"]);
 
 async function loadAllExchangeSymbols() {
   const defaultIds = new Set(CONFIG.DEFAULT_SYMBOLS.map(s => s.id));
@@ -895,6 +898,7 @@ async function loadAllExchangeSymbols() {
       const info = await infoRes.json();
       info.symbols
         .filter(s => s.status === "TRADING" && ALLOWED_QUOTES.has(s.quoteAsset))
+        .filter(s => !BLOCKED_SYMBOLS.has(s.symbol))
         .forEach(s => {
           if (seen.has(s.symbol)) return;
           seen.add(s.symbol);
@@ -1416,7 +1420,11 @@ function renderTfList() {
   CONFIG.TIMEFRAMES.forEach(tf => {
     const item = document.createElement("div");
     // Gold: nur Daily. Kraken: kein Monthly. Coinbase: nur bis Daily. Bybit: alle.
-    const disabled = (goldMode && tf.id !== "1d")
+    // Gold: 1D, 1W und 1M. Woche und Monat entstehen aus den Tagesdaten
+    // (aggregateCandles) — kuerzere Intervalle gibt es nicht, weil die
+    // LBMA nur zwei Fixings je Handelstag veroeffentlicht.
+    const goldTf = new Set(["1d", "1w", "1M"]);
+    const disabled = (goldMode && !goldTf.has(tf.id))
                   || (krakenMode && !tf.krakenInterval)
                   || (coinbaseMode && !tf.coinbaseInterval)
                   || (bybitMode && !tf.bybitInterval);
@@ -4752,13 +4760,20 @@ function ewtReadOpts() {
   // Stufen darueber. Ohne Mehrskalen-Suche sieht man immer nur eine
   // Aufloesung — beide Referenz-Indikatoren rechnen ebenfalls mehrere
   // Laengen gleichzeitig.
-  const base = Math.round(num("ewtSwing", 2, 50, 5));
-  const multi = chk("ewtMultiDegree", true);
-  const degrees = multi
-    ? [base, Math.round(base * 1.8), Math.round(base * 3.4)]
-    : [base];
+  // Wellengrade als NAMEN. Das Fraktal-Fenster leitet ewt.js aus dem
+  // Kerzenintervall ab — dieselbe Struktur heisst dadurch auf 1D und 1W
+  // gleich, statt einmal "Grad 5" und einmal "Grad 26".
+  const degrees = [];
+  if (chk("ewtDegPrimary",      true))  degrees.push("primary");
+  if (chk("ewtDegIntermediate", true))  degrees.push("intermediate");
+  if (chk("ewtDegMinor",        false)) degrees.push("minor");
+  if (chk("ewtDegMinute",       false)) degrees.push("minute");
+  if (!degrees.length) degrees.push("intermediate");
   return {
     degrees,
+    degreeScale:       num("ewtDegScale", 0.3, 3, D.degreeScale),
+    basis:             (document.getElementById("ewtBasis") || {}).value || "hl",
+    requireSubdivision: chk("ewtRequireSub", false),
     minPivotPercent:   num("ewtMinPivotPct", 0, 50, D.minPivotPercent),
     setupMinPercent:   num("ewtMinPct",  0, 500, D.setupMinPercent),
     timeoutBars:       num("ewtTimeout", 1, 500, D.timeoutBars),
@@ -4838,9 +4853,10 @@ function scanEWT() {
   if (!impulses.length && !abcs.length && !setups.length) {
     // Mit Begruendung statt nur "nichts gefunden": meist liegt es an zu
     // wenig Kerzen fuer den gewaehlten Wellengrad, nicht am Kursverlauf.
-    const hint = (res.degreesSkipped && res.degreesSkipped.length)
-      ? ` — Grad ${res.degreesSkipped.join("/")} übersprungen, für ${data.length} Kerzen ist maximal Grad ${res.degMax} sinnvoll`
-      : " — kleineren Wellengrad oder Regelstrenge „locker“ versuchen";
+    const zuFein = (res.degreesTooFine || []).map(g => g.label);
+    const hint = zuFein.length
+      ? ` — ${zuFein.join("/")} ist für dieses Intervall zu fein; gröberen Grad wählen oder Zeitrahmen wechseln`
+      : " — Feinabstimmung senken, Regelstrenge „locker“ oder anderen Wellengrad versuchen";
     setStatus("Keine EWT-Strukturen im sichtbaren Bereich" + hint);
     return;
   }
@@ -4853,11 +4869,15 @@ function scanEWT() {
   // zusammen. Deshalb durchgehend dataIndex, OHNE timestamp.
   const lastIdx = data.length - 1;
   let maxIdxUsed = lastIdx;
-  const degrees = (opts.degrees || EWTEngine.DEFAULTS.degrees);
-  const rankOf = (deg) => {
-    const i = degrees.indexOf(deg);
-    return i < 0 ? 2 : (degrees.length - 1 - i);   // groebster Grad = Rang 0
+  // Rang fuer die Strichstaerke: groebster gezeigter Grad = 0.
+  const gezeigt = (res.degreesUsed || []).map(g => g.key);
+  const rankOf = (key) => {
+    const i = gezeigt.indexOf(key);
+    return i < 0 ? 2 : Math.min(2, i);
   };
+  // Unterteilung kurz und ehrlich benennen.
+  const SUB = { bestaetigt: "✓ unterteilt", teilweise: "teils unterteilt",
+                nichtAufloesbar: "nicht auflösbar", widersprochen: "⚠ Unterteilung fehlt" };
 
   state.ewtOverlayIds = [];
   const push = (id) => { if (id) state.ewtOverlayIds.push(Array.isArray(id) ? id[0] : id); };
@@ -4870,15 +4890,22 @@ function scanEWT() {
         points: s.points.map(p => ({ dataIndex: p.index, value: p.price })),
         lock: true,
         extendData: {
-          kind: "impulse", dir: s.dir, degreeRank: rankOf(s.degree),
+          kind: "impulse", dir: s.dir, degreeRank: rankOf(s.degreeKey),
           labels: ["", "1", "2", "3", "4", "5"],
+          // "Impuls" nur, wenn die Unterteilung es traegt. Sonst
+          // "5-Punkt-Struktur" — die Kardinalregeln sind erfuellt, aber
+          // ob die Wellen selbst fuenfteilig sind, wurde nicht belegt.
           label: labelMode === "aus" ? null
             : labelMode === "kurz"
-              ? `${s.dir === "bull" ? "▲" : "▼"} G${s.degree} · ${Math.round(s.quality * 100)}%`
+              ? `${s.dir === "bull" ? "▲" : "▼"} ${(s.degreeLabel || "").slice(0, 4)}`
+                + ` · ${Math.round(s.quality * 100)}%`
+                + (s.subdivision && s.subdivision.state === "bestaetigt" ? " ✓" : "")
                 + (s.truncated ? " · verk.5" : "")
-              : `Impuls ${s.dir === "bull" ? "▲" : "▼"} Grad ${s.degree}`
+              : `${s.subdivision && s.subdivision.state === "bestaetigt" ? "Impuls" : "5-Punkt-Struktur"}`
+                + ` ${s.dir === "bull" ? "▲" : "▼"} ${s.degreeLabel}`
                 + (s.truncated ? " · verkürzte 5" : "")
-                + ` · W3/W1 ${s.ratio31.toFixed(2)} · Form ${Math.round(s.quality * 100)}%`,
+                + ` · W3/W1 ${s.ratio31.toFixed(2)} · Form ${Math.round(s.quality * 100)}%`
+                + (s.subdivision ? ` · ${SUB[s.subdivision.state]} ${s.subdivision.bestaetigt}/5` : ""),
         },
         onMouseEnter: () => { setChartCursor("pointer"); showEWTWaveHint(s); return false; },
         onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
@@ -4900,12 +4927,12 @@ function scanEWT() {
         points: s.points.map(p => ({ dataIndex: p.index, value: p.price })),
         lock: true,
         extendData: {
-          kind: "abc", dir: s.dir, degreeRank: rankOf(s.degree),
+          kind: "abc", dir: s.dir, degreeRank: rankOf(s.degreeKey),
           labels: ["", "A", "B", "C"],
           label: labelMode === "aus" ? null
             : labelMode === "kurz"
-              ? `${EWT_FORM_SHORT[s.form] || "ABC"} G${s.degree}`
-              : `${EWT_FORM[s.form] || "Korrektur"} · Grad ${s.degree}`
+              ? `${EWT_FORM_SHORT[s.form] || "ABC"} ${(s.degreeLabel || "").slice(0, 4)}`
+              : `${EWT_FORM[s.form] || "Korrektur"} · ${s.degreeLabel}`
                 + ` · B ${(s.ratioBA * 100).toFixed(0)}% · C ${s.ratioCA.toFixed(2)}×A`,
         },
         onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
@@ -5017,21 +5044,33 @@ function scanEWT() {
   // Fehler im Scanner, wo schlicht die Datenmenge nicht reicht: ein Grad
   // n erzeugt etwa len/(2n) Pivots, und fuer eine Fuenferzaehlung braucht
   // es sechs aufeinanderfolgende davon.
-  const skipTxt = (res.degreesSkipped && res.degreesSkipped.length)
-    ? ` · Grad ${res.degreesSkipped.join("/")} übersprungen (zu wenig Kerzen)` : "";
-  const usedTxt = (res.degreesUsed || degrees).join("/");
-  setStatus(`${impulses.length} Impulse · ${abcs.length} Korrekturen · ${setups.length} W2-Zonen`
-    + ` · Grade ${usedTxt}${skipTxt} · log. Fibonacci · Rechtsklick löscht einzelne`);
+  const skipTxt = (res.degreesTooFine && res.degreesTooFine.length)
+    ? ` · ${res.degreesTooFine.map(g => g.label).join("/")} für dieses Intervall zu fein` : "";
+  const usedTxt = (res.degreesUsed || []).map(g => `${g.label} (n=${g.n})`).join(" · ");
+  const bestaetigt = impulses.filter(s => s.subdivision
+    && s.subdivision.state === "bestaetigt").length;
+  const subTxt = impulses.length
+    ? ` · ${bestaetigt}/${impulses.length} mit belegter Unterteilung` : "";
+  setStatus(`${impulses.length} Strukturen${subTxt} · ${abcs.length} Korrekturen · ${setups.length} W2-Zonen`
+    + ` · ${usedTxt}${skipTxt} · Rechtsklick löscht einzelne`);
 }
 
 // Kurz-Info zu einem Wellenzug: die Regelpruefung im Klartext, damit die
 // Zaehlung nachvollziehbar ist statt behauptet.
+const SUB_LANG = {
+  bestaetigt:      "belegt, alle fünf Wellen unterteilen sich regelkonform",
+  teilweise:       "teilweise belegt",
+  nichtAufloesbar: "auf diesem Intervall nicht auflösbar",
+  widersprochen:   "widersprochen — Unterwellen passen nicht",
+};
+
 function showEWTWaveHint(s) {
   if (_patHintPrev == null) _patHintPrev = document.getElementById("statusline").textContent;
   const R = s.rules;
   setStatus(
-    `Impuls Grad ${s.degree} · ${s.dir === "bull" ? "bullisch" : "bärisch"}`
+    `${s.degreeLabel} · ${s.dir === "bull" ? "bullisch" : "bärisch"}`
     + ` · W3 = ${s.ratio31.toFixed(2)}× W1 · W5 = ${s.ratio51.toFixed(2)}× W1`
+    + (s.subdivision ? ` · Unterteilung: ${SUB_LANG[s.subdivision.state]} (${s.subdivision.bestaetigt}/5)` : "")
     + (s.truncated ? " · verkürzte Fünfte (Erschöpfung)" : "")
     + (s.extended ? ` · Welle ${s.extended} verlängert` : "")
     + (s.equality != null ? ` · Gleichheit W1/W5 ${Math.round(s.equality * 100)}%` : "")
@@ -5698,14 +5737,21 @@ document.getElementById("patStrictness").addEventListener("change", (e) => {
     const o = state.ewtOpts || {};
     const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
     const chk = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.checked = !!v; };
-    set("ewtSwing",   o.swingLength);
     set("ewtMinPct",  o.setupMinPercent);
     set("ewtTimeout", o.timeoutBars);
     set("ewtRsiPeriod", o.rsiPeriod);
     set("ewtRsiOs",   o.rsiOversold);
     set("ewtMinPivotPct", o.minPivotPercent);
-    if (Array.isArray(o.degrees) && o.degrees.length) set("ewtSwing", o.degrees[0]);
-    chk("ewtMultiDegree", o.degrees ? o.degrees.length > 1 : true);
+    set("ewtDegScale", o.degreeScale);
+    if (Array.isArray(o.degrees)) {
+      chk("ewtDegPrimary",      o.degrees.includes("primary"));
+      chk("ewtDegIntermediate", o.degrees.includes("intermediate"));
+      chk("ewtDegMinor",        o.degrees.includes("minor"));
+      chk("ewtDegMinute",       o.degrees.includes("minute"));
+    }
+    const ba = document.getElementById("ewtBasis");
+    if (ba && o.basis) ba.value = o.basis;
+    chk("ewtRequireSub", o.requireSubdivision);
     set("ewtMaxSkip", o.maxSkip);
     set("ewtMaxShow", o.maxImpulses);
     const st = document.getElementById("ewtStrict");
@@ -5767,7 +5813,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m46";
+const TV_BUILD = "m47";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

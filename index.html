@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m46">
-  <link rel="stylesheet" href="css/style.css?v=m46">
+  <link rel="manifest" href="manifest.webmanifest?v=m47">
+  <link rel="stylesheet" href="css/style.css?v=m47">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m46"></script>
+  <script src="js/lib/klinecharts.min.js?v=m47"></script>
 </head>
 <body>
 
@@ -283,12 +283,26 @@
           <label><input type="checkbox" id="ewtUseVol"> Volumen-Konfluenz</label>
           <label><input type="checkbox" id="ewtUseEff"> Impuls-Effizienz (ER)</label>
         </div>
-        <div class="pat-row">
-          <label>Wellengrad</label>
-          <input type="number" id="ewtSwing" value="5" min="2" max="50">
+        <div class="pat-types">
+          <div class="pat-group">Wellengrade</div>
+          <label><input type="checkbox" id="ewtDegPrimary" checked> Primary</label>
+          <label><input type="checkbox" id="ewtDegIntermediate" checked> Intermediate</label>
+          <label><input type="checkbox" id="ewtDegMinor"> Minor</label>
+          <label><input type="checkbox" id="ewtDegMinute"> Minute</label>
         </div>
         <div class="pat-row">
-          <label><input type="checkbox" id="ewtMultiDegree" checked> 3 Grade gleichzeitig</label>
+          <label>Grad-Feinabstimmung</label>
+          <input type="number" id="ewtDegScale" value="1" min="0.3" max="3" step="0.1">
+        </div>
+        <div class="pat-row">
+          <label>Zählbasis</label>
+          <select id="ewtBasis">
+            <option value="hl" selected>Hoch / Tief</option>
+            <option value="close">Schlusskurse</option>
+          </select>
+        </div>
+        <div class="pat-row">
+          <label><input type="checkbox" id="ewtRequireSub"> Nur bestätigte Unterteilung</label>
         </div>
         <div class="pat-row">
           <label>Skip-Tiefe je Teilwelle</label>
@@ -864,8 +878,23 @@
           <p>Dazu optional: Welle 5 setzt ein neues Extrem. Standardmässig <b>aus</b>, weil eine verkürzte Fünfte (<i>truncated fifth</i>) kein Zählfehler ist, sondern ein Erschöpfungszeichen — oft die Vorwarnung vor einer scharfen Umkehr. Gemessen wären sonst 30&nbsp;% aller Zählungen unsichtbar. Betroffene Strukturen sind im Etikett als <i>verkürzte 5</i> gekennzeichnet. Und: <b>Diagonalen zulassen</b> hebt Regel 3 auf — in Diagonalen darf Welle 4 Welle 1 überlappen.</p>
           <p>Beim Überfahren einer Struktur steht die Regelprüfung im Klartext in der Statuszeile, damit die Zählung nachvollziehbar ist statt behauptet.</p></div>
 
+        <div class="faq-block"><h4>Unterteilung — was „Impuls" wirklich heisst</h4>
+          <p>Eine Impulswelle verlangt fünf Unterwellen in Trendrichtung, die Korrekturwellen 2 und 4 verlangen drei. Ohne diese Prüfung wäre „Impuls" eine Behauptung über die blosse Form: eine korrektive Struktur mit fünf Beinen kann dieselben fünf Punkte haben.</p>
+          <p>Der Scanner rechnet deshalb immer einen Grad feiner als den, den du anzeigen lässt, und prüft jede der fünf Wellen gegen diesen. Das Ergebnis ist <b>dreiwertig</b>:</p>
+          <p><b>belegt</b> — alle fünf Wellen unterteilen sich regelkonform. Nur dann heisst die Struktur im Etikett „Impuls".<br>
+             <b>teilweise</b> — ein Teil bestätigt, ein Teil nicht.<br>
+             <b>nicht auflösbar</b> — der feinere Grad ist für dieses Intervall zu fein. <i>Kein Regelverstoss</i>: die innere Struktur kann bei zu grober Auflösung prinzipiell nicht sichtbar sein.<br>
+             <b>widersprochen</b> — Unterwellen sind vorhanden, passen aber nicht.</p>
+          <p>Unbestätigte Strukturen heissen <b>5-Punkt-Struktur</b> statt Impuls. Die Kardinalregeln sind erfüllt, die Unterteilung ist nur nicht belegt. Über <i>Nur bestätigte Unterteilung</i> lässt sich darauf filtern — „nicht auflösbar" fällt dabei nicht durch, weil fehlende Auflösung kein Gegenbeweis ist.</p></div>
+
+        <div class="faq-block"><h4>Zählbasis: Hoch/Tief oder Schlusskurse</h4>
+          <p>Die Fachwelt ist hier uneins. Verbreitete Lehrtexte empfehlen Schlusskurse, weil Intraday-Spitzen die Wellenverhältnisse verzerren. Prechters eigenes automatisiertes System EWAVES benutzt dagegen ausdrücklich Extrema und zeigt gar keine Schlusskurse an.</p>
+          <p>Voreinstellung ist deshalb <b>Hoch/Tief</b> wie bei EWAVES. Auf Schlusskursbasis fallen Dochte weg — Ausreisser können die Zählung dann nicht mehr kippen, dafür gehen echte Extreme verloren, die für Fibonacci-Ziele zählen. Am besten beide vergleichen.</p></div>
+
         <div class="faq-block"><h4>Wellengrad und Skip-Tiefe</h4>
-          <p><b>Wellengrad</b> ist die Fenstergrösse der Fraktalsuche. Mit <b>3 Grade gleichzeitig</b> läuft der Scanner zusätzlich auf dem 1.8- und 3.4-fachen Wert — dieselbe Bewegung erscheint dann auf mehreren Ebenen, was der Sinn der Sache ist. Gröbere Grade werden kräftiger gezeichnet.</p>
+          <p><b>Wellengrade</b> heissen jetzt wie in der Lehre: Primary, Intermediate, Minor, Minute. Ein Wellengrad ist nicht durch Dauer definiert, sondern durch seine Position in der Verschachtelung — eine Welle heisst „Intermediate", weil sie einen Grad unter der Primary liegt, zu der sie gehört.</p>
+          <p>Das Fraktal-Fenster leitet der Scanner aus dem <b>Kerzenintervall</b> ab. Dadurch heisst dieselbe Struktur auf 1D und 1W gleich, statt einmal „Grad 5" und einmal „Grad 26". Ist ein Grad für das gewählte Intervall zu fein, sagt die Statuszeile das.</p>
+          <p>Die <b>Grad-Feinabstimmung</b> skaliert alle Fenster gemeinsam. Bewusst ein einziger Wert und nicht vier Einzelzahlen: das Verhältnis von rund 3.3× zwischen den Graden folgt aus der Selbstähnlichkeit — verschiebt man die Grade einzeln, zerstört man genau die Hierarchie, die den Namen rechtfertigt. Krypto läuft schneller als Aktien; für BTC passt oft ein Wert um 0.5 bis 0.7.</p>
           <p><b>Skip-Tiefe</b> erlaubt jeder Teilwelle, Zwischenextrema zu überspringen. Ohne das müsste ein ganzer Wellenzug in einer Auflösung liegen. Gemessen brauchen 73 % der gefundenen Impulse einen Skip über 0 — meist Welle 3, die als verlängerte Welle eigene Unterkorrekturen enthält. Auf 0 gestellt findet der Scanner nur rund ein Viertel.</p>
           <p><b>Min. Pivot-Bewegung</b> räumt Rauschen beim Aufbau der Pivot-Kette weg. Zu hoch eingestellt zerfallen grosse Strukturen.</p>
           <p>Der Wellengrad ist die wirksamste Stellschraube. Ein Grad von&nbsp;2 macht das Fraktal-Fenster nur zwei Kerzen breit und erzeugt sehr viele Rauschpivots; 5 ist für die meisten Zeitrahmen ein guter Ausgangspunkt.</p></div>
@@ -1297,16 +1326,16 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m46"></script>
-<script src="js/indicators.js?v=m46"></script>
-<script src="js/overlays.js?v=m46"></script>
-<script src="js/data.js?v=m46"></script>
-<script src="js/settings.js?v=m46"></script>
-<script src="js/derivatives.js?v=m46"></script>
-<script src="js/gridbot.js?v=m46"></script>
-<script src="js/patterns.js?v=m46"></script>
-<script src="js/smc.js?v=m46"></script>
-<script src="js/ewt.js?v=m46"></script>
-<script src="js/app.js?v=m46"></script>
+<script src="js/config.js?v=m47"></script>
+<script src="js/indicators.js?v=m47"></script>
+<script src="js/overlays.js?v=m47"></script>
+<script src="js/data.js?v=m47"></script>
+<script src="js/settings.js?v=m47"></script>
+<script src="js/derivatives.js?v=m47"></script>
+<script src="js/gridbot.js?v=m47"></script>
+<script src="js/patterns.js?v=m47"></script>
+<script src="js/smc.js?v=m47"></script>
+<script src="js/ewt.js?v=m47"></script>
+<script src="js/app.js?v=m47"></script>
 </body>
 </html>
