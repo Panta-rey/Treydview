@@ -1406,15 +1406,6 @@ function shortSymbol(label) {
   return (parts.at(-1) || s).toUpperCase().slice(0, 5);
 }
 
-// Beschriftung des Asset-Buttons. Auf Mobil nur das Paar (Klammer-Suffix wie
-// „(Binance)" oder „(ab 1968)" weg), damit der Button schmal bleibt und neben
-// „+" Platz fuer das Typ-Zahnrad ist. Auf Desktop das volle Label.
-function assetLabelText(sym) {
-  const full = (sym && sym.label) || "";
-  if (!tvIsMobile()) return full;
-  return full.replace(/\s*\([^)]*\)\s*$/, "").trim() || full;
-}
-
 function drawLine(ctx, dataList, from, to, valFn, color, width, dl, yFn, chart) {
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
@@ -6247,8 +6238,18 @@ quiet(() => {
   }
 }, "build check");
 
-const tvIsMobile = () =>
-  window.matchMedia("(max-width: 720px), (pointer: coarse)").matches;
+function tvIsMobile() {
+  return window.matchMedia("(max-width: 720px), (pointer: coarse)").matches;
+}
+
+// Beschriftung des Asset-Buttons. Auf Mobil nur das Paar (Klammer-Suffix wie
+// „(Binance)" oder „(ab 1968)" weg), damit der Button schmal bleibt und neben
+// „+" Platz fuer das Typ-Zahnrad ist. Auf Desktop das volle Label.
+function assetLabelText(sym) {
+  const full = (sym && sym.label) || "";
+  if (!tvIsMobile()) return full;
+  return full.replace(/\s*\([^)]*\)\s*$/, "").trim() || full;
+}
 
 // ── 1. Knöpfe in die beiden Reihen und die Bottom Bar verschieben ─────
 // appendChild verschiebt den vorhandenen Knoten; alle Ereignis-Handler
