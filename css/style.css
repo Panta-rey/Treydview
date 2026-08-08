@@ -831,7 +831,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m52"; }
+:root { --tv-build: "m53"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -980,7 +980,6 @@ input, textarea, select, [contenteditable="true"] {
 
   /* Auf dem Handy überflüssig oder anderswo vertreten */
   .brand,
-  #typeDropdown,
   #screenshotBtn,
   #autoZoomBtn,
   #liveBadge,
@@ -989,10 +988,17 @@ input, textarea, select, [contenteditable="true"] {
   .mobile-info-bar,
   .drawbar            { display: none !important; }
 
+  /* Chart-Typ-Dropdown auf Mobil als Zahnrad-Icon neben „+" (Vergleich).
+     Text/Pfeil aus, Icon an; der Panel-Inhalt bleibt wie auf Desktop. */
+  #typeDropdown { display: inline-flex !important; }
+  #typeTrigger  { padding: 0; width: 38px; height: 38px; justify-content: center; }
+  #typeTrigger .type-label-text { display: none; }
+  .type-gear-icon { width: 19px; height: 19px; }
+
   /* Zyklus-Pills: gewünschte Reihenfolge F&G · Fund · OI.
      Im HTML steht F&G, OI, Fund — daher OI nach hinten sortieren.
      Mayer und ER bleiben dem Bot-Panel vorbehalten (kein Platz). */
-  .cycle-bar { display: flex !important; gap: 4px; }
+  .cycle-bar { display: flex !important; gap: 7px; }
   #cycleFng  { order: 1; }
   #cycleFund { order: 2; }
   #cycleOi   { order: 3; }
@@ -1371,7 +1377,7 @@ input, textarea, select, [contenteditable="true"] {
     z-index: 630;
   }
   #tbRow1 .tb-gap { display: none; }
-  #tbRow1 .cycle-bar { flex-direction: column; gap: 4px; }
+  #tbRow1 .cycle-bar { flex-direction: column; gap: 6px; }
   #tbRow1 .cycle-pill { font-size: 9px; padding: 3px 4px; }
 
   /* Zeile 2 bleibt oben, zwischen den Leisten */

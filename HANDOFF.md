@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 8. August 2026 · Build m52**
+**Stand: 8. August 2026 · Build m53**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -111,13 +111,13 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m52)
+## Datei-MD5 (Build m53)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | 18d7a58dc3b3c0af1990500a5e099f2c | 1349 |
-| style.css | 468c63b1b12fef7c1f34226999ee8182 | 1425 |
-| app.js | e0cce4f82ed0939c2f7673abf45e9c1c | 7436 |
+| index.html | 67f2cb57d0d5a7bdbc247ca0667b215f | 1353 |
+| style.css | 06f18b844df3422e0f1e0506408539e1 | 1431 |
+| app.js | 0e16794737a5b8fb08d47f28bb333e1c | 7461 |
 | overlays.js | 6dfb80fe2336535e32c78f9c769d5b2b | 1577 |
 | ewt.js | 297d592de041e9131c9402113758922d | 1493 |
 | config.js | e72204add3e08b38264009f1d704d843 | 517 |
@@ -132,8 +132,8 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 | worker-komplett.js | fd3121620864c9421f5edf054df72814 | — |
 | snapshot.sh | 19b8c1e054a82780d7371ee89af53552 | — |
 
-> **m52 geändert:** config.js, app.js, overlays.js, klinecharts.min.js
-> (+ index.html/style.css nur Build-Tag). Alles andere unverändert seit m51.
+> **m53 geändert:** app.js, style.css, index.html. Alles andere (inkl.
+> klinecharts.min.js) unverändert seit m52.
 
 `snapshot.sh` liegt im Repo-Wurzelverzeichnis, erzeugt `data/*.json`.
 `smc.js`, `gridbot.js`, `patterns.js`, `derivatives.js` sind seit vor m17
@@ -268,6 +268,45 @@ Titel, sobald ihr erster Punkt rausscrollt.
 überlappen die Projektions-/Setup-Boxen stark (Dichte, kein Bug); `ewtZone`
 zeichnet über `needDefaultYAxisFigure` einen Achsen-Preis-Tag in US-Format
 („24,756.00") statt de-CH.
+
+---
+
+## Build m53 — Änderungen (8. August 2026)
+
+Vier Punkte aus dem Mobil-Live-Test. ESLint no-undef sauber, Desktop-Basis-CSS
+identisch (alle CSS-Änderungen in @media), kein Bundle angefasst.
+
+**1 · Charttyp folgt dem Asset** (`app.js`) — Bug war: `applyDefaultChartTypeFor`
+setzte für Indizes einmalig „area" und stellte NIE zurück, deshalb blieb z. B.
+BTC/USDT als (gefüllte) Linie hängen, wenn man von einem Index kam. Neu:
+- `LINIEN_SYMBOLE` um `XAUUSD` (Gold) ergänzt → 6 Linien-Assets (^SPX, ^NDQ,
+  ^DJI, QQQ, VTSAX, XAUUSD).
+- `applyDefaultChartTypeFor` setzt bei jedem echten Symbolwechsel den Typ nach
+  Asset: die 6 → „area", alle anderen → „candle_solid". `lineDefaultApplied`
+  merkt sich das Symbol, sodass es nur beim Wechsel greift (manuelle Wahl
+  bleibt über Timeframe-Wechsel erhalten).
+- `baseStyles`: Flächenfüllung für die 6 hart aus (`cs.areaFill && !isLineSymbol`),
+  unabhängig vom globalen Füll-Schalter — saubere Linie ohne Fläche.
+- Trade-off bewusst: beim Assetwechsel wird der Asset-Standardtyp gesetzt, eine
+  manuelle Typwahl geht dabei verloren.
+
+**2.1 · Zyklus-Pill-Abstände (Mobil)** (`style.css`) — Gap 4→7px (Reihe),
+4→6px (schmale Spaltenvariante). Nur @media.
+
+**2.2 · Mobil: Asset-Button schmal + Typ-Zahnrad** (`app.js`, `style.css`,
+`index.html`):
+- `assetLabelText(sym)`: auf Mobil nur das Paar (Klammer-Suffix wie „(Binance)"/
+  „(ab 1968)" gestrippt), Desktop volles Label. In `syncLabels` + der zweiten
+  Setzstelle verdrahtet. (`shortSymbol` passt nicht — gibt nur „BTC".)
+- `#typeDropdown` (Kerzen/Linie) war auf Mobil `display:none`. Jetzt: aus der
+  Verstecken-Liste raus, im Mobil-Layout in Zeile 2 hinter `compareDropdown`
+  (neben „+"), Trigger auf Mobil als Zahnrad-Icon (`.type-gear-icon mobile-only`,
+  Text/Pfeil `.type-label-text` per @media aus). Panel-Inhalt unverändert
+  (`renderTypeList`), also „geöffnet wie Desktop".
+- Desktop-Fassung unberührt: Zahnrad ist `mobile-only`, alle CSS-Regeln in
+  @media, Layout-Verschiebung hinter `tvIsMobile()`.
+
+**3 · HANDOFF** — diese Aktualisierung.
 
 ### Cloudflare-Worker — eigene Datei, eigenes Deployment
 

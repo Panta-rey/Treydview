@@ -305,7 +305,10 @@ function baseStyles() {
       area: {
         lineColor: cs.lineColor,
         lineSize:  cs.lineWidth,
-        backgroundColor: cs.areaFill
+        // Linien-Assets (Indizes/Fonds/Gold) IMMER ohne Flaeche — unabhaengig
+        // vom globalen Fuell-Schalter. Fuer alle anderen folgt die Flaeche
+        // der Nutzereinstellung cs.areaFill.
+        backgroundColor: (cs.areaFill && !isLineSymbol(state.symbol))
           ? [
               { offset: 0, color: hexToRgba(cs.lineColor, cs.fillOpacity) },
               { offset: 1, color: hexToRgba(cs.lineColor, 1) },
@@ -1401,6 +1404,15 @@ function shortSymbol(label) {
   const s = String(label).split("/")[0].trim();
   const parts = s.split(" ");
   return (parts.at(-1) || s).toUpperCase().slice(0, 5);
+}
+
+// Beschriftung des Asset-Buttons. Auf Mobil nur das Paar (Klammer-Suffix wie
+// „(Binance)" oder „(ab 1968)" weg), damit der Button schmal bleibt und neben
+// „+" Platz fuer das Typ-Zahnrad ist. Auf Desktop das volle Label.
+function assetLabelText(sym) {
+  const full = (sym && sym.label) || "";
+  if (!tvIsMobile()) return full;
+  return full.replace(/\s*\([^)]*\)\s*$/, "").trim() || full;
 }
 
 function drawLine(ctx, dataList, from, to, valFn, color, width, dl, yFn, chart) {
@@ -3780,7 +3792,7 @@ function switchSymbol(sym) {
 
   state.symbol = sym;
   saveWorkspace();
-  document.getElementById("assetLabel").textContent = sym.label;
+  document.getElementById("assetLabel").textContent = assetLabelText(sym);
   document.getElementById("assetPanel").classList.remove("open");
   if (sym.type === "worker" || sym.type === "stooq") state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
   // Hinweis: In m29 wurde hier der Charttyp fuer Indizes auf "area"
@@ -3879,7 +3891,7 @@ function syncLabels() {
   const a = document.getElementById("assetLabel");
   const t = document.getElementById("tfLabel");
   const c = document.getElementById("typeLabel");
-  if (a) a.textContent = state.symbol.label;
+  if (a) a.textContent = assetLabelText(state.symbol);
   if (t) t.textContent = state.timeframe.label;
   if (c) c.textContent = state.chartType === "area" ? "Linie" : "Kerzen";
 }
@@ -5358,22 +5370,35 @@ function whenChartReady(fn, minKerzen = 200) {
 
 // Indizes und Fonds starten als Linie.
 //
-// Sie haben keine sinnvollen Dochte: die Worker-Quelle liefert bei
-// FRED-Rueckfall nur Schlusskurse, und auch bei Yahoo ist die Tagesspanne
-// eines breiten Index fuer die Betrachtung nebensaechlich. Als Kerze waere
-// das ein Strich, als Linie ist es korrekt.
+// Diese Assets werden als Linie dargestellt: breite Indizes/Fonds liefern
+// (Stooq-Rueckfall) nur Schlusskurse, als Kerze waere das ein Strich. Gold
+// (LBMA) ebenso. Fuer ALLE anderen ist Kerze der Standard.
 //
-// Nur beim ERSTEN Wechsel auf ein solches Symbol; wer danach bewusst auf
-// Kerzen stellt, behaelt das.
-const LINIEN_SYMBOLE = new Set(["^SPX", "^NDQ", "^DJI", "QQQ", "VTSAX"]);
+// Der Standardtyp folgt dem Asset: bei jedem echten Symbolwechsel wird er neu
+// gesetzt (Linie fuer die 6, sonst Kerze). Innerhalb desselben Assets bleibt
+// eine manuelle Wahl erhalten — auch ueber Timeframe-Wechsel, weil dann das
+// Symbol gleich bleibt.
+const LINIEN_SYMBOLE = new Set(["^SPX", "^NDQ", "^DJI", "QQQ", "VTSAX", "XAUUSD"]);
+function isLineSymbol(sym) {
+  return !!sym && LINIEN_SYMBOLE.has(sym.id);
+}
 function applyDefaultChartTypeFor(sym) {
-  if (!sym || !LINIEN_SYMBOLE.has(sym.id)) return;
+  if (!sym) return;
+  // Nur beim echten Symbolwechsel eingreifen — sonst wuerde jede
+  // Neuzeichnung (z. B. Timeframe) eine manuelle Typwahl ueberschreiben.
   if (state.lineDefaultApplied === sym.id) return;
   state.lineDefaultApplied = sym.id;
-  if (state.chartType === "area") return;      // schon Linie
-  state.chartType = "area";
+
+  const want = isLineSymbol(sym) ? "area" : "candle_solid";
+  if (state.chartType === want) {
+    // Typ passt schon; Fuellung kann sich trotzdem geaendert haben
+    // (Linien-Assets immer ohne Flaeche), daher Stile neu anwenden.
+    try { chart.setStyles(baseStyles()); } catch (e) {}
+    return;
+  }
+  state.chartType = want;
   const lbl = document.getElementById("typeLabel");
-  if (lbl) lbl.textContent = "Linie";
+  if (lbl) lbl.textContent = want === "area" ? "Linie" : "Kerzen";
   try { chart.setStyles(baseStyles()); } catch (e) {}
   try { renderTypeList(); } catch (e) {}
   saveWorkspace();
@@ -6204,7 +6229,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m52";
+const TV_BUILD = "m53";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -6242,9 +6267,9 @@ quiet(() => {
   ["layoutDropdown", "wlToggleBtn", "themeBtn", "fullscreenBtn", "faqBtn"]
     .forEach(id => { const el = $(id); if (el) r1.appendChild(el); });
 
-  // Zeile 2: Asset Intervall Vergleich · Lücke · Preis Änderung
+  // Zeile 2: Asset Intervall Vergleich Typ-Zahnrad · Lücke · Preis Änderung
   const gap2 = r2.querySelector(".tb-gap");
-  ["assetDropdown", "tfDropdown", "compareDropdown"]
+  ["assetDropdown", "tfDropdown", "compareDropdown", "typeDropdown"]
     .forEach(id => { const el = $(id); if (el) r2.insertBefore(el, gap2); });
 
   // Bottom Bar
