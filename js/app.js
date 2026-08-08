@@ -72,7 +72,9 @@ const state = {
   watchlists: _ws?.watchlists
     || (Array.isArray(_ws?.watchlist) ? { Standard: [..._ws.watchlist] } : { Standard: [...CONFIG.WATCHLIST_DEFAULT] }),
   activeWatchlist: _ws?.activeWatchlist || "Standard",
-  watchlistOpen:  _ws?.watchlistOpen !== false,
+  // Erstbesuch (kein Workspace): Watchlist ausgeblendet. Rueckkehrer behalten
+  // ihren Stand (fehlt das Feld, bleibt sie wie bisher offen).
+  watchlistOpen:  _ws ? (_ws.watchlistOpen !== false) : false,
   wlPrices:       {},   // { SYMBOL: { price, changePct } }
   wlCloseStream:  null,
 
@@ -3521,11 +3523,15 @@ quiet(() => {
         // WICHTIG: setRange braucht ALLE Felder (from/to/range/realFrom/
         // realTo/realRange). Ein unvollständiges Objekt setzt zwar den State,
         // führt aber zu falschem bzw. gar keinem Rendering.
-        const realFrom = yAxis.convertToRealValue(from);
-        const realTo   = yAxis.convertToRealValue(to);
+        // realFrom/realTo/realRange MUESSEN from/to/range spiegeln — auch im
+        // Log-Modus (dann sind from/to Log-Werte). convertToRealValue liefert
+        // im Log-Modus 10^from = PREIS und verletzt die Konvention des
+        // m50-Log-Patches: _calcTicks verteilt die Striche dann wieder im
+        // Preisraum, im sichtbaren Bereich bleibt fast keiner -> Preise
+        // verschwinden. Fuer linear ist das ein No-Op (Identitaet).
         yAxis.setRange({
           from, to, range: newRange,
-          realFrom, realTo, realRange: realTo - realFrom,
+          realFrom: from, realTo: to, realRange: newRange,
         });
         // Ohne diesen Aufruf passiert sichtbar NICHTS — setRange allein
         // löst keinen Redraw aus. (Desktop-Pfad macht exakt dasselbe.)
@@ -6198,7 +6204,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m51";
+const TV_BUILD = "m52";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -7283,11 +7289,11 @@ quiet(() => {
       // Preisbereich nach oben, es kommen höhere Kurse ins Bild.
       const shift = (r.range / host.clientHeight) * dy;
       const from = r.from + shift, to = r.to + shift;
-      const rf = axis.convertToRealValue(from);
-      const rt = axis.convertToRealValue(to);
+      // Siehe Log-Patch beim Y-Zoom: realFrom/realTo spiegeln from/to, sonst
+      // verschwinden auf der Log-Skala die Preise beim Verschieben.
       axis.setAutoCalcTickFlag(false);
       axis.setRange({ from, to, range: r.range,
-                      realFrom: rf, realTo: rt, realRange: rt - rf });
+                      realFrom: from, realTo: to, realRange: r.range });
       chart.adjustPaneViewport(false, true, true, true);
     }, "y-pan");
   }, { passive: true });

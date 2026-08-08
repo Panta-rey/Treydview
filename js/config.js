@@ -214,7 +214,7 @@ const CONFIG = {
       ],
     },
     {
-      key: "boll", name: "BOLL", pane: "main", label: "Bollinger",
+      key: "boll", name: "BOLL", pane: "main", label: "Bollinger Band",
       inputs: [
         { key: "period", label: "Length",  default: 20 },
         { key: "stddev", label: "StdDev",  default: 2.0, step: 0.1 },
@@ -380,7 +380,11 @@ const CONFIG = {
     },
   ],
 
-  DEFAULT_ACTIVE: ["mnoodle", "bmsb", "ema", "myrsi", "myvol"],
+  // Erstbesuch (kein gespeicherter Workspace): bewusst KEINE Indikatoren
+  // vorausgewaehlt — der Chart startet leer. Rueckkehrer behalten ihre
+  // gespeicherte Auswahl (state.active liest _ws.active, das auch als
+  // leeres Array truthy bleibt und diese Vorgabe nicht ueberschreibt).
+  DEFAULT_ACTIVE: [],
 
   DRAW_TOOLS: [
     { overlay: "segment",                icon: "╱",  title: "Trendlinie" },

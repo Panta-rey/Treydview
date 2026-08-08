@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 8. August 2026 · Build m51**
+**Stand: 8. August 2026 · Build m52**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -111,16 +111,16 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m51)
+## Datei-MD5 (Build m52)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | 10b866c95d50e004844389fc33d164f5 | 1349 |
-| style.css | 0d0407943ca024d577a19f3dafa6f19c | 1425 |
-| app.js | 6459ee53e575871e1d7faf388ac0b1ab | 7430 |
-| overlays.js | 0fe65a446d07bbf9f9f5a2e944642c94 | 1570 |
+| index.html | 18d7a58dc3b3c0af1990500a5e099f2c | 1349 |
+| style.css | 468c63b1b12fef7c1f34226999ee8182 | 1425 |
+| app.js | e0cce4f82ed0939c2f7673abf45e9c1c | 7436 |
+| overlays.js | 6dfb80fe2336535e32c78f9c769d5b2b | 1577 |
 | ewt.js | 297d592de041e9131c9402113758922d | 1493 |
-| config.js | d04fab000b992af41d89efeda47675bb | 513 |
+| config.js | e72204add3e08b38264009f1d704d843 | 517 |
 | data.js | b0a40f69c5020e5ad549cd44c5e3e1f3 | 591 |
 | indicators.js | 96bca96210cb52aed4f7988d0dfa8c41 | 1034 |
 | settings.js | a0a42e402cbf44a755b469cb004a3836 | 250 |
@@ -128,9 +128,12 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 | gridbot.js | 3a65ff885ee6d55480deb166d9717b04 | 502 |
 | patterns.js | e94d7c6a70b598fe1bfeecb67c4cc82c | 1016 |
 | derivatives.js | d44aac15f1dc1cc5410801b84f2aa81d | 157 |
-| klinecharts.min.js | 4c351145fa2151aae0d4efca10247d04 | — |
+| klinecharts.min.js | 5821d09fc874fef9d903fe80e437ed14 | — |
 | worker-komplett.js | fd3121620864c9421f5edf054df72814 | — |
 | snapshot.sh | 19b8c1e054a82780d7371ee89af53552 | — |
+
+> **m52 geändert:** config.js, app.js, overlays.js, klinecharts.min.js
+> (+ index.html/style.css nur Build-Tag). Alles andere unverändert seit m51.
 
 `snapshot.sh` liegt im Repo-Wurzelverzeichnis, erzeugt `data/*.json`.
 `smc.js`, `gridbot.js`, `patterns.js`, `derivatives.js` sind seit vor m17
@@ -218,6 +221,53 @@ layouts}`). `importLayoutsFromFile()` akzeptiert Wrapper- ODER blanke
 Export/Import-Buttons + verstecktem File-Input.
 
 **7 · HANDOFF** — diese Aktualisierung (bleibt lokal, NIE committen).
+
+---
+
+## Build m52 — Änderungen (8. August 2026)
+
+Fünf Punkte aus dem Live-Test von m51 (Screenshots vom Nutzer). ESLint
+no-undef sauber, Desktop-CSS unangetastet (nur Build-Tag in index/style),
+Bundle-Syntax nach Patch geprüft.
+
+**1 · „Bollinger" → „Bollinger Band"** (`config.js`) — nur das `label`. Der
+Registrierungs-Key `name:"BOLL"` (auch kurzer Chart-Tag) bleibt.
+
+**2 · Erstbesuch clean** (`config.js`, `app.js`) — ohne gespeicherten
+Workspace startet der Chart jetzt ohne Indikatoren (`DEFAULT_ACTIVE: []`) und
+mit ausgeblendeter Watchlist (`watchlistOpen: _ws ? (_ws.watchlistOpen !==
+false) : false`). Rückkehrer behalten ihren Stand — beide Vorgaben greifen
+nur, wenn kein bzw. kein gespeicherter Wert existiert.
+
+**3 · Log-Skala: Preise verschwanden bei Y-Verschiebung** — der m50-Log-Patch
+sass in `calcRange` (Auto-Pfad). Beim Ziehen/Scrollen der Achse läuft aber der
+DRAG-Pfad, und der setzte `realFrom = convertToRealValue(from)` = im Log-Modus
+`10^from` = **Preis**. Damit standen Preise statt Log-Werten im `_range`,
+`_calcTicks` verteilte die Striche wieder im Preisraum → im Sichtbereich blieb
+fast keiner. Behoben an **drei** Stellen mit demselben Muster (realFrom/realTo/
+realRange spiegeln from/to/range, wie es der m50-Patch für den Auto-Pfad
+etabliert hat):
+- KLineCharts-Bundle, 2 Stellen (nativer Y-Scroll + Y-Zoom) — siehe Patch #3
+  unten.
+- `app.js` Touch-Handler Y-Zoom (~3526) und Y-Pan (~7286).
+Für linear ist die Änderung ein No-Op (`convertToRealValue` ist dort die
+Identität).
+
+**4 · EWT-Labels am linken Rand** (`overlays.js` `labelAnchor`) — der Titel
+wurde bisher absichtlich an den Sichtrand geklemmt. Bei teilweise sichtbaren
+Strukturen, deren Ankerpunkt links draussen lag, klebten so losgelöste
+Etiketten („▲ Inte · 41 %", „Ziel …") am Rand. Jetzt: liegt der Anker
+ausserhalb des Fensters, wird KEIN Titel gezeichnet. Trifft nur EWT-Overlays
+(Wave/Zone/Projektion) — `labelAnchor` wird nirgends sonst benutzt.
+Trade-off bewusst: eine grosse, fast ganz sichtbare Struktur verliert ihren
+Titel, sobald ihr erster Punkt rausscrollt.
+
+**5 · HANDOFF** — diese Aktualisierung.
+
+**Noch offen (nicht angefasst, dem Nutzer gemeldet):** auf 1M/degScale 0.6
+überlappen die Projektions-/Setup-Boxen stark (Dichte, kein Bug); `ewtZone`
+zeichnet über `needDefaultYAxisFigure` einen Achsen-Preis-Tag in US-Format
+(„24,756.00") statt de-CH.
 
 ### Cloudflare-Worker — eigene Datei, eigenes Deployment
 
@@ -611,12 +661,43 @@ Beschriftung mit Ruecktransformation `xt` (= 10^x).
 Ergebnis nachgerechnet: Striche von 1.00 bis 398'107 statt nur ueber
 200'000.
 
+## 3. Log-Achse: Preise verschwinden beim Y-Ziehen/Scrollen  (m52)
+
+Der Patch #2 sitzt in `calcRange` — dem AUTO-Pfad, der nur bei
+`autoCalcTickFlag=true` laeuft. Sobald man die Preisachse zieht oder
+scrollt, uebernimmt der DRAG-Pfad (nativer Y-Scroll und Y-Zoom von
+KLineCharts), und der berechnet `realFrom`/`realTo` neu — ueber
+`convertToRealValue`, das im Log-Modus `10^from` = **Preis** liefert. Damit
+stehen wieder Preise statt Log-Werten im `_range`, `_calcTicks` verteilt die
+Striche im Preisraum → im Sichtbereich bleibt fast keiner. Exakt das gleiche
+Symptom wie vor Patch #2, nur nach einer Achsen-Interaktion.
+
+Zwei Ersetzungen im Bundle (beide `setRange`-Aufrufe im Y-Drag):
+
+```
+ALT: h.setRange({from:v,to:f,range:f-v,realFrom:y,realTo:m,realRange:m-y})
+NEU: h.setRange({from:v,to:f,range:f-v,realFrom:v,realTo:f,realRange:f-v})
+
+ALT: h.setRange({from:v,to:f,range:I,realFrom:y,realTo:m,realRange:m-y})
+NEU: h.setRange({from:v,to:f,range:I,realFrom:v,realTo:f,realRange:I})
+```
+
+`realFrom`/`realTo`/`realRange` spiegeln jetzt `from`/`to`/`range` — dieselbe
+Konvention wie Patch #2. Fuer linear ist es ein No-Op (`convertToRealValue`
+ist dort die Identitaet). Die `y=…,m=…`-Zeilen davor bleiben (harmloser
+toter Code), damit der Diff minimal ist.
+
+**Dieselbe Ursache steckte auch app-seitig** in den beiden Touch-Handlern
+(Y-Zoom ~3526, Y-Pan ~7286) — dort `convertToRealValue(from)` → `from`
+ersetzt.
+
 Pruefen nach einem Update:
 
 ```bash
-grep -c 'St=0.2' js/lib/klinecharts.min.js          # 1
-grep -c '(A=l,F=c,L=R)' js/lib/klinecharts.min.js   # 1
-grep -c 'K(xt(+n),g)' js/lib/klinecharts.min.js     # 1
+grep -c 'St=0.2' js/lib/klinecharts.min.js              # 1
+grep -c '(A=l,F=c,L=R)' js/lib/klinecharts.min.js       # 1
+grep -c 'K(xt(+n),g)' js/lib/klinecharts.min.js         # 1
+grep -oc 'realFrom:v,realTo:f' js/lib/klinecharts.min.js  # 2  (Patch #3)
 ```
 
 # Vergleichs-Paarung  (m50)

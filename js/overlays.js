@@ -1439,12 +1439,19 @@
       if (c.x < minX) minX = c.x;
       if (c.x > maxX) maxX = c.x;
     }
-    // Struktur komplett ausserhalb -> kein Etikett
+    // Struktur komplett ausserhalb -> kein Etikett.
+    // (Off-Screen-Koordinaten sind bei KLineCharts echt negativ bzw. > W —
+    // im Bundle geprueft, dataIndexToCoordinate klemmt nicht.)
     if (maxX < 0 || minX > W) return null;
     const x = preferX != null ? preferX : minX;
-    // Grob geschaetzte Textbreite; genauer geht ohne Messung nicht.
-    if (x > W * 0.62) return { x: Math.min(W - 6, Math.max(6, x)), align: "right" };
-    return { x: Math.max(6, Math.min(W - 6, x)), align: "left" };
+    // FRUEHER wurde x an den Rand geklemmt, damit der Titel beim Scrollen
+    // sichtbar blieb. Das erzeugte aber genau die stoerenden, von ihrer
+    // Struktur losgeloesten Etiketten am linken Rand, sobald der Ankerpunkt
+    // aus dem Bild lief. Jetzt gilt: liegt der Anker selbst ausserhalb des
+    // Fensters, gibt es KEIN Etikett — lieber gar keins als ein gepinntes.
+    const M = 6;
+    if (x < M || x > W - M) return null;
+    return x > W * 0.62 ? { x, align: "right" } : { x, align: "left" };
   }
 
   // ---------- EWT-Wellenzug (Impuls 1-5 / Korrektur A-B-C) ----------
