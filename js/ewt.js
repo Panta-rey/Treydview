@@ -593,6 +593,15 @@
   const EWTEngine = {
     DEFAULTS, logRetrace, logExtend, findFractals, buildChain, checkRules,
 
+    // Fenstergroesse (n) je Wellengrad fuer das aktuelle Kerzenintervall.
+    // Exponiert die interne Ableitung `ableitenGrade`, damit das Panel
+    // GENAU dieselbe Rechnung anzeigt wie der Scanner — kein zweiter,
+    // driftender Rechenweg im UI. Rueckgabe je Grad:
+    // { key, label, days, n, zuFein, barMs }.
+    degreeWindows(data, userOpts = {}) {
+      return ableitenGrade(data || [], { ...DEFAULTS, ...userOpts });
+    },
+
     // Bewusst OHNE slice(): es wird auf globalen Indizes gerechnet und
     // erst am Ende nach Sichtbereich gefiltert. patterns.js sliced und
     // rechnet Indizes zurueck — dort steht ein langer Kommentar ueber die

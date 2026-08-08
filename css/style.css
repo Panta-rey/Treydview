@@ -519,6 +519,9 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .layout-save input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:11px;padding:5px 7px;outline:none;}
 .layout-save input:focus{border-color:var(--accent);}
 .layout-save button{background:var(--accent);border:none;border-radius:4px;color:#0d1117;font-family:var(--font-mono);font-size:11px;font-weight:600;padding:5px 9px;cursor:pointer;white-space:nowrap;}
+.layout-io{display:flex;gap:5px;padding:8px;border-top:1px solid var(--border);}
+.layout-io button{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:11px;font-weight:600;padding:5px 9px;cursor:pointer;white-space:nowrap;}
+.layout-io button:hover{border-color:var(--accent);color:var(--accent);}
 .layout-item{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:7px 10px;cursor:pointer;border-radius:4px;}
 .layout-item:hover{background:var(--bg-hover);}
 .li-name{font-size:12px;color:var(--text);}
@@ -551,6 +554,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .pat-header{font-size:12px;font-weight:600;color:var(--text);padding:8px 10px;border-bottom:1px solid var(--border);}
 .pat-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;}
 .pat-row label{font-size:12px;color:var(--text-dim);}
+.ewt-deg-n{color:var(--text-dim);opacity:0.75;font-size:11px;font-family:var(--font-mono);}
 .pat-row select{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:11px;padding:4px 6px;outline:none;cursor:pointer;}
 .pat-warn{margin:0 10px 8px;padding:6px 8px;background:rgba(208,94,94,.1);border:1px solid rgba(208,94,94,.25);border-radius:4px;font-size:10px;color:var(--down);line-height:1.4;}
 .pat-warn.hidden{display:none;}
@@ -827,7 +831,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m50"; }
+:root { --tv-build: "m51"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */

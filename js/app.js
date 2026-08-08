@@ -390,6 +390,7 @@ function buildCreate(ind) {
     case "myvol":    create.calcParams = [inp.ma1||5, inp.ma2||10, inp.ma3||20]; break;
     case "macd":     create.calcParams = [inp.fast||12, inp.slow||26, inp.signal||9, inp.oscType||"EMA", inp.sigType||"EMA"]; break;
     case "atr":      create.calcParams = [inp.period||14, inp.smoothing||"RMA"]; break;
+    case "bbw":      create.calcParams = [inp.length||20, inp.mult||2.0, inp.compLen||125]; break;
     default:         if (ind.calcParams) create.calcParams = ind.calcParams;
   }
 
@@ -833,6 +834,9 @@ function initDropdowns() {
         setTimeout(() => document.getElementById("compareSearch").focus(), 30);
       }
       if (id === "layoutDropdown" && !wasOpen) renderLayoutList();
+      // EWT-Panel geoeffnet: Gradzahlen fuer das aktuelle Intervall/Scale
+      // frisch berechnen (Punkt 4.3).
+      if (id === "ewtDropdown" && !wasOpen) ewtUpdateDegreeLabels();
     });
   });
 }
@@ -1174,6 +1178,30 @@ function ensureCompareCanvas() {
   return c;
 }
 
+// Eine Vergleichsreihe auf die Chart-Bars ausrichten (Treppe / forward-fill).
+// Fuer jeden Bar wird der letzte Schlusskurs genommen, dessen Zeitstempel VOR
+// dem Beginn des NAECHSTEN Bars liegt — also der Wert, der dem Bar-ENDE am
+// naechsten ist, konsistent mit dem Kerzen-close des Hauptasset.
+//
+// Das ersetzt den frueheren EXAKTEN Zeitstempel-Abgleich (`map.get(ts)`).
+// Der traf ueber verschiedene Intervalle (1M-Chart gegen Tages-Indexdaten)
+// oder bei anderer Tagesgrenze der Quelle fast nie — die Vergleichslinien
+// zerfielen in einzelne Striche oder verschwanden ganz an der Nulllinie.
+function alignCompareSeries(assetData, bars) {
+  const out = new Array(bars.length).fill(null);
+  if (!assetData || !assetData.length || !bars.length) return out;
+  // Defensiv nach Zeitstempel sortieren — Quellen liefern i. d. R. schon
+  // aufsteigend, aber verlassen wollen wir uns nicht darauf.
+  const src = assetData.slice().sort((a, b) => a.timestamp - b.timestamp);
+  let j = 0, last = null;
+  for (let i = 0; i < bars.length; i++) {
+    const upper = (i + 1 < bars.length) ? bars[i + 1].timestamp : Infinity;
+    while (j < src.length && src[j].timestamp < upper) { last = src[j].close; j++; }
+    out[i] = last;   // null bleibt bis zum ersten Wert der Reihe
+  }
+  return out;
+}
+
 function drawCompare() {
   if (state.compareAssets.length === 0) {
     if (_compareCanvas) {
@@ -1212,36 +1240,39 @@ function drawCompare() {
   const mainRef = dataList[fromIdx]?.close;
   if (!mainRef) return;
 
-  const assetRefs = state.compareAssets.map(a => {
-    const m = new Map((a.data || []).map(p => [p.timestamp, p.close]));
-    for (let i = fromIdx; i <= toIdx; i++) {
-      const v = m.get(dataList[i].timestamp);
-      if (v != null) return { m, ref: v };
-    }
-    return { m, ref: null };
+  // Vergleichsreihen auf die Chart-Bars ausrichten (Treppe, s. o.).
+  const aligned = state.compareAssets.map(a => alignCompareSeries(a.data, dataList));
+
+  const assetRefs = aligned.map(arr => {
+    for (let i = fromIdx; i <= toIdx; i++) if (arr[i] != null) return arr[i];
+    return null;
   });
 
-  // Alle sichtbaren Prozentwerte berechnen für Autoscaling
+  // Wachstums-Position: linear = Prozent, log = log10(Verhaeltnis). Der
+  // Log-Modus (Knopf "L") haelt Reihen mit sehr unterschiedlichem Zuwachs
+  // gemeinsam sichtbar — sonst drueckt ein +980'000-%-BTC alle Indizes auf
+  // die Nulllinie (genau das Symptom im Screenshot). 0 % liegt in beiden
+  // Modi bei Position 0.
+  const logMode = !!state.logScale;
+  const posOf = (v, ref) => {
+    if (v == null || ref == null || ref <= 0 || v <= 0) return null;
+    return logMode ? Math.log10(v / ref) : ((v - ref) / ref) * 100;
+  };
+  const posToPct = (pos) => logMode ? (Math.pow(10, pos) - 1) * 100 : pos;
+
+  // Alle sichtbaren Positionswerte fuer die Autoskalierung
   let pMin = Infinity, pMax = -Infinity;
   for (let i = fromIdx; i <= toIdx; i++) {
-    const d = dataList[i];
-    if (d.close && mainRef) {
-      const pct = ((d.close - mainRef) / mainRef) * 100;
-      if (pct < pMin) pMin = pct;
-      if (pct > pMax) pMax = pct;
+    const pm = posOf(dataList[i].close, mainRef);
+    if (pm != null) { if (pm < pMin) pMin = pm; if (pm > pMax) pMax = pm; }
+    for (let k = 0; k < assetRefs.length; k++) {
+      if (state.compareAssets[k].hidden) continue;
+      const pv = posOf(aligned[k][i], assetRefs[k]);
+      if (pv != null) { if (pv < pMin) pMin = pv; if (pv > pMax) pMax = pv; }
     }
-    assetRefs.forEach(({ m, ref }) => {
-      if (!ref) return;
-      const v = m.get(d.timestamp);
-      if (v != null) {
-        const pct = ((v - ref) / ref) * 100;
-        if (pct < pMin) pMin = pct;
-        if (pct > pMax) pMax = pct;
-      }
-    });
   }
   if (!isFinite(pMin) || !isFinite(pMax)) return;
-  const pad = Math.max(5, (pMax - pMin) * 0.05);
+  const pad = Math.max((logMode ? 0.02 : 5), (pMax - pMin) * 0.05);
   pMin -= pad; pMax += pad;
   // Senkrechter Zoom des Nutzers um die Mitte herum. Faktor > 1 = weiter
   // herausgezoomt, genau wie beim Ziehen an der Preisachse.
@@ -1252,8 +1283,8 @@ function drawCompare() {
   }
   const pRange = pMax - pMin || 1;
 
-  // Preis → Y-Pixel innerhalb des Pane
-  const pctToY = (pct) => paneTop + ((pMax - pct) / pRange) * paneH;
+  // Position → Y-Pixel innerhalb des Pane
+  const posToY = (pos) => paneTop + ((pMax - pos) / pRange) * paneH;
 
   // Clip auf Pane
   ctx.save();
@@ -1263,41 +1294,41 @@ function drawCompare() {
 
   // Hauptasset-Linie (weiss)
   drawLine(ctx, dataList, fromIdx, toIdx, (d) => {
-    if (!d.close || !mainRef) return null;
-    return { x: null, pct: ((d.close - mainRef) / mainRef) * 100 };
-  }, "#ffffff", 2, dataList, pctToY, chart);
+    const pos = posOf(d.close, mainRef);
+    return pos == null ? null : { pos };
+  }, "#ffffff", 2, dataList, posToY, chart);
 
   // Vergleichs-Linien
   state.compareAssets.forEach((asset, idx) => {
     if (asset.hidden) return;
-    const { m, ref } = assetRefs[idx];
-    if (!ref) return;
-    drawLine(ctx, dataList, fromIdx, toIdx, (d) => {
-      const v = m.get(d.timestamp);
-      if (v == null) return null;
-      return { pct: ((v - ref) / ref) * 100 };
-    }, asset.color, 2, dataList, pctToY, chart);
+    const ref = assetRefs[idx], arr = aligned[idx];
+    if (ref == null) return;
+    drawLine(ctx, dataList, fromIdx, toIdx, (d, i) => {
+      const pos = posOf(arr[i], ref);
+      return pos == null ? null : { pos };
+    }, asset.color, 2, dataList, posToY, chart);
   });
 
-  // 0%-Linie
-  const y0 = pctToY(0);
+  // 0%-Linie (Position 0)
+  const y0 = posToY(0);
   ctx.strokeStyle = "rgba(143,163,184,0.35)";
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
   ctx.beginPath(); ctx.moveTo(0, y0); ctx.lineTo(w, y0); ctx.stroke();
   ctx.setLineDash([]);
 
-  // Eigene Y-Achse rechts (Prozent-Beschriftung)
+  // Eigene Y-Achse rechts (Prozent-Beschriftung; im Log-Modus nichtlinear)
   const axisX = w - 4;
   ctx.fillStyle = T.text;
   ctx.font = "13px 'IBM Plex Mono', monospace";
   ctx.textAlign = "right";
   const steps = 6;
   for (let s = 0; s <= steps; s++) {
-    const pct = pMin + (pMax - pMin) * (s / steps);
-    const y = pctToY(pct);
+    const pos = pMin + (pMax - pMin) * (s / steps);
+    const y = posToY(pos);
     if (y < paneTop + 8 || y > paneTop + paneH - 8) continue;
-    const label = (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%";
+    const pct = posToPct(pos);
+    const label = (pct >= 0 ? "+" : "") + fmtComparePct(pct) + "%";
     ctx.fillText(label, axisX, y + 4);
   }
 
@@ -1309,22 +1340,27 @@ function drawCompare() {
     chips.push({
       label: shortSymbol(state.symbol.label),
       pct: ((lastVisible.close - mainRef) / mainRef) * 100,
+      y:   posToY(posOf(lastVisible.close, mainRef)),
       color: "#ffffff",
     });
   }
   state.compareAssets.forEach((asset, idx) => {
     if (asset.hidden) return;
-    const { m, ref } = assetRefs[idx];
-    if (!ref) return;
+    const ref = assetRefs[idx], arr = aligned[idx];
+    if (ref == null) return;
     // Letzten verfügbaren Wert im sichtbaren Bereich suchen
     let v = null;
-    for (let i = toIdx; i >= fromIdx && v == null; i--) v = m.get(dataList[i].timestamp);
+    for (let i = toIdx; i >= fromIdx && v == null; i--) v = arr[i];
     if (v == null) return;
-    chips.push({ label: shortSymbol(asset.label), pct: ((v - ref) / ref) * 100, color: asset.color });
+    chips.push({
+      label: shortSymbol(asset.label),
+      pct: ((v - ref) / ref) * 100,
+      y:   posToY(posOf(v, ref)),
+      color: asset.color,
+    });
   });
 
   // Überlappung vermeiden: nach Y sortieren und mindestens 14px Abstand
-  chips.forEach(c => { c.y = pctToY(c.pct); });
   chips.sort((a, b) => a.y - b.y);
   for (let i = 1; i < chips.length; i++) {
     if (chips[i].y - chips[i - 1].y < 14) chips[i].y = chips[i - 1].y + 14;
@@ -1333,7 +1369,7 @@ function drawCompare() {
   ctx.font = "12px 'IBM Plex Mono', monospace";
   ctx.textAlign = "left";
   chips.forEach(c => {
-    const txt = `${c.label} ${c.pct >= 0 ? "+" : ""}${c.pct.toFixed(1)}%`;
+    const txt = `${c.label} ${c.pct >= 0 ? "+" : ""}${fmtComparePct(c.pct)}%`;
     const tw = ctx.measureText(txt).width;
     const bx = w - tw - 12, by = c.y - 7;
     ctx.fillStyle = T.bg || "rgba(13,17,23,0.9)";
@@ -1348,6 +1384,16 @@ function drawCompare() {
   ctx.restore();
 }
 
+// Prozent-Formatierung fuer den Vergleich: bei sehr grossen Werten (BTC
+// gegen einen fruehen Anker kann +900'000 % erreichen) ist eine
+// Nachkommastelle sinnlos und macht das Etikett nur breiter.
+function fmtComparePct(pct) {
+  const a = Math.abs(pct);
+  if (a >= 10000) return Math.round(pct).toLocaleString("de-CH");
+  if (a >= 100)   return pct.toFixed(0);
+  return pct.toFixed(1);
+}
+
 // "BTC/USDT" -> "BTC", "Gold XAU/USD" -> "XAU"
 function shortSymbol(label) {
   const s = String(label).split("/")[0].trim();
@@ -1355,14 +1401,14 @@ function shortSymbol(label) {
   return (parts.at(-1) || s).toUpperCase().slice(0, 5);
 }
 
-function drawLine(ctx, dataList, from, to, valFn, color, width, dl, pctToY, chart) {
+function drawLine(ctx, dataList, from, to, valFn, color, width, dl, yFn, chart) {
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
   ctx.lineJoin = "round";
   ctx.beginPath();
   let started = false;
   for (let i = from; i <= to; i++) {
-    const r = valFn(dataList[i]);
+    const r = valFn(dataList[i], i);
     if (!r) { started = false; continue; }
     let x;
     try {
@@ -1370,7 +1416,7 @@ function drawLine(ctx, dataList, from, to, valFn, color, width, dl, pctToY, char
       x = pt ? pt.x : null;
     } catch (e) { x = null; }
     if (x == null) { started = false; continue; }
-    const y = pctToY(r.pct);
+    const y = yFn(r.pos);
     if (!started) { ctx.moveTo(x, y); started = true; }
     else ctx.lineTo(x, y);
   }
@@ -4870,8 +4916,13 @@ function ewtReadOpts() {
     minPivotPercent:   num("ewtMinPivotPct", 0, 50, D.minPivotPercent),
     setupMinPercent:   num("ewtMinPct",  0, 500, D.setupMinPercent),
     timeoutBars:       num("ewtTimeout", 1, 500, D.timeoutBars),
-    rsiPeriod:         num("ewtRsiPeriod", 2, 100, D.rsiPeriod),
-    rsiOversold:       num("ewtRsiOs",   1,  99, D.rsiOversold),
+    // RSI-Periode und -Schwelle sind bewusst NICHT mehr im Panel: sie
+    // parametrieren nur den RSI-ZUSATZFILTER, der standardmaessig aus ist
+    // und den die eigenen Messungen (76 % Kandidaten verworfen) ohnehin
+    // abraten. Feineinstellung eines abgeratenen Filters ist Ueberkonfiguration
+    // — feste, bewaehrte Werte statt Regler.
+    rsiPeriod:         14,
+    rsiOversold:       30,
     requireWave5NewExtreme: chk("ewtRule4", true),
     allowDiagonal:     chk("ewtDiagonal", false),
     // Skip-Tiefe: wie viele Zwischenextrema eine Teilwelle ueberspringen
@@ -5566,6 +5617,99 @@ function renderLayoutList() {
   });
 }
 
+// ---------- Layouts als Datei sichern / einlesen ----------
+// Layouts liegen als reines JSON unter LAYOUTS_KEY im localStorage. Ein
+// Export schreibt genau dieses Objekt in eine Datei, ein Import liest es
+// zurueck und MISCHT es mit den vorhandenen — nichts wird ueberschrieben.
+// Bei Namenskollision bekommt der importierte Eintrag einen Zusatz, damit
+// ein vorhandenes Layout nicht stillschweigend verloren geht.
+function exportLayouts() {
+  const layouts = loadLayouts();
+  if (!layouts || Object.keys(layouts).length === 0) {
+    setStatus("Keine Layouts zum Exportieren vorhanden");
+    return;
+  }
+  try {
+    const payload = {
+      _typ: "treydview-layouts",
+      _version: 1,
+      _exportiert: new Date().toISOString(),
+      layouts,
+    };
+    const text = JSON.stringify(payload, null, 2);
+    const blob = new Blob([text], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `treydview-layouts-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Ohne Freigabe haelt der Browser das Blob im Speicher.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const n = Object.keys(layouts).length;
+    setStatus(`${n} Layout${n === 1 ? "" : "s"} exportiert`);
+  } catch (e) {
+    setStatus(`Export fehlgeschlagen: ${e && e.message ? e.message : e}`);
+  }
+}
+
+// Freien Namen finden, falls "name" schon belegt ist: "name (2)", "name (3)"…
+function _freierLayoutName(vorhanden, name) {
+  if (!vorhanden[name]) return name;
+  let i = 2;
+  while (vorhanden[`${name} (${i})`]) i++;
+  return `${name} (${i})`;
+}
+
+function importLayoutsFromFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const roh = JSON.parse(reader.result);
+      // Zwei akzeptierte Formen: die verpackte (mit _typ + layouts) und
+      // ein blankes { name: snapshot }-Objekt, falls jemand es von Hand
+      // erstellt hat.
+      const eingelesen = (roh && typeof roh === "object" && roh.layouts && typeof roh.layouts === "object")
+        ? roh.layouts
+        : roh;
+      if (!eingelesen || typeof eingelesen !== "object" || Array.isArray(eingelesen)) {
+        setStatus("Datei enthält keine gültigen Layouts");
+        return;
+      }
+      const namen = Object.keys(eingelesen);
+      if (namen.length === 0) { setStatus("Datei enthält keine Layouts"); return; }
+
+      const vorhanden = loadLayouts();
+      let uebernommen = 0, umbenannt = 0;
+      for (const name of namen) {
+        const snap = eingelesen[name];
+        // Jedes Layout muss ein Objekt sein und wenigstens ein Symbol
+        // tragen — sonst ist es kein TreydView-Layout.
+        if (!snap || typeof snap !== "object" || Array.isArray(snap) || !snap.symbol) continue;
+        const ziel = _freierLayoutName(vorhanden, name);
+        if (ziel !== name) umbenannt++;
+        vorhanden[ziel] = snap;
+        uebernommen++;
+      }
+      if (uebernommen === 0) {
+        setStatus("Keine gültigen Layouts in der Datei gefunden");
+        return;
+      }
+      saveLayouts(vorhanden);
+      renderLayoutList();
+      const zusatz = umbenannt > 0 ? ` (${umbenannt} umbenannt wegen Namensgleichheit)` : "";
+      setStatus(`${uebernommen} Layout${uebernommen === 1 ? "" : "s"} importiert${zusatz}`);
+    } catch (e) {
+      setStatus(`Import fehlgeschlagen: ${e && e.message ? e.message : "keine gültige JSON-Datei"}`);
+    }
+  };
+  reader.onerror = () => setStatus("Datei konnte nicht gelesen werden");
+  reader.readAsText(file);
+}
+
 // Rechtsklick nahe der aktuellen Preislinie öffnet die Stil-Einstellungen.
 // KLineCharts kennt kein Event für die Preis-Markierung — deshalb prüfen wir
 // selbst, ob der Klick in ihrer Höhe lag.
@@ -5867,12 +6011,93 @@ document.getElementById("patStrictness").addEventListener("change", (e) => {
   if (clearBtn) clearBtn.addEventListener("click", () => { clearSMC(); setStatus("SMC-Zonen entfernt"); });
 })();
 
+// ---------- EWT: Wellengrad-Fenster live anzeigen (Punkt 4.3) ----------
+// Hinter jedem Gradnamen steht das abgeleitete Fraktal-Fenster n fuer das
+// AKTUELLE Kerzenintervall und die AKTUELLE Grad-Feinabstimmung. Die Zahl
+// kommt aus EWTEngine.degreeWindows — GENAU derselben Rechnung wie der
+// Scanner, nicht aus einem zweiten, driftenden Rechenweg im UI.
+const _ewtDegSpanIds = {
+  primary:      "ewtDegNPrimary",
+  intermediate: "ewtDegNIntermediate",
+  minor:        "ewtDegNMinor",
+  minute:       "ewtDegNMinute",
+};
+function ewtUpdateDegreeLabels() {
+  const setSpan = (key, txt) => {
+    const el = document.getElementById(_ewtDegSpanIds[key]);
+    if (el) el.textContent = txt;
+  };
+  if (typeof EWTEngine === "undefined" || !EWTEngine.degreeWindows) return;
+  let data = [];
+  try { data = chart.getDataList() || []; } catch (e) { data = []; }
+  const scaleEl = document.getElementById("ewtDegScale");
+  const s = scaleEl ? parseFloat(scaleEl.value) : 1;
+  const degreeScale = isFinite(s) && s > 0 ? s : 1;
+
+  if (!data.length) {
+    Object.keys(_ewtDegSpanIds).forEach(k => setSpan(k, "(–)"));
+    return;
+  }
+  let grade = [];
+  try { grade = EWTEngine.degreeWindows(data, { degreeScale }) || []; } catch (e) { grade = []; }
+  const byKey = {};
+  grade.forEach(g => { byKey[g.key] = g; });
+  Object.keys(_ewtDegSpanIds).forEach(k => {
+    const g = byKey[k];
+    if (!g) { setSpan(k, ""); return; }
+    // "zu fein" = das Fenster liegt unter 2 Kerzen; auf diesem Intervall
+    // gibt es fuer diesen Grad schlicht nichts zu erkennen.
+    setSpan(k, g.zuFein ? "(zu fein)" : `(${g.n})`);
+  });
+}
+
+// ---------- EWT: empfohlene Vorgabe (Punkt 4.1) ----------
+// "Optimal" orientiert sich an den Motor-Defaults (ewt.js DEFAULTS), mit
+// zwei bewussten Anpassungen fuer diesen BTC-lastigen Einsatz:
+//   - degreeScale 0.6 statt 1.0: Krypto laeuft schneller als Aktien; das
+//     HANDOFF nennt 0.5-0.7 als guten Bereich fuer BTC. Fuer Gold/Indizes
+//     darf man wieder hoeher gehen.
+//   - alle Anzeige-Umschalter an, Zusatzfilter (RSI/Vol/ER) aus — die
+//     eigenen Messungen raten von den Oszillator-Filtern als Ausschluss ab.
+const EWT_STANDARD = {
+  chk: {
+    ewtShowImpulse: true, ewtShowAbc: true, ewtShowSetup: true, ewtShowProj: true,
+    ewtRule4: false, ewtDiagonal: false,
+    ewtShowPending: true, ewtShowTriggered: true, ewtShowInvalid: true, ewtShowTimeout: true,
+    ewtUseRsi: false, ewtUseVol: false, ewtUseEff: false,
+    ewtDegPrimary: true, ewtDegIntermediate: true, ewtDegMinor: false, ewtDegMinute: false,
+    ewtRequireSub: false,
+  },
+  val: {
+    ewtDegScale: 0.6, ewtMaxSkip: 2, ewtMaxShow: 12,
+    ewtMinPivotPct: 1.5, ewtMinPct: 3, ewtTimeout: 60,
+  },
+  sel: { ewtBasis: "hl", ewtStrict: "mittel", ewtLabels: "kurz" },
+};
+function ewtResetDefaults() {
+  const chk  = (id, v) => { const el = document.getElementById(id); if (el) el.checked = v; };
+  const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  Object.entries(EWT_STANDARD.chk).forEach(([id, v]) => chk(id, v));
+  Object.entries(EWT_STANDARD.val).forEach(([id, v]) => setV(id, v));
+  Object.entries(EWT_STANDARD.sel).forEach(([id, v]) => setV(id, v));
+  // state.ewtOpts aus den zurueckgesetzten Feldern neu ableiten und sichern,
+  // damit die Vorgabe auch nach einem Neuladen erhalten bleibt.
+  try { state.ewtOpts = ewtReadOpts(); saveWorkspace(); } catch (e) {}
+  ewtUpdateDegreeLabels();
+  setStatus("EWT-Einstellungen auf Standard zurückgesetzt");
+}
+
 // ---------- EWT-Handler (Elliott Wellen) ----------
 (function () {
   const scanBtn  = document.getElementById("ewtScanBtn");
   const clearBtn = document.getElementById("ewtClearBtn");
+  const defBtn   = document.getElementById("ewtDefaultBtn");
   if (scanBtn)  scanBtn.addEventListener("click", scanEWT);
   if (clearBtn) clearBtn.addEventListener("click", () => { clearEWT(); setStatus("EWT-Setups entfernt"); });
+  if (defBtn)   defBtn.addEventListener("click", ewtResetDefaults);
+  // Grad-Feinabstimmung aendern -> Gradzahlen sofort mitziehen (Punkt 4.3).
+  const degScaleEl = document.getElementById("ewtDegScale");
+  if (degScaleEl) degScaleEl.addEventListener("input", ewtUpdateDegreeLabels);
 
   // Gespeicherte Einstellungen in die Felder zuruecklegen
   quiet(() => {
@@ -5881,8 +6106,6 @@ document.getElementById("patStrictness").addEventListener("change", (e) => {
     const chk = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.checked = !!v; };
     set("ewtMinPct",  o.setupMinPercent);
     set("ewtTimeout", o.timeoutBars);
-    set("ewtRsiPeriod", o.rsiPeriod);
-    set("ewtRsiOs",   o.rsiOversold);
     set("ewtMinPivotPct", o.minPivotPercent);
     set("ewtDegScale", o.degreeScale);
     if (Array.isArray(o.degrees)) {
@@ -5906,6 +6129,10 @@ document.getElementById("patStrictness").addEventListener("change", (e) => {
     chk("ewtUseVol",  o.requireVolume);
     chk("ewtUseEff",  o.requireEfficiency);
   }, "ewt opts restore");
+
+  // Gradzahlen initial fuellen (zeigt "(–)", solange keine Kerzen geladen
+  // sind; der Panel-Oeffnen-Hook und das degScale-input aktualisieren sie).
+  quiet(ewtUpdateDegreeLabels, "ewt deg labels init");
 })();
 
 // ---------- Layout-Handler ----------
@@ -5920,6 +6147,22 @@ document.getElementById("layoutName").addEventListener("keydown", (e) => {
     e.target.value = "";
   }
 });
+// Layouts als Datei sichern / einlesen. Der Import-Knopf loest nur den
+// verborgenen Datei-Dialog aus; die eigentliche Arbeit macht der change-Handler.
+(function initLayoutIO() {
+  const exp = document.getElementById("layoutExportBtn");
+  const imp = document.getElementById("layoutImportBtn");
+  const file = document.getElementById("layoutImportFile");
+  if (exp) exp.addEventListener("click", exportLayouts);
+  if (imp && file) imp.addEventListener("click", () => file.click());
+  if (file) file.addEventListener("change", (e) => {
+    const f = e.target.files && e.target.files[0];
+    importLayoutsFromFile(f);
+    // Zuruecksetzen, damit dieselbe Datei zweimal hintereinander gewaehlt
+    // werden kann (sonst feuert change beim zweiten Mal nicht).
+    e.target.value = "";
+  });
+})();
 
 // ---------- Chart-Stil-Handler ----------
 document.getElementById("csApplyBtn").addEventListener("click", applyChartStyle);
@@ -5955,7 +6198,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m50";
+const TV_BUILD = "m51";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

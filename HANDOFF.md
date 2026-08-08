@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 7. August 2026 · Build m50**
+**Stand: 8. August 2026 · Build m51**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -111,32 +111,113 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m50)
+## Datei-MD5 (Build m51)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | d70f31c5a8afc0adc8ba971d57a51064 | 1312 |
-| style.css | ef93184e33d1635816efe8b289e89f8c | 1417 |
-| app.js | 14bf27c2385db4efa5179ae9bde3172b | 6999 |
+| index.html | 10b866c95d50e004844389fc33d164f5 | 1349 |
+| style.css | 0d0407943ca024d577a19f3dafa6f19c | 1425 |
+| app.js | 6459ee53e575871e1d7faf388ac0b1ab | 7430 |
 | overlays.js | 0fe65a446d07bbf9f9f5a2e944642c94 | 1570 |
-| ewt.js | 312c0e7f95529fbb83125cd21cf1a12b | 1294 |
-| config.js | eedee9e84b8b5a15aff9da2430bc3faf | 493 |
-| data.js | c932ef72973d9b3e4573d4e5a7bedbca | 582 |
-| indicators.js | b7440008bbf4db30475c2a12bef727f8 | 1069 |
-| settings.js | 3efe9991a71992127e885e549e9e491e | 255 |
+| ewt.js | 297d592de041e9131c9402113758922d | 1493 |
+| config.js | d04fab000b992af41d89efeda47675bb | 513 |
+| data.js | b0a40f69c5020e5ad549cd44c5e3e1f3 | 591 |
+| indicators.js | 96bca96210cb52aed4f7988d0dfa8c41 | 1034 |
+| settings.js | a0a42e402cbf44a755b469cb004a3836 | 250 |
 | smc.js | 95601db23d23cf8f2cf19eb161c33dc6 | 248 |
 | gridbot.js | 3a65ff885ee6d55480deb166d9717b04 | 502 |
 | patterns.js | e94d7c6a70b598fe1bfeecb67c4cc82c | 1016 |
 | derivatives.js | d44aac15f1dc1cc5410801b84f2aa81d | 157 |
-| worker-komplett.js | d4d8ed708dcf288f17dc18d9d4e0b1dc | — |
+| klinecharts.min.js | 4c351145fa2151aae0d4efca10247d04 | — |
+| worker-komplett.js | fd3121620864c9421f5edf054df72814 | — |
 | snapshot.sh | 19b8c1e054a82780d7371ee89af53552 | — |
 
 `snapshot.sh` liegt im Repo-Wurzelverzeichnis, erzeugt `data/*.json`.
 `smc.js`, `gridbot.js`, `patterns.js`, `derivatives.js` sind seit vor m17
 unveraendert.
 
+> **Korrektur gegenueber der alten m50-Tabelle:** die dortigen Zeilen-/MD5-
+> Werte fuer `config.js`, `indicators.js`, `data.js`, `settings.js` waren
+> veraltet (Chat 1.3 lief ueber den m50-Snapshot hinaus, ohne die Tabelle
+> nachzuziehen). Diese m51-Tabelle ist der massgebliche Stand.
+
+**⚠️ KLineCharts-Dateiname (Ursache der „Log-Skala wirkt nicht"-Bugs):**
+`index.html` laedt `js/lib/klinecharts.min.js` — mit **Punkt**. Die
+gepatchte Datei (Patches `St=0.2` und Log-Achse) lag aber als
+`klinecharts_min.js` — mit **Unterstrich** — vor und wurde beim Deploy nie
+unter den geladenen Pfad geschrieben. Beim Ausliefern IMMER unter dem
+Punkt-Namen `klinecharts.min.js` ablegen. Patch-Verifikation im Bundle:
+`grep "St=0.2"` und `grep "A=l,F=c,L=R"` muessen je 1 treffen.
+
 **Diese Tabelle ersetzt fruehere Fassungen vollstaendig.** Immer nur DIESE,
 oberste Tabelle als Stand nehmen.
+
+---
+
+## Build m51 — Änderungen (8. August 2026)
+
+Sieben Punkte aus Chat „m51 Punkte 1–7". Alle vier Pflichtprüfungen +
+ESLint no-undef bestanden, Compare- und BBW-Mathematik numerisch gegen
+unabhängige Referenzen geprüft.
+
+**1+2 · KLineCharts-Name / Log-Skala** — reines Naming: die gepatchte Datei
+(Unterstrich) traf nie den in `index.html` geladenen Punkt-Pfad, deshalb
+wirkten weder Log-Achse noch `St=0.2`. Kein Code-Change, Datei unter
+korrektem Namen `klinecharts.min.js` ausgeliefert. (Log-Rendering selbst nur
+browserseitig endgültig bestätigbar.)
+
+**3 · Vergleichsmodus** (`app.js` `drawCompare`) — zwei Defekte behoben:
+- *Ausrichtung:* der frühere `map.get(bar.timestamp)` verlangte einen
+  EXAKTEN Zeitstempel-Treffer. Über verschiedene Intervalle (1M-Chart gegen
+  Tages-Indexdaten) oder bei anderer Tagesgrenze der Quelle traf er fast nie
+  → Linien zerfielen/verschwanden. Neu: `alignCompareSeries()` — Treppe /
+  forward-fill, pro Bar der letzte Schlusskurs vor Beginn des NÄCHSTEN Bars
+  (nahe Bar-Ende, konsistent mit dem Kerzen-close). Robust gegen Timeframe-
+  und Quellen-Offsets.
+- *Skalierung:* lineare %-Achse drückte Indizes an die Nulllinie, sobald BTC
+  +980 000 % zeigte. Neu: im Log-Modus (Knopf „L") positioniert
+  `posOf` über `log10(Kurs/Ref)` statt Prozent; Achse weiter in % beschriftet
+  (`posToPct`). `fmtComparePct` kürzt sehr grosse Prozentwerte. `drawLine`
+  bekam Index-Argument + `pos` statt `pct`. Y-Zoom (`compareScale`) wirkt
+  generisch im pos-Raum, unverändert.
+
+**4 · EWT-Panel** (`index.html`, `app.js`, `ewt.js`, `style.css`):
+- *4.1 Standard-Button* `#ewtDefaultBtn` → `ewtResetDefaults()` setzt alle
+  Felder auf `EWT_STANDARD`. Werte an Motor-DEFAULTS orientiert, mit zwei
+  bewussten Anpassungen: `degreeScale 0.6` (BTC-lastig; HANDOFF nennt
+  0.5–0.7) und alle Anzeige-Umschalter an / Zusatzfilter aus.
+- *4.2 Unnötige Regler entfernt:* RSI-Periode und RSI-überverkauft aus dem
+  Panel genommen, fest auf 14 / 30. Begründung: sie parametrieren nur den
+  RSI-Zusatzfilter, der standardmässig aus ist und den die eigenen Messungen
+  (76 % verworfen) abraten — Feineinstellung eines abgeratenen Filters ist
+  Überkonfiguration. minPivot/setupMinPct/timeout/basis BEHALTEN (echter
+  analytischer Effekt).
+- *4.3 Gradzahlen live:* hinter Primary/Intermediate/Minor/Minute steht das
+  Fraktal-Fenster n (Spans `.ewt-deg-n`). `ewtUpdateDegreeLabels()` liest die
+  Kerzen + degScale und ruft die NEUE Motor-Methode
+  `EWTEngine.degreeWindows(data, opts)` (dünner Wrapper um `ableitenGrade` —
+  Single Source of Truth, KEIN zweiter Rechenweg im UI). Live bei degScale-
+  Input, beim Panel-Öffnen und initial. „(zu fein)" wenn n<2, „(–)" ohne
+  Daten.
+
+**5 · Bollinger Band Width** (`config.js`, `indicators.js`, `app.js`) —
+neuer Sub-Pane-Indikator `BBW` (16. Indikator). `bbw = 2·mult·StdDev / SMA`
+(Populations-StdDev /n wie Pine `ta.stdev`), Präfixsummen für SMA.
+Squeeze = bbw ist Minimum über `compLen` (Pine `bbw==lowest(bbw,comp_len)`),
+gerendert als eingefärbte Säule (`type:"bar"`, Fuchsia) bis zur Bandbreite an
+den Squeeze-Bars — Sub-Pane-taugliche Form von Pines `bgcolor`. Inputs
+length 20 / mult 2.0 / compLen 125, precision 4. Numerisch gegen unabhängige
+Referenz: Abweichung bbw 7.5e-15, Squeeze-Zahl identisch.
+
+**6 · Layout Export/Import** (`app.js`, `index.html`, `style.css`) —
+`exportLayouts()` schreibt alle `tv_layouts` als
+`treydview-layouts-JJJJ-MM-TT.json` (Wrapper `{_typ,_version,_exportiert,
+layouts}`). `importLayoutsFromFile()` akzeptiert Wrapper- ODER blanke
+`{name:snapshot}`-Form, MISCHT ohne Überschreiben (`_freierLayoutName` →
+„Name (2)"), validiert `snapshot.symbol`. UI: `.layout-io` mit
+Export/Import-Buttons + verstecktem File-Input.
+
+**7 · HANDOFF** — diese Aktualisierung (bleibt lokal, NIE committen).
 
 ### Cloudflare-Worker — eigene Datei, eigenes Deployment
 
@@ -442,6 +523,11 @@ Im Bundle verifiziert: `YAxis.getType()` liest `getStyles().yAxis.type`
 
 Wichtig zum Verstaendnis: Die EWT-Rechnung ist ohnehin logarithmisch. Der
 Schalter aendert **nichts** an der Mathematik, er macht sie sichtbar.
+
+**m51:** Der `L`-Knopf steuert jetzt auch den **Vergleichsmodus**: bei Log an
+positioniert `drawCompare` die Linien über `log10(Kurs/Ref)` statt linearem
+Prozent (Achse bleibt in % beschriftet). Ohne das erdrückt ein +980 000-%-BTC
+alle Indizes an der Nulllinie. Zustand kommt aus `state.logScale`.
 
 ## Panel-Knoepfe in der Seitenleiste  (m33) — BEABSICHTIGTE Desktop-Aenderung
 

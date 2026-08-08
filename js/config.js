@@ -362,6 +362,22 @@ const CONFIG = {
         { key: "atr", label: "ATR-Linie", color: "#e05555", opacity: 100, width: 2, visible: true },
       ],
     },
+    {
+      // Bollinger Band Width: relative Bandbreite (oberes−unteres)/Basis,
+      // eigenes Fenster unterhalb. Squeeze = die Bandbreite ist das Minimum
+      // ueber das Vergleichsfenster (Volatilitaets-Kompression). Rechenweg
+      // in indicators.js.
+      key: "bbw", name: "BBW", pane: "sub", label: "Bollinger Band Width",
+      inputs: [
+        { key: "length",  label: "Länge",           default: 20 },
+        { key: "mult",    label: "StdDev",          default: 2.0, step: 0.1 },
+        { key: "compLen", label: "Squeeze-Fenster", default: 125 },
+      ],
+      plots: [
+        { key: "bbw", label: "Bandbreite",         color: "#138484", opacity: 100, width: 2, visible: true },
+        { key: "sq",  label: "Squeeze-Markierung", color: "#c026d3", opacity: 40, width: 1, visible: true, noWidth: true },
+      ],
+    },
   ],
 
   DEFAULT_ACTIVE: ["mnoodle", "bmsb", "ema", "myrsi", "myvol"],
