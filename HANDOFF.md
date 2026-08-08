@@ -117,7 +117,7 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 |---|---|---|
 | index.html | 67f2cb57d0d5a7bdbc247ca0667b215f | 1353 |
 | style.css | 06f18b844df3422e0f1e0506408539e1 | 1431 |
-| app.js | 0e16794737a5b8fb08d47f28bb333e1c | 7461 |
+| app.js | 7b10feb2eba30a3eee617f9016b3850a | 7462 |
 | overlays.js | 6dfb80fe2336535e32c78f9c769d5b2b | 1577 |
 | ewt.js | 297d592de041e9131c9402113758922d | 1493 |
 | config.js | e72204add3e08b38264009f1d704d843 | 517 |
@@ -307,6 +307,17 @@ BTC/USDT als (gefüllte) Linie hängen, wenn man von einem Index kam. Neu:
   @media, Layout-Verschiebung hinter `tvIsMobile()`.
 
 **3 · HANDOFF** — diese Aktualisierung.
+
+**m53-Hotfix (gleicher Build, nach Deploy):** `tvIsMobile` war als `const`
+deklariert — kein Hoisting. `assetLabelText` (gehoistete `function`) rief es
+auf, wurde aber über `syncLabels()` bei Zeile 5817 ausgeführt, bevor die
+`const`-Initialisierung bei Zeile 6241 erreicht war → TDZ-ReferenceError.
+Fix: `const tvIsMobile = () =>` → `function tvIsMobile() {}`. Die alten
+Kommentare bei Zeilen 3086/3332 („nicht `tvIsMobile()` benutzen, weil const
+weiter unten") sind technisch überholt, aber unschädlich.
+**Lektion:** Wenn eine neue Funktion `tvIsMobile()` aufruft, immer prüfen ob
+der Aufruf vor Zeile ~6241 stattfindet — dann muss `tvIsMobile` als `function`
+deklariert bleiben, nicht als `const`.
 
 ### Cloudflare-Worker — eigene Datei, eigenes Deployment
 
