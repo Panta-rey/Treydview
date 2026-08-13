@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 8. August 2026 · Build m53**
+**Stand: 13. August 2026 · Build m54**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -111,17 +111,18 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m53)
+## Datei-MD5 (Build m54)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | 67f2cb57d0d5a7bdbc247ca0667b215f | 1353 |
-| style.css | 06f18b844df3422e0f1e0506408539e1 | 1431 |
-| app.js | 7b10feb2eba30a3eee617f9016b3850a | 7462 |
-| overlays.js | 6dfb80fe2336535e32c78f9c769d5b2b | 1577 |
+| index.html | f8390286e86f82a553247541755ba2fa | 1386 |
+| style.css | a9bd30630b2360ff049d2d9890f6f9f6 | 1489 |
+| app.js | e1e3d0b1247402e5718ccb4d50d97667 | 8001 |
+| config.js | 7877db5623e4a46b2ceb07db97b68346 | 519 |
+| data.js | 7e805239486a65af21fbd0ab86c48436 | 595 |
+| overlays.js | 77645b7b5a54cc259bd690ae6bc63329 | 1585 |
+| worker-komplett.js | ac7bc94be3ac728fd3dc6301725a9545 | 848 |
 | ewt.js | 297d592de041e9131c9402113758922d | 1493 |
-| config.js | e72204add3e08b38264009f1d704d843 | 517 |
-| data.js | b0a40f69c5020e5ad549cd44c5e3e1f3 | 591 |
 | indicators.js | 96bca96210cb52aed4f7988d0dfa8c41 | 1034 |
 | settings.js | a0a42e402cbf44a755b469cb004a3836 | 250 |
 | smc.js | 95601db23d23cf8f2cf19eb161c33dc6 | 248 |
@@ -129,11 +130,12 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 | patterns.js | e94d7c6a70b598fe1bfeecb67c4cc82c | 1016 |
 | derivatives.js | d44aac15f1dc1cc5410801b84f2aa81d | 157 |
 | klinecharts.min.js | 5821d09fc874fef9d903fe80e437ed14 | — |
-| worker-komplett.js | fd3121620864c9421f5edf054df72814 | — |
 | snapshot.sh | 19b8c1e054a82780d7371ee89af53552 | — |
 
-> **m53 geändert:** app.js, style.css, index.html. Alles andere (inkl.
-> klinecharts.min.js) unverändert seit m52.
+> **m54 geändert:** app.js, config.js, data.js, overlays.js, style.css,
+> index.html, worker-komplett.js. Alles andere unverändert seit m53r.
+> **worker-komplett.js muss separat als Cloudflare-Worker deployt werden**
+> (nicht Teil des GitHub-Pages-Deploys).
 
 `snapshot.sh` liegt im Repo-Wurzelverzeichnis, erzeugt `data/*.json`.
 `smc.js`, `gridbot.js`, `patterns.js`, `derivatives.js` sind seit vor m17
@@ -271,7 +273,124 @@ zeichnet über `needDefaultYAxisFigure` einen Achsen-Preis-Tag in US-Format
 
 ---
 
-## Build m53 — Änderungen (8. August 2026)
+## Build m54 — Änderungen (13. August 2026)
+
+Acht Anpassungen (Rey), in zwei Aufwandsgruppen umgesetzt.
+
+**Niedrig-Gruppe:**
+
+**1a (Linien speichern)** — `horizontalRayLine` und `straightLine` fehlten in
+`SAVED_OVERLAYS` (app.js), wurden also nie ins Layout gesichert. Ergänzt. Sie
+laufen über denselben `onDrawEnd`→`captureDrawing`-Pfad wie die anderen.
+
+**2 (Magnet-Reihenfolge)** — `buildOverlayConfig` backt `mode: state.magnetMode`
+beim Erstellen des Overlays ein. Schaltet man Magnet erst NACH der Toolwahl ein,
+behielt das schon erzeugte Overlay den alten Modus. Fix: neuer Helfer
+`applyMagnetToActiveDrawing()` ruft `chart.overrideOverlay({id, mode})` auf das
+pending Overlay (`state.drawingId`) — KLC liest `overlay.mode` bei jeder
+Crosshair-Bewegung live, der neue Modus greift sofort. In beiden Magnet-Toggles
+verdrahtet (Drawbar + Bottom-Bar).
+
+**4 (AVWAP-Rechtsklick)** — Das avwap-Overlay hatte kein `onRightClick`, frisch
+gezeichnet also kein Menü. Ergänzt (Registrierung in overlays.js → Bridge
+`window.__tvOpenOverlayMenu` → `openOverlayMenu`), liefert Ankerlinien-Stil +
+Löschen. Feinere VWAP-Kurven-Einstellungen laufen über das Indikator-Zahnrad.
+
+**6a (Asset-Dropdown Reihenfolge + Höhe)** — `CONFIG.DEFAULT_SYMBOLS` in Reys
+Reihenfolge (12 kuratierte zuerst), `#assetList` max-height 384px, sodass die 12
+ohne Scrollen sichtbar sind.
+
+**Hoch-Gruppe:**
+
+**6b (Rest nach 24h-Volumen)** — Neue `CONFIG.CURATED_IDS` (die 12). Der
+Symbol-Loader holt zusätzlich Binance `/ticker/24hr` (quoteVolume) und übernimmt
+Bybit `turnover24h` als `vol`. Endsortierung: kuratierte zuerst (feste Ordnung),
+Rest nach `vol` absteigend, volumenlose (Coinbase/Kraken) alphabetisch ans Ende.
+
+**1b (Preisspanne/Zeitspanne/Fib-Extension verlieren Zeitposition)** — URSACHE
+BEWIESEN im Bundle: `dataIndexToTimestamp` liefert `null` für Punkte rechts der
+letzten Kerze (`getDataByDataIndex` → undefined); `timestampToDataIndex`
+(Binärsuche `ft`) klemmt Zukunfts-Zeitstempel auf den letzten Index. Genau
+solche Zukunftspunkte entstehen, wenn man diese drei Werkzeuge in die Zukunft
+zieht → gespeicherter `timestamp` ist `null` → beim Laden kein Zeit-Anker
+(Preis stimmt, Zeit nicht). fibRetracement zieht man meist zwischen zwei
+Vergangenheitspunkten → funktioniert.
+Fix: `serializeDrawPoints`/`deserializeDrawPoints` (app.js). Zukunftspunkte
+werden als `{barsFromEnd, value}` (Bar-Abstand zum Ende) gespeichert und beim
+Laden relativ zum aktuellen Ende als `dataIndex` wiederhergestellt. In beiden
+`registerDrawing`-Zweigen und beiden Post-Drag-Speicherpfaden verdrahtet, in
+`restoreDrawings` beim Laden. Rundreise-Test bestätigt.
+**Lektion:** KLC-Overlay-Punkte rechts der Daten haben `timestamp=null`; für
+Persistenz immer den Bar-Abstand zum Ende sichern, nie den (geklemmten)
+Zukunfts-Zeitstempel.
+
+**1a (EWT-Wellen + Chart-Muster + SMC persistieren)** — Diese Scan-Overlays sind
+„generiert" (nicht in `state.drawings`) und verschwanden beim Neuladen/
+Layout-Wechsel. Sie werden jetzt direkt erfasst statt neu gescannt (der
+Sichtbereich, von dem ein Re-Scan abhinge, wird nicht gespeichert). Helfer:
+`captureGeneratedOverlays`/`restoreGeneratedOverlays` +
+`serializeGeneratedPoints`/`deserializeGeneratedPoints`. **Wichtig:** diese
+Overlays verwenden `dataIndex` statt `timestamp` (ein gesetzter timestamp lässt
+die EWT-Strukturen zusammenrutschen, siehe scanEWT); der Datenanfang ist stabil
+(volle Historie, neue Bars hinten), daher überlebt in-range-dataIndex; nur
+Projektionen jenseits des Endes → `barsFromEnd`. Capture am Ende von scanEWT/
+scanPatterns/scanSMC → `state.ewtSaved`/`patternSaved`/`smcSaved` (Workspace +
+Layout gespeichert). Restore in allen drei Pfaden (initial, Layout-Apply,
+Compare-Exit) + `raiseEwtOffsetFromSaved` für den Projektions-Rand.
+
+**5 (Silber XAG/USD)** — Neue Worker-Route `/silverhistory` (LBMA `silver.json`,
+ein Fixing/Tag → flache Kerze o=h=l=c → als Linie). `data.js`: gemeinsamer
+`_fetchWorkerHistory(endpoint, from, label)` (Gold refaktoriert, neu
+`fetchSilverHistory`). `config.js`: `SILVER_ENDPOINT` + Symbol `XAGUSD` (Slot 7).
+`app.js`: Silber-Dispatch (`state.symbol.id === "XAGUSD"`) vor dem Gold-Else in
+loadData + `XAGUSD` in `LINIEN_SYMBOLE`. WORKER_BASE_URL unberührt.
+**VORBEHALT:** Das exakte `silver.json`-Format konnte nicht live geprüft werden
+(lbma.org.uk nicht erreichbar). Es folgt der dokumentierten LBMA-Konvention wie
+gold_am/pm.json und ist defensiv gebaut (nur Array + endliche USD-Werte > 0).
+**Nach dem Worker-Deploy verifizieren:** `/silverhistory` aufrufen und prüfen,
+dass Kerzen zurückkommen.
+
+**3 (Blauer Fib-Magnet-Punkt)** — Beim Setzen von Fib-Retracement-/Extension-
+Punkten zeigt ein blauer Punkt in der Fadenkreuzmitte, wo die Marke landet, und
+rastet bei Magnet AN auf die nächste OHLC-Marke ein. Desktop: eigener
+`chartEl`-mousemove-Listener (zuverlässiger als onCrosshairChange) +
+`magnetSnapToOhlc` (globale Fassung der Mobile-Logik) + eigenes Dot-Canvas
+(`drawFibDot`/`clearFibDot`). Nur aktiv während `isFibDrawing()`. Mobil hat sein
+eigenes Fadenkreuz-Werkzeug mit Punkt.
+
+**7 (Lower-Pane-Header/Collapse/Zahnrad)** — Pro Sub-Pane ein DOM-Header über dem
+Chart: links Name + aktueller Wert (aus `getIndicatorByPaneId(paneId,
+ind.name).result`, Crosshair-Balken via `onCrosshairChange`), rechts Collapse
+(fährt die Pane per `setPaneOptions({id, height:20, minHeight:20})` auf
+Header-Höhe ein) + Zahnrad (öffnet `Settings.open(ind.key, …)` wie im
+Indikatoren-Dropdown). Positionen aus `chart.getSize(paneId)` → {top, height,
+left, width}. Neu aufgebaut bei Indikator-Änderung, Resize, `onPaneDrag` und
+nach dem Laden. `state.paneCollapsed` merkt sich pro Pane den Collapse-Zustand +
+vorherige Höhe.
+
+**8 (Login / Sync-Code)** — Variante b: EIN Sync-Code (Passphrase) je Nutzer,
+kein Passwort-Konto. Icon in der Topbar ganz rechts neben FAQ (`#syncBtn`) öffnet
+ein Modal (Code eingeben → Speichern/Laden). Worker-Route `/sync`
+(GET pull / POST push), KV-Schlüssel `sync_<sha256(code)>` (Klartext-Code steht
+nicht im KV). Gesichert wird ein Bündel aus `tv_workspace` + `tv_layouts`; beim
+Laden zurück in localStorage geschrieben und Seite neu geladen. Mindestcodelänge
+6 Zeichen. **Worker-Deploy nötig.**
+
+**Lektionen m54:**
+- Bei einem hotfix-/Feature-Deploy den Build-String bumpen (m53r→m54), sonst
+  greift Query-Parameter-Cache-Busting nicht (Brave iOS cacht aggressiv).
+- Generierte Scan-Overlays (EWT/Muster/SMC) und Nutzer-Zeichnungen brauchen
+  UNTERSCHIEDLICHE Persistenz: Zeichnungen über timestamp (absolute Zeit),
+  generierte über dataIndex (stabiler Datenanfang) — timestamp lässt EWT
+  zusammenrutschen.
+- `chart.getSize(paneId)` liefert das Pane-Bounding {top,height,left,width} —
+  Grundlage für DOM-Overlays über Panes. `setPaneOptions({id,height,minHeight})`
+  fährt Panes ein/aus (minHeight default 30, für Collapse auf Header-Höhe
+  senken).
+
+---
+
+
 
 Vier Punkte aus dem Mobil-Live-Test. ESLint no-undef sauber, Desktop-Basis-CSS
 identisch (alle CSS-Änderungen in @media), kein Bundle angefasst.
@@ -318,6 +437,20 @@ weiter unten") sind technisch überholt, aber unschädlich.
 **Lektion:** Wenn eine neue Funktion `tvIsMobile()` aufruft, immer prüfen ob
 der Aufruf vor Zeile ~6241 stattfindet — dann muss `tvIsMobile` als `function`
 deklariert bleiben, nicht als `const`.
+
+**m53r — Cache-Bug (Brave iOS):** Nach dem Hotfix-Deploy lud Brave iOS noch
+das alte `app.js` aus dem Cache. Der ReferenceError wurde von `quiet()` still
+geschluckt — der gesamte Mobil-Layout-Umbau fiel aus, der Chart blieb schwarz.
+Diagnose: alle Desktop-Elemente lagen vertikal gestapelt im `topbar`-Flex-
+Container (`flex-direction: column`), `#tbRow1`/`#tbRow2` blieben leer.
+Fix: Build-Kennung `m53`→`m53r` in `TV_BUILD`, `--tv-build` und allen `?v=`-
+Parametern → erzwingt frischen Download auch bei agressivem Browser-Cache.
+
+**Lektion Cache-Bugs:** Bei einem hotfix-Deploy nach einem echten Fehler IMMER
+den Build-String ändern (`m53`→`m53r` oder `m53b` o. ä.), damit Query-
+Parameter-basiertes Cache-Busting greift. `quiet()` schluckt Fehler ohne
+Konsolenausgabe (ausser `__tvDebug=true`) — ein stiller Crash beim Mobil-
+Layout sieht aus wie ein CSS-Problem.
 
 ### Cloudflare-Worker — eigene Datei, eigenes Deployment
 

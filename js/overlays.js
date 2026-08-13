@@ -1039,6 +1039,14 @@
     needDefaultPointFigure: true,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
+    // Rechtsklick auf die Ankerlinie: Stil + Löschen (Punkt 4). Feinere
+    // Einstellungen der VWAP-Kurve laufen ueber das Indikator-Zahnrad.
+    // In der Registrierung verankert, damit das Menue auf jedem
+    // Erzeugungspfad (frisch wie wiederhergestellt) sicher greift.
+    onRightClick: (event) => {
+      if (window.__tvOpenOverlayMenu) { window.__tvOpenOverlayMenu(event.overlay, event); return true; }
+      return false;
+    },
     createPointFigures: ({ coordinates, overlay, yAxis }) => {
       if (coordinates.length < 1) return [];
       const x = coordinates[0].x;

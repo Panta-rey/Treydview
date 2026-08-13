@@ -70,13 +70,15 @@ export default {
     try {
       if (url.pathname === "/macro"       && request.method === "GET")  return await getMacro(env);
       if (url.pathname === "/goldhistory" && request.method === "GET")  return await getGoldHistory(env, request);
+      if (url.pathname === "/silverhistory" && request.method === "GET") return await getSilverHistory(env, request);
       if (url.pathname === "/bitstamp"    && request.method === "GET")  return await getBitstamp(request, env);
       if (url.pathname === "/stooq"       && request.method === "GET")  return await getStooq(request, env);
       if (url.pathname === "/m2"          && request.method === "GET")  return await getM2(env);
       if (url.pathname === "/history"     && request.method === "GET")  return await getHistory(env);
       if (url.pathname === "/snapshot"    && request.method === "POST") return await postSnapshot(request, env);
+      if (url.pathname === "/sync"        && (request.method === "GET" || request.method === "POST")) return await handleSync(request, env);
       if (url.pathname === "/")
-        return json({ ok: true, service: "panta-rey", routes: ["/macro", "/goldhistory", "/bitstamp", "/stooq", "/m2", "/history", "/snapshot"] });
+        return json({ ok: true, service: "panta-rey", routes: ["/macro", "/goldhistory", "/silverhistory", "/bitstamp", "/stooq", "/m2", "/history", "/snapshot", "/sync"] });
       return json({ error: "not found" }, 404);
     } catch (e) {
       return json({ error: String(e && e.message || e) }, 500);
@@ -293,6 +295,120 @@ async function getGoldHistory(env, request) {
 
   try { await env.PANTA.put(goldKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
   return json(zuschneiden(data, from));
+}
+
+/* ============================================================
+   /silverhistory  (Punkt 5)
+   LBMA-Silberfixing, EIN Preis je Handelstag (kein AM/PM wie Gold),
+   zurueck bis 1968. Gleiches offenes JSON-Format wie Gold:
+     { "d": "YYYY-MM-DD", "v": [USD, GBP, EUR] }
+   Ein Preis je Tag -> flache Kerze (o=h=l=c); der Client stellt XAG/USD
+   ohnehin als Linie dar.
+
+   HINWEIS: Das exakte silver.json-Format konnte vorab nicht live geprueft
+   werden. Es folgt der dokumentierten LBMA-Konvention (wie gold_am/pm.json).
+   Defensive Parsing: nur Array + endliche USD-Werte > 0 werden uebernommen,
+   sonst greift der Cache-/Fehlerpfad wie bei Gold.
+   ============================================================ */
+async function buildSilverHistory() {
+  const url = "https://prices.lbma.org.uk/json/silver.json";
+  const headers = { "User-Agent": "Mozilla/5.0 (compatible; TreydView/1.0)" };
+
+  const r = await fetch(url, { headers, cf: { cacheTtl: 21600 } });
+  if (!r.ok) throw new Error(`LBMA HTTP ${r.status} (${url})`);
+  const j = await r.json();
+  if (!Array.isArray(j)) throw new Error("LBMA Silber: unerwartetes Format");
+
+  const r2 = (x) => Math.round(x * 100) / 100;
+  const kerzen = [];
+  const rows = [];
+  for (const row of j) {
+    const d = row && row.d;
+    const usd = row && Array.isArray(row.v) ? Number(row.v[0]) : NaN;
+    if (!d || !isFinite(usd) || usd <= 0) continue;   // Feiertage tragen null
+    const ms = Date.parse(d + "T00:00:00Z");
+    if (!isFinite(ms)) continue;
+    const p = r2(usd);
+    kerzen.push([ms, p, p, p, p, 0]);   // flach: o=h=l=c
+    rows.push([ms, p]);
+  }
+  if (kerzen.length === 0) throw new Error("LBMA Silber: keine verwertbaren Tage");
+  kerzen.sort((a, b) => a[0] - b[0]);
+  rows.sort((a, b) => a[0] - b[0]);
+
+  return {
+    source: "LBMA (London Bullion Market Association) — Silber-Fixing (ein Preis je Tag)",
+    note: "Ein Fixing je Handelstag; flache Kerzen, als Linie gedacht.",
+    from: kerzen[0][0], to: kerzen[kerzen.length - 1][0],
+    count: kerzen.length,
+    candles: kerzen,
+    series: rows,
+  };
+}
+
+async function getSilverHistory(env, request) {
+  let cached = null;
+  const silverKey = `silverhistory_${CACHE_VERSION}`;
+  const from = request ? new URL(request.url).searchParams.get("from") : null;
+  try { cached = JSON.parse(await env.PANTA.get(silverKey)); } catch (_) {}
+  if (cached && cached.data && (Date.now() - cached.ts) < GOLD_HISTORY_TTL_MS) {
+    return json(zuschneiden(cached.data, from));
+  }
+
+  let data;
+  try {
+    data = await buildSilverHistory();
+  } catch (e) {
+    if (cached && cached.data) return json(zuschneiden(cached.data, from));
+    return json({ error: String(e && e.message || e) }, 500);
+  }
+
+  try { await env.PANTA.put(silverKey, JSON.stringify({ ts: Date.now(), data })); } catch (_) {}
+  return json(zuschneiden(data, from));
+}
+
+/* ============================================================
+   /sync  (Punkt 8) — Einstellungen pro Sync-Code speichern/laden.
+   Variante b: EIN Sync-Code (Passphrase) je Nutzer, kein Passwort-
+   Hashing/Konto. Der Code wird SHA-256-gehasht als KV-Schlüssel benutzt,
+   damit der Klartext-Code nicht als Schlüssel im KV steht.
+     GET  /sync?code=<code>   -> { found, workspace }
+     POST /sync  {code, workspace} -> { ok }
+   Der Workspace ist das JSON aus localStorage "tv_workspace".
+   ============================================================ */
+async function sha256Hex(str) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function handleSync(request, env) {
+  const url = new URL(request.url);
+
+  if (request.method === "GET") {
+    const code = url.searchParams.get("code");
+    if (!code || code.length < 6) return json({ error: "Code fehlt oder zu kurz (mindestens 6 Zeichen)." }, 400);
+    const key = "sync_" + (await sha256Hex(code));
+    let stored = null;
+    try { stored = await env.PANTA.get(key); } catch (_) {}
+    if (!stored) return json({ found: false });
+    let workspace = null;
+    try { workspace = JSON.parse(stored); } catch (_) { workspace = null; }
+    return json({ found: true, workspace });
+  }
+
+  // POST
+  let body;
+  try { body = await request.json(); } catch (_) { return json({ error: "Ungültiger Request-Body." }, 400); }
+  const code = body && body.code;
+  if (!code || code.length < 6) return json({ error: "Code fehlt oder zu kurz (mindestens 6 Zeichen)." }, 400);
+  if (body.workspace == null) return json({ error: "Kein Workspace übermittelt." }, 400);
+  const key = "sync_" + (await sha256Hex(code));
+  try {
+    await env.PANTA.put(key, JSON.stringify(body.workspace));
+  } catch (e) {
+    return json({ error: "Speichern fehlgeschlagen: " + String(e && e.message || e) }, 500);
+  }
+  return json({ ok: true });
 }
 
 /* ============================================================

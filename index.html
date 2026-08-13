@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m53r">
-  <link rel="stylesheet" href="css/style.css?v=m53r">
+  <link rel="manifest" href="manifest.webmanifest?v=m54">
+  <link rel="stylesheet" href="css/style.css?v=m54">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m53r"></script>
+  <script src="js/lib/klinecharts.min.js?v=m54"></script>
 </head>
 <body>
 
@@ -426,6 +426,16 @@
       </svg>
     </button>
 
+    <!-- Sync / Login per Sync-Code (Punkt 8). Ganz rechts neben FAQ. -->
+    <button class="action-btn" id="syncBtn" title="Einstellungen synchronisieren (Sync-Code)">
+      <svg viewBox="0 0 24 24" class="ab-icon" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M12 3a9 9 0 0 1 8.5 6" stroke-linecap="round"/>
+        <path d="M12 21a9 9 0 0 1-8.5-6" stroke-linecap="round"/>
+        <path d="M20.5 4.5V9h-4.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M3.5 19.5V15h4.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
     <!-- Zeichenstift-Icon (nur Mobile): öffnet Draw-Bottom-Sheet -->
     <button class="action-btn mobile-only" id="drawSheetBtn" title="Zeichenwerkzeuge">
       <svg viewBox="0 0 24 24" class="ab-icon" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -676,6 +686,29 @@
   </div>
 </div>
 
+
+<!-- ---------- Sync / Login (Punkt 8) ---------- -->
+<div class="sync-modal hidden" id="syncModal">
+  <div class="sync-box">
+    <div class="sync-head">
+      <span>Einstellungen synchronisieren</span>
+      <button class="sync-close" id="syncClose" type="button">✕</button>
+    </div>
+    <div class="sync-body">
+      <p class="sync-info">Mit einem persönlichen Sync-Code speicherst du deine
+        TreydView-Einstellungen (Layouts, Indikatoren, Zeichnungen) und rufst sie
+        auf jedem Gerät wieder ab. Wähle einen eigenen, schwer zu erratenden Code.</p>
+      <label class="sync-label" for="syncCodeInput">Sync-Code</label>
+      <input type="text" id="syncCodeInput" class="sync-input" autocomplete="off"
+             spellcheck="false" placeholder="z. B. eine lange Passphrase">
+      <div class="sync-actions">
+        <button class="sync-act" id="syncSaveBtn"  type="button">Speichern</button>
+        <button class="sync-act" id="syncLoadBtn"  type="button">Laden</button>
+      </div>
+      <div class="sync-status" id="syncStatus"></div>
+    </div>
+  </div>
+</div>
 
 <!-- ---------- FAQ / Hilfe ---------- -->
 <div class="faq-modal hidden" id="faqModal">
@@ -1338,16 +1371,16 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m53r"></script>
-<script src="js/indicators.js?v=m53r"></script>
-<script src="js/overlays.js?v=m53r"></script>
-<script src="js/data.js?v=m53r"></script>
-<script src="js/settings.js?v=m53r"></script>
-<script src="js/derivatives.js?v=m53r"></script>
-<script src="js/gridbot.js?v=m53r"></script>
-<script src="js/patterns.js?v=m53r"></script>
-<script src="js/smc.js?v=m53r"></script>
-<script src="js/ewt.js?v=m53r"></script>
-<script src="js/app.js?v=m53r"></script>
+<script src="js/config.js?v=m54"></script>
+<script src="js/indicators.js?v=m54"></script>
+<script src="js/overlays.js?v=m54"></script>
+<script src="js/data.js?v=m54"></script>
+<script src="js/settings.js?v=m54"></script>
+<script src="js/derivatives.js?v=m54"></script>
+<script src="js/gridbot.js?v=m54"></script>
+<script src="js/patterns.js?v=m54"></script>
+<script src="js/smc.js?v=m54"></script>
+<script src="js/ewt.js?v=m54"></script>
+<script src="js/app.js?v=m54"></script>
 </body>
 </html>

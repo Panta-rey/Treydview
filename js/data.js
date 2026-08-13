@@ -434,7 +434,20 @@ const DataLayer = {
   // Worker-Format NUR normalizeGoldRow() anpassen.
 
   async fetchGoldHistory(from) {
-    const url = CONFIG.WORKER_BASE_URL.replace(/\/$/, "") + CONFIG.GOLD_ENDPOINT
+    return this._fetchWorkerHistory(CONFIG.GOLD_ENDPOINT, from, "Gold");
+  },
+
+  // Silber (Punkt 5): gleiche Worker-Struktur wie Gold, anderer Endpunkt.
+  // LBMA liefert ein Fixing je Tag -> flache Kerzen (o=h=l=c), als Linie.
+  async fetchSilverHistory(from) {
+    return this._fetchWorkerHistory(CONFIG.SILVER_ENDPOINT, from, "Silber");
+  },
+
+  // Gemeinsamer Abruf fuer die LBMA-Edelmetall-Endpunkte des Workers.
+  // Akzeptiert {candles:[[ms,o,h,l,c,v]]} (bevorzugt), {series:[[ms,close]]}
+  // (Rueckfall) oder rohe Zeilen; faellt auf Stooq-CSV-Parsing zurueck.
+  async _fetchWorkerHistory(endpoint, from, label) {
+    const url = CONFIG.WORKER_BASE_URL.replace(/\/$/, "") + endpoint
               + (from ? `?from=${from}` : "");
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Worker HTTP ${res.status}`);
@@ -444,9 +457,6 @@ const DataLayer = {
     try {
       const json = JSON.parse(text);
       if (Array.isArray(json.candles)) {
-        // Bevorzugt: echtes OHLC ([[ms,o,h,l,c,v],...]). Nur damit sind
-        // Kerzen sinnvoll. Der aeltere `series`-Zweig unten kennt nur
-        // Schlusskurse — dort ist jede Kerze ein koerperloser Strich.
         rows = json.candles
           .map(([ts, o, h, l, cl, v]) => (isFinite(ts) && isFinite(cl))
             ? { timestamp: ts,
@@ -458,12 +468,6 @@ const DataLayer = {
             : null)
           .filter(Boolean);
       } else if (Array.isArray(json.series)) {
-        // Rueckfall fuer aeltere Worker-Fassungen: { series:[[ms,close],...] }.
-        // Tupel, keine benannten Felder — normalizeGoldRow passt hier nicht,
-        // das erwartet ein Objekt mit date/close. Ohne diesen Zweig kam
-        // json.data und json.history als undefined zurück, rows wurde null,
-        // und die Funktion gab am Ende STILLSCHWEIGEND ein leeres Array
-        // zurück statt eines Fehlers oder echter Daten.
         rows = json.series
           .map(([ts, close]) => (isFinite(ts) && isFinite(close))
             ? { timestamp: ts, open: close, high: close, low: close, close, volume: 0 }
@@ -481,7 +485,7 @@ const DataLayer = {
       rows = this.parseStooqCsv(text);
     }
 
-    if (!rows.length) throw new Error("Keine Gold-Daten erhalten");
+    if (!rows.length) throw new Error(`Keine ${label || "Worker"}-Daten erhalten`);
     rows.sort((a, b) => a.timestamp - b.timestamp);
     return rows.filter((r, i) => i === 0 || r.timestamp !== rows[i - 1].timestamp);
   },

@@ -6,6 +6,7 @@ const CONFIG = {
   // >>> HIER deine Cloudflare-Worker-Basis-URL eintragen <<<
   WORKER_BASE_URL: "https://pantarey.rey-gafner.workers.dev",
   GOLD_ENDPOINT:   "/goldhistory",
+  SILVER_ENDPOINT: "/silverhistory",
   BITSTAMP_ENDPOINT: "/bitstamp",
 
   // ---- Historie-Momentaufnahmen ----------------------------------
@@ -45,49 +46,50 @@ const CONFIG = {
   BINANCE_REST:    "https://api.binance.com/api/v3",
   BINANCE_WS:      "wss://stream.binance.com:9443/ws",
 
+  // Kuratierte Vorschlagsliste (Punkt 6): diese IDs stehen bei leerem
+  // Suchfeld ganz oben, in genau dieser Reihenfolge. Alles andere folgt
+  // darunter, sortiert nach 24h-USD-Volumen (loadAllExchangeSymbols).
+  // XAGUSD (Silber) wird von Punkt 5 ergaenzt.
+  CURATED_IDS: [
+    "BTCUSDT", "BTCUSD_BS", "ETHUSDT", "ETHUSD_BS", "SOLUSDT",
+    "XAUUSD", "XAGUSD", "^SPX", "^NDQ", "^DJI", "QQQ", "VTSAX",
+  ],
+
   DEFAULT_SYMBOLS: [
+    // ── Kuratierte Vorschlagsliste (Punkt 6): diese zuerst, in dieser
+    //    Reihenfolge, wenn das Suchfeld leer ist. Der Rest folgt darunter
+    //    (nach 24h-Volumen sortiert, siehe loadAllExchangeSymbols).
     { id: "BTCUSDT",  label: "BTC/USDT (Binance)",  type: "binance" },
-    { id: "ETHUSDT",  label: "ETH/USDT (Binance)",  type: "binance" },
-    { id: "SOLUSDT",  label: "SOL/USDT (Binance)",  type: "binance" },
-    { id: "AEROUSDT", label: "AERO/USDT (Binance)", type: "binance" },
-    { id: "XAUUSD",   label: "Gold XAU/USD (ab 1968)", type: "worker" },
     // Binance beginnt bei BTC/USDT im August 2017. Bitstamp handelt
     // BTC/USD seit 2011 — eine durchgehende Reihe ohne Nahtstellen.
     // Bewusst ein EIGENES Symbol statt einer zusammengeklebten Historie:
     // USD und USDT sind verschiedene Maerkte mit eigenen Preisen.
     { id: "BTCUSD_BS", label: "BTC/USD (Bitstamp, ab 2011)", type: "bitstamp", bitstampPair: "btcusd" },
-    // ETH/USD ebenfalls ueber Bitstamp. Das genaue Listing-Datum liess
-    // sich vorab nicht zweifelsfrei belegen — zwei unabhaengige Indizien
-    // deuten auf Herbst 2015, also kurz nach dem Ethereum-Start und
-    // frueher als Kraken (2016). Der Worker liefert das tatsaechliche
-    // Startdatum im Feld "from" mit; danach richtet sich das Label.
+    { id: "ETHUSDT",  label: "ETH/USDT (Binance)",  type: "binance" },
+    // ETH/USD ueber Bitstamp (Herbst 2015, frueher als Kraken). Der Worker
+    // liefert das tatsaechliche Startdatum im Feld "from" mit.
     { id: "ETHUSD_BS", label: "ETH/USD (Bitstamp)", type: "bitstamp", bitstampPair: "ethusd" },
-    // Aktienindizes ueber den Worker (Stooq). Nur Tageskerzen — Stooq
-    // liefert fuer Indizes keine Intraday-Daten.
+    { id: "SOLUSDT",  label: "SOL/USDT (Binance)",  type: "binance" },
+    { id: "XAUUSD",   label: "Gold XAU/USD (ab 1968)", type: "worker" },
+    // Silber XAG/USD (Punkt 5): LBMA-Fixing, ein Preis je Tag -> als Linie.
+    // Eigener Worker-Endpunkt /silverhistory (Dispatch in app.js loadData).
+    { id: "XAGUSD",   label: "Silber XAG/USD (ab 1968)", type: "worker" },
+    // Aktienindizes ueber den Worker (Stooq). Nur Tageskerzen.
     { id: "^SPX", label: "S&P 500",   type: "stooq", stooqSymbol: "^spx" },
-    // Label korrigiert: FRED fuehrt fuer Nasdaq nur den Composite
-    // (Serie NASDAQCOM), keinen separaten Nasdaq-100-Index. Andere
-    // Beschriftung waere falsche Information unter richtigem Chart.
+    // FRED fuehrt fuer Nasdaq nur den Composite (Serie NASDAQCOM).
     { id: "^NDQ", label: "Nasdaq Composite", type: "stooq", stooqSymbol: "^ndq" },
     { id: "^DJI", label: "Dow Jones",  type: "stooq", stooqSymbol: "^dji" },
-    // Fonds. Laufen ueber denselben Worker-Weg wie die Indizes, aber ohne
-    // FRED-Rueckfall — fuer Fondsanteile gibt es dort keine Reihen.
+    // Fonds. Gleicher Worker-Weg wie die Indizes, ohne FRED-Rueckfall.
     { id: "QQQ",   label: "Invesco QQQ Trust",     type: "stooq", stooqSymbol: "qqq"   },
     { id: "VTSAX", label: "Vanguard VTSAX",        type: "stooq", stooqSymbol: "vtsax" },
-    // Kraken BTC/USD und ETH/USD sind ENTFALLEN. Sie standen nur hier,
-    // weil sie mehr Historie boten als Binance (2013 bzw. 2016). Seit
-    // Bitstamp ab 2011 liefert, sind sie ueberholt: weder mehr Tiefe noch
-    // ein anderer Zweck, aber je ein eigener Ladepfad mit eigenen
-    // Fehlerfaellen. SOL bleibt — dafuer gibt es keine Alternative.
+
+    // ── Rest (nicht in der kuratierten Liste) ──
+    { id: "AEROUSDT", label: "AERO/USDT (Binance)", type: "binance" },
+    // SOL/USD via Kraken (fuer SOL gibt es keine bessere Alternative).
     { id: "SOLUSD_KR",  label: "SOL/USD (Kraken)",  type: "kraken", krakenPair: "SOLUSD"   },
-    // Coinbase: AERO seit 2024 gelistet (mehr Historie als Binance Dez 2024)
-    // AERO bleibt: eigene Begruendung (Coinbase listet seit 2024, Binance
-    // erst Dez 2024). BTC/USD und ETH/USD sind entfallen — siehe Kraken.
+    // Coinbase: AERO seit 2024 gelistet (mehr Historie als Binance Dez 2024).
     { id: "AERO-USD", label: "AERO/USD (Coinbase)", type: "coinbase", coinbaseProduct: "AERO-USD" },
-    // Bybit: listet AERO/USDT (Spot)
-    // AERO bleibt, BTC/USDT entfaellt — Binance ist dort in Tiefe und
-    // Historie ueberlegen und liefert jetzt zusaetzlich aus der
-    // Momentaufnahme.
+    // Bybit: listet AERO/USDT (Spot).
     { id: "AEROUSDT_BY", label: "AERO/USDT (Bybit)", type: "bybit", bybitSymbol: "AEROUSDT" },
   ],
 

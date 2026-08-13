@@ -49,6 +49,7 @@ const state = {
   vrvpCanvas:  null,
   tooltipsVisible: true,
   subPaneIds:  {},   // indKey -> paneId (von createIndicator zurückgegeben)
+  paneCollapsed: {}, // indKey -> {collapsed, prevHeight} (Punkt 7)
   // Nur zwei Zustaende: "normal" (aus) und "strong_magnet" (ein). Die
   // frueheren drei Stufen (aus/schwach/stark) waren beim Zeichnen mit dem
   // Finger nicht unterscheidbar. Der Name "strong_magnet" bleibt, weil
@@ -105,14 +106,17 @@ const state = {
 
   // Pattern-Erkennung
   patternOverlayIds: [],
+  patternSaved: _ws?.patternSaved || [],   // persistierte Scan-Overlays (Punkt 1a)
   patternOpts: _ws?.patternOpts || {},   // leer = Engine-Defaults (streng)
 
   // Smart Money Concepts (FVG / Order Blocks)
   smcOverlayIds: [],
+  smcSaved: _ws?.smcSaved || [],
   smcOpts: _ws?.smcOpts || {},
 
   // Elliott-Wellen-Scanner (Welle 3 / Golden Pocket)
   ewtOverlayIds: [],
+  ewtSaved: _ws?.ewtSaved || [],
   ewtOpts: _ws?.ewtOpts || {},
 
   // Logarithmische Preisskala. Default linear — die Log-Ansicht ist eine
@@ -471,11 +475,124 @@ function removeIndicator(ind) {
   }
 }
 
+// ── Lower-Pane-Header (Punkt 7) ──────────────────────────────────────
+// Kopf pro Sub-Pane: links Name + aktueller Wert, rechts Collapse (fährt
+// die Pane auf Header-Höhe ein) + Zahnrad (öffnet die Indikator-
+// Einstellungen wie im Indikatoren-Dropdown). Als DOM-Overlay über dem
+// Chart; Positionen kommen aus chart.getSize(paneId).
+const PANE_HEADER_H = 20;
+let _paneHeaderEls = {};       // indKey -> DOM
+let _lastCrosshairIndex = null;
+
+function paneHeaderValueText(ind, paneId, dataIndex) {
+  try {
+    const inst = chart.getIndicatorByPaneId(paneId, ind.name);
+    if (!inst || !inst.result || !inst.result.length) return "";
+    const idx = (dataIndex != null && dataIndex >= 0 && dataIndex < inst.result.length)
+      ? dataIndex : inst.result.length - 1;
+    const row = inst.result[idx];
+    if (!row) return "";
+    const parts = [];
+    (inst.figures || []).forEach(f => {
+      const v = row[f.key];
+      if (typeof v === "number" && isFinite(v)) {
+        parts.push(v.toLocaleString("de-CH", { maximumFractionDigits: 2 }));
+      }
+    });
+    return parts.join("  ");
+  } catch (e) { return ""; }
+}
+
+function togglePaneCollapse(ind) {
+  const paneId = state.subPaneIds[ind.key];
+  if (!paneId) return;
+  const st = state.paneCollapsed[ind.key] || { collapsed: false, prevHeight: 0 };
+  try {
+    if (!st.collapsed) {
+      const b = chart.getSize(paneId);
+      st.prevHeight = (b && b.height) ? b.height : 100;
+      chart.setPaneOptions({ id: paneId, height: PANE_HEADER_H, minHeight: PANE_HEADER_H });
+      st.collapsed = true;
+    } else {
+      chart.setPaneOptions({ id: paneId, height: st.prevHeight || 100, minHeight: 30 });
+      st.collapsed = false;
+    }
+  } catch (e) {}
+  state.paneCollapsed[ind.key] = st;
+  setTimeout(updatePaneHeaders, 0);
+}
+
+// Nur die Werte aktualisieren (leichtgewichtig, für Crosshair-Bewegung).
+function refreshPaneHeaderValues() {
+  Object.keys(_paneHeaderEls).forEach(key => {
+    const ind = CONFIG.INDICATORS.find(i => i.key === key);
+    const paneId = state.subPaneIds[key];
+    if (!ind || !paneId) return;
+    const v = _paneHeaderEls[key].querySelector(".ph-val");
+    if (v) v.textContent = paneHeaderValueText(ind, paneId, _lastCrosshairIndex);
+  });
+}
+
+// Vollständig: Header anlegen/entfernen und neu positionieren.
+function updatePaneHeaders() {
+  if (typeof chart === "undefined" || !chartEl) return;
+  // Header ohne aktives Sub-Pane entfernen
+  Object.keys(_paneHeaderEls).forEach(k => {
+    if (!state.subPaneIds[k]) { try { _paneHeaderEls[k].remove(); } catch (e) {} delete _paneHeaderEls[k]; }
+  });
+  // Im Vergleichsmodus gibt es keine Sub-Panes
+  if (state.compareAssets && state.compareAssets.length > 0) {
+    Object.keys(_paneHeaderEls).forEach(k => { try { _paneHeaderEls[k].remove(); } catch (e) {} });
+    _paneHeaderEls = {};
+    return;
+  }
+  Object.keys(state.subPaneIds).forEach(key => {
+    const ind = CONFIG.INDICATORS.find(i => i.key === key);
+    if (!ind) return;
+    const paneId = state.subPaneIds[key];
+    let b; try { b = chart.getSize(paneId); } catch (e) { b = null; }
+    if (!b || b.height == null) return;
+    let el = _paneHeaderEls[key];
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "pane-header";
+      const name = document.createElement("span"); name.className = "ph-name";
+      const val  = document.createElement("span"); val.className = "ph-val";
+      const acts = document.createElement("div");  acts.className = "ph-actions";
+      const col  = document.createElement("button"); col.className = "ph-btn ph-collapse"; col.title = "Ein-/Ausklappen"; col.type = "button";
+      const gear = document.createElement("button"); gear.className = "ph-btn ph-gear"; gear.title = "Einstellungen"; gear.textContent = "⚙"; gear.type = "button";
+      col.addEventListener("click", (e) => { e.stopPropagation(); togglePaneCollapse(ind); });
+      gear.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!((ind.inputs && ind.inputs.length) || (ind.plots && ind.plots.length))) return;
+        Settings.open(ind.key, (k) => {
+          const i = CONFIG.INDICATORS.find(x => x.key === k);
+          if (state.active.has(k)) { removeIndicator(i); applyIndicator(i); }
+          scheduleTagDraw(); updateLegend(); setTimeout(updatePaneHeaders, 30);
+        });
+      });
+      acts.appendChild(col); acts.appendChild(gear);
+      el.appendChild(name); el.appendChild(val); el.appendChild(acts);
+      chartEl.style.position = "relative";
+      chartEl.appendChild(el);
+      _paneHeaderEls[key] = el;
+    }
+    el.querySelector(".ph-name").textContent = ind.label || ind.name;
+    el.querySelector(".ph-val").textContent  = paneHeaderValueText(ind, paneId, _lastCrosshairIndex);
+    const st = state.paneCollapsed[key];
+    el.querySelector(".ph-collapse").textContent = (st && st.collapsed) ? "▸" : "▾";
+    el.style.top = (b.top || 0) + "px";
+    el.style.left = (b.left || 0) + "px";
+    el.style.width = (b.width || chartEl.clientWidth) + "px";
+  });
+}
+
 function applyAllActive() {
   // Erst Overlays, dann Sub-Panes (Reihenfolge = stabilere Pane-Höhen)
   CONFIG.INDICATORS.filter(i => i.pane === "main").forEach(i => { if (state.active.has(i.key)) applyIndicator(i); });
   CONFIG.INDICATORS.filter(i => i.pane === "sub").forEach(i => { if (state.active.has(i.key)) applyIndicator(i); });
   scheduleTagDraw();
+  setTimeout(updatePaneHeaders, 80);   // Pane-Header aufbauen (Punkt 7)
 }
 
 // ---------- VRVP-Canvas ----------
@@ -724,6 +841,15 @@ async function loadData() {
     } else if (state.symbol.type === "bybit") {
       candles = await DataLayer.fetchBybitKlines(state.symbol.bybitSymbol, state.timeframe.bybitInterval, CONFIG.CANDLE_LIMIT);
       if (!candles || candles.length === 0) throw new Error(`Bybit: keine Kerzen für ${state.symbol.bybitSymbol} / ${state.timeframe.bybitInterval}`);
+    } else if (state.symbol.id === "XAGUSD") {
+      // Silber (Punkt 5): Momentaufnahme aus dem Repo + Zuwachs vom Worker,
+      // eigener Endpunkt /silverhistory. Ansonsten wie Gold (Tageskerzen).
+      const snapAg = (CONFIG.HISTORY_SNAPSHOTS || {})[state.symbol.id];
+      candles = await DataLayer.fetchHistoryCached(snapAg,
+        (from) => DataLayer.fetchSilverHistory(from));
+      if (state.timeframe.id === "1w" || state.timeframe.id === "1M") {
+        candles = aggregateCandles(candles, state.timeframe.id);
+      }
     } else {
       // Gold: Momentaufnahme ab 1968 aus dem Repo, Zuwachs vom Worker.
       const snapAu = (CONFIG.HISTORY_SNAPSHOTS || {})[state.symbol.id];
@@ -910,6 +1036,18 @@ async function loadAllExchangeSymbols() {
   // --- Binance: alle USDT/USDC/BTC/USD Pairs (Status TRADING) ---
   // Kein Volumen-Filter: Binance listet nur aktive Pairs als TRADING,
   // und RENDER/USDT etc. können in ruhigen Phasen < 1M haben obwohl liquide.
+  // 24h-Volumen (quoteVolume) wird fuer die Sortierung des "Rest" mitgeladen
+  // (Punkt 6b): fuer USDT/USDC/USD ~ USD-Volumen; BTC-quotierte Paare stehen
+  // in BTC und landen dadurch weiter unten — fuer eine grobe "etabliert
+  // zuerst"-Ordnung ausreichend.
+  const binanceVol = new Map();
+  try {
+    const tRes = await fetch(`${CONFIG.BINANCE_REST}/ticker/24hr`);
+    if (tRes.ok) {
+      const arr = await tRes.json();
+      if (Array.isArray(arr)) arr.forEach(t => binanceVol.set(t.symbol, parseFloat(t.quoteVolume) || 0));
+    }
+  } catch (e) {}
   try {
     const infoRes = await fetch(`${CONFIG.BINANCE_REST}/exchangeInfo`);
     if (infoRes.ok) {
@@ -920,7 +1058,7 @@ async function loadAllExchangeSymbols() {
         .forEach(s => {
           if (seen.has(s.symbol)) return;
           seen.add(s.symbol);
-          result.push({ id: s.symbol, label: `${s.baseAsset}/${s.quoteAsset} (Binance)`, type: "binance" });
+          result.push({ id: s.symbol, label: `${s.baseAsset}/${s.quoteAsset} (Binance)`, type: "binance", vol: binanceVol.get(s.symbol) || 0 });
         });
     }
   } catch (e) {}
@@ -975,13 +1113,28 @@ async function loadAllExchangeSymbols() {
           const vol = parseFloat(t.turnover24h) || 0;
           if (!defaultIds.has(pairId) && vol < BYBIT_VOL_MIN) return;
           seen.add(pairId);
-          result.push({ id: pairId, label: `${base}/${quote} (Bybit)`, type: "bybit", bybitSymbol: sym });
+          result.push({ id: pairId, label: `${base}/${quote} (Bybit)`, type: "bybit", bybitSymbol: sym, vol });
         });
       }
     }
   } catch (e) {}
 
-  state.allSymbols = result;
+  // Reihenfolge (Punkt 6): kuratierte Vorschläge zuerst in fester Ordnung,
+  // danach der Rest nach 24h-USD-Volumen absteigend. Symbole ohne
+  // Volumenwert (Coinbase/Kraken liefern in ihren Listen-Endpunkten keins)
+  // landen am Ende, alphabetisch nach Label.
+  const curatedSet = new Set(CONFIG.CURATED_IDS);
+  const byId = new Map(result.map(s => [s.id, s]));
+  const curated = CONFIG.CURATED_IDS.map(id => byId.get(id)).filter(Boolean);
+  const rest = result.filter(s => !curatedSet.has(s.id));
+  rest.sort((a, b) => {
+    const va = a.vol, vb = b.vol;
+    const ha = typeof va === "number", hb = typeof vb === "number";
+    if (ha && hb) { if (vb !== va) return vb - va; }
+    else if (ha !== hb) return ha ? -1 : 1;   // mit Volumen vor ohne
+    return (a.label || "").localeCompare(b.label || "");
+  });
+  state.allSymbols = [...curated, ...rest];
   renderAssetList();
   renderCompareList();
 }
@@ -1181,6 +1334,78 @@ function ensureCompareCanvas() {
   chartEl.appendChild(c);
   _compareCanvas = c;
   return c;
+}
+
+// ---------- Blauer Zeichenpunkt beim Fib-Ziehen (Punkt 3) ----------
+// Beim Setzen der Fib-Retracement-/Extension-Punkte zeigt ein blauer Punkt
+// in der Fadenkreuzmitte, wo die Marke landet — und rastet bei Magnet AN auf
+// die nächste OHLC-Marke ein (wie der KLC-Overlay-Punkt selbst). Auf dem
+// Handy übernimmt das ohnehin das eigene Fadenkreuz-Werkzeug.
+let _fibDotCanvas = null;
+function ensureFibDotCanvas() {
+  if (_fibDotCanvas) return _fibDotCanvas;
+  const c = document.createElement("canvas");
+  c.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;z-index:12;";
+  chartEl.style.position = "relative";
+  chartEl.appendChild(c);
+  _fibDotCanvas = c;
+  return c;
+}
+function clearFibDot() {
+  if (!_fibDotCanvas) return;
+  const ctx = _fibDotCanvas.getContext("2d");
+  ctx.clearRect(0, 0, _fibDotCanvas.width, _fibDotCanvas.height);
+}
+function drawFibDot(x, y) {
+  const c = ensureFibDotCanvas();
+  const rect = chartEl.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  if (c.width !== Math.round(rect.width * dpr) || c.height !== Math.round(rect.height * dpr)) {
+    c.width = Math.round(rect.width * dpr); c.height = Math.round(rect.height * dpr);
+    c.style.width = rect.width + "px"; c.style.height = rect.height + "px";
+  }
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+  ctx.beginPath();
+  ctx.arc(x, y, 5, 0, Math.PI * 2);
+  ctx.fillStyle = "#2e7bff";
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";
+  ctx.stroke();
+}
+// Pixelpunkt auf die nächste OHLC-Marke der nahsten Kerze fangen, wenn Magnet
+// an ist — sonst null. Eigenständige (globale) Fassung der Mobile-Logik.
+function magnetSnapToOhlc(px, py) {
+  if (state.magnetMode === "normal") return null;
+  try {
+    const v = chart.convertFromPixel({ x: px, y: py }, { paneId: "candle_pane" });
+    if (!v || v.timestamp == null) return null;
+    const data = chart.getDataList();
+    if (!data || !data.length) return null;
+    let closest = null, bestDiff = Infinity;
+    for (const d of data) {
+      const diff = Math.abs(d.timestamp - v.timestamp);
+      if (diff < bestDiff) { bestDiff = diff; closest = d; }
+    }
+    if (!closest) return null;
+    const tol = 40;
+    let best = null, bestPxDiff = tol;
+    for (const val of [closest.open, closest.high, closest.low, closest.close]) {
+      if (val == null) continue;
+      const p = chart.convertToPixel({ timestamp: closest.timestamp, value: val }, { paneId: "candle_pane" });
+      const one = Array.isArray(p) ? p[0] : p;
+      if (!one || one.y == null) continue;
+      const d = Math.abs(one.y - py);
+      if (d < bestPxDiff) { bestPxDiff = d; best = { x: one.x != null ? one.x : px, y: one.y }; }
+    }
+    return best;
+  } catch (e) { return null; }
+}
+function isFibDrawing() {
+  return state.drawingId != null
+    && (state.activeTool === "fibRetracement" || state.activeTool === "fibExtension");
 }
 
 // Eine Vergleichsreihe auf die Chart-Bars ausrichten (Treppe / forward-fill).
@@ -1501,6 +1726,19 @@ function applyCompareIndicator() {
       state._drawingsHidden = false;
       try { restoreDrawings(state.drawings); } catch (e) {}
     }
+    // Scan-Overlays (EWT/Muster/SMC) waren im Vergleich entfernt — zurückholen.
+    try {
+      if ((state.ewtSaved || []).length && !(state.ewtOverlayIds || []).length) {
+        state.ewtOverlayIds = restoreGeneratedOverlays(state.ewtSaved);
+        raiseEwtOffsetFromSaved(state.ewtSaved);
+      }
+      if ((state.patternSaved || []).length && !(state.patternOverlayIds || []).length) {
+        state.patternOverlayIds = restoreGeneratedOverlays(state.patternSaved);
+      }
+      if ((state.smcSaved || []).length && !(state.smcOverlayIds || []).length) {
+        state.smcOverlayIds = restoreGeneratedOverlays(state.smcSaved);
+      }
+    } catch (e) {}
     scheduleTagDraw();
     if (_compareCanvas) {
       _compareCanvas.getContext("2d").clearRect(0, 0, _compareCanvas.width, _compareCanvas.height);
@@ -1618,11 +1856,12 @@ function renderIndPanel() {
     check.type = "checkbox"; check.id = "ind_" + ind.key; check.checked = state.active.has(ind.key);
     check.addEventListener("change", () => {
       if (check.checked) { state.active.add(ind.key); applyIndicator(ind); }
-      else { state.active.delete(ind.key); removeIndicator(ind); }
+      else { state.active.delete(ind.key); removeIndicator(ind); delete state.paneCollapsed[ind.key]; }
       scheduleTagDraw();
       saveWorkspace();
       updateLegend();
       resize();
+      setTimeout(updatePaneHeaders, 60);
     });
     const label = document.createElement("label");
     label.htmlFor = "ind_" + ind.key; label.textContent = ind.label;
@@ -1894,7 +2133,138 @@ const SAVED_OVERLAYS = new Set([
   "rectangle", "rayLine", "priceChannelLine", "parallelStraightLine",
   "frvp", "fibRetracement", "fibExtension", "priceRange", "dateRange",
   "simpleAnnotation", "freehand", "positionTool", "polyline", "avwap",
+  // m54: liefen bisher durch onDrawEnd -> captureDrawing wie die anderen,
+  // fehlten aber in dieser Liste, deshalb wurden sie nie ins Layout
+  // gesichert (Punkt 1a).
+  "straightLine", "horizontalRayLine",
 ]);
+
+// Zeichenpunkte fuer die Speicherung serialisieren (Punkt 1b).
+// KLineCharts liefert fuer Punkte RECHTS der letzten Kerze timestamp=null
+// (dataIndexToTimestamp -> getDataByDataIndex -> undefined). Genau solche
+// Punkte entstehen bei Preisspanne/Zeitspanne/Fib-Extension, die man in die
+// Zukunft zieht. Ohne Zeit-Anker landet der Punkt beim Laden auf der
+// falschen Zeitposition (Preis stimmt, Zeit nicht). Fuer diese Punkte
+// merken wir uns stattdessen den Bar-Abstand zum letzten Bar.
+function serializeDrawPoints(points) {
+  let dl = [];
+  try { dl = chart.getDataList() || []; } catch (e) {}
+  const lastIdx = dl.length - 1;
+  return (points || []).map(p => {
+    if (p.timestamp != null) return { timestamp: p.timestamp, value: p.value };
+    if (p.dataIndex != null && dl.length) {
+      if (p.dataIndex >= 0 && p.dataIndex <= lastIdx) {
+        return { timestamp: dl[p.dataIndex].timestamp, value: p.value };
+      }
+      return { barsFromEnd: p.dataIndex - lastIdx, value: p.value };
+    }
+    return { timestamp: p.timestamp, value: p.value };
+  });
+}
+
+// Umkehrung: Punkte mit barsFromEnd relativ zum AKTUELLEN Ende wieder als
+// dataIndex anlegen (KLC klemmt Zukunfts-Zeitstempel sonst auf die letzte
+// Kerze). Normale Punkte behalten ihren absoluten timestamp.
+function deserializeDrawPoints(points) {
+  if (!points) return points;
+  let dl = [];
+  try { dl = chart.getDataList() || []; } catch (e) {}
+  const lastIdx = dl.length - 1;
+  return points.map(p => {
+    if (p && p.barsFromEnd != null && dl.length) {
+      return { dataIndex: lastIdx + p.barsFromEnd, value: p.value };
+    }
+    return { timestamp: p.timestamp, value: p.value };
+  });
+}
+
+// ---- Generierte Overlays persistieren (EWT / Muster / SMC, Punkt 1a) ----
+// Das sind KEINE Nutzer-Zeichnungen, sondern Scan-Ergebnisse. Sie
+// verschwanden beim Neuladen/Layout-Wechsel. Wir erfassen ihre fertigen
+// Overlay-Daten und legen sie beim Laden neu an — exakt, ohne erneuten Scan
+// (der vom nicht gespeicherten Sichtbereich abhinge).
+//
+// Anders als Zeichnungen behalten diese Overlays dataIndex statt timestamp:
+// scanEWT erzeugt sie bewusst per dataIndex (ein gesetzter timestamp lässt
+// die EWT-Strukturen zusammenrutschen). Der Datenanfang ist stabil (volle
+// Historie, neue Bars hinten), daher überlebt in-range-dataIndex; nur Punkte
+// JENSEITS des Endes (Projektionen) werden relativ zum Ende abgelegt.
+function serializeGeneratedPoints(points) {
+  let dl = []; try { dl = chart.getDataList() || []; } catch (e) {}
+  const lastIdx = dl.length - 1;
+  return (points || []).map(p => {
+    if (p.dataIndex != null) {
+      if (p.dataIndex > lastIdx) return { barsFromEnd: p.dataIndex - lastIdx, value: p.value };
+      return { dataIndex: p.dataIndex, value: p.value };
+    }
+    if (p.timestamp != null) return { timestamp: p.timestamp, value: p.value };
+    return { value: p.value };
+  });
+}
+function deserializeGeneratedPoints(points) {
+  let dl = []; try { dl = chart.getDataList() || []; } catch (e) {}
+  const lastIdx = dl.length - 1;
+  return (points || []).map(p => {
+    if (p.barsFromEnd != null && dl.length) return { dataIndex: lastIdx + p.barsFromEnd, value: p.value };
+    if (p.dataIndex != null) return { dataIndex: p.dataIndex, value: p.value };
+    return { timestamp: p.timestamp, value: p.value };
+  });
+}
+function captureGeneratedOverlays(ids) {
+  const out = [];
+  (ids || []).forEach(id => {
+    try {
+      const o = chart.getOverlayById(id);
+      if (o && o.points && o.points.length) {
+        out.push({
+          name: o.name,
+          points: serializeGeneratedPoints(o.points),
+          extendData: o.extendData ?? null,
+          styles: o.styles ?? null,
+        });
+      }
+    } catch (e) {}
+  });
+  return out;
+}
+function restoreGeneratedOverlays(saved) {
+  const ids = [];
+  if (!saved || !saved.length) return ids;
+  // Im Vergleichsmodus gehört nichts Kursbezogenes auf den Chart.
+  if (state.compareAssets && state.compareAssets.length > 0) return ids;
+  saved.forEach(d => {
+    try {
+      const id = chart.createOverlay({
+        name: d.name,
+        points: deserializeGeneratedPoints(d.points),
+        extendData: d.extendData ?? undefined,
+        styles: d.styles ?? undefined,
+        lock: true,   // Scan-Overlays sind nicht per Maus editierbar
+        onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
+      });
+      if (id) ids.push(Array.isArray(id) ? id[0] : id);
+    } catch (e) {}
+  });
+  return ids;
+}
+// EWT-Projektionen brauchen rechts Platz. Nach dem Wiederherstellen den
+// Offset wie im Scan nachziehen (grösster Punkt jenseits des Endes).
+function raiseEwtOffsetFromSaved(saved) {
+  try {
+    let maxOver = 0;
+    (saved || []).forEach(d => (d.points || []).forEach(p => {
+      if (p.barsFromEnd != null && p.barsFromEnd > maxOver) maxOver = p.barsFromEnd;
+    }));
+    if (maxOver > 0) {
+      const need = (maxOver + 3) * chart.getBarSpace().bar;
+      const cur = chart.getOffsetRightDistance();
+      if (need > cur) {
+        if (!state.ewtOffsetRaised) { state.ewtOffsetPrev = cur; state.ewtOffsetRaised = true; }
+        chart.setOffsetRightDistance(need);
+      }
+    }
+  } catch (e) {}
+}
 
 function registerDrawing(id, name, points, extendData, styles) {
   if (!SAVED_OVERLAYS.has(name)) return;
@@ -1904,7 +2274,7 @@ function registerDrawing(id, name, points, extendData, styles) {
   if (state.compareAssets && state.compareAssets.length > 0) {
     state.drawings.push({
       id, name,
-      points: points.map(p => ({ timestamp: p.timestamp, value: p.value })),
+      points: serializeDrawPoints(points),
       extendData: extendData ?? null, styles: styles ?? null,
     });
     state._drawingsHidden = true;
@@ -1914,7 +2284,7 @@ function registerDrawing(id, name, points, extendData, styles) {
   }
   state.drawings.push({
     id, name,
-    points: points.map(p => ({ timestamp: p.timestamp, value: p.value })),
+    points: serializeDrawPoints(points),
     extendData: extendData ?? null,
     styles: styles ?? null,
   });
@@ -1924,6 +2294,17 @@ function registerDrawing(id, name, points, extendData, styles) {
 function unregisterDrawing(id) {
   const i = state.drawings.findIndex(d => d.id === id);
   if (i >= 0) { state.drawings.splice(i, 1); saveWorkspace(); }
+}
+
+// Magnet-Umschaltung auf ein bereits LAUFENDES Zeichnen anwenden (Punkt 2).
+// buildOverlayConfig backt state.magnetMode beim Erstellen des Overlays ein.
+// Schaltet man Magnet erst NACH der Toolwahl ein, behielt das schon erzeugte
+// Overlay den alten Modus — Magnet wirkte scheinbar nicht. KLC liest
+// overlay.mode aber bei jeder Crosshair-Bewegung live, deshalb genuegt ein
+// overrideOverlay auf das pending Overlay (state.drawingId).
+function applyMagnetToActiveDrawing() {
+  if (!state.drawingId) return;
+  try { chart.overrideOverlay({ id: state.drawingId, mode: state.magnetMode }); } catch (e) {}
 }
 
 // Nach dem Zeichnen die tatsächlichen Punkte aus dem Overlay holen und
@@ -2260,7 +2641,7 @@ function restoreDrawings(list) {
       const id = chart.createOverlay({
         ...dragGuardsFor(d.name),
         name: d.name,
-        points: d.points,
+        points: deserializeDrawPoints(d.points),
         extendData: d.extendData ?? undefined,
         styles: d.styles ?? undefined,
         onSelected:   (e) => { state.selectedOverlayId = e.overlay.id; return false; },
@@ -2601,6 +2982,7 @@ function buildOverlayConfig(overlayName) {
         window.__tvAnchorVwap?.(e.overlay.points[0].timestamp, e.overlay.id);
       }
       state.drawingId = null;
+      try { clearFibDot(); } catch (x) {}   // Fib-Punkt (Punkt 3) entfernen
       if (state.pinTool) {
         setTimeout(() => startTool(overlayName), 0);
       } else {
@@ -3187,6 +3569,7 @@ function renderDrawbar() {
   </svg>`;
   magnet.addEventListener("click", () => {
     state.magnetMode = state.magnetMode === "normal" ? "strong_magnet" : "normal";
+    applyMagnetToActiveDrawing();
     renderDrawbar();
   });
   tools.appendChild(magnet);
@@ -3598,6 +3981,10 @@ function saveWorkspace() {
       drawStyle:  state.drawStyle,
       smcOpts:    state.smcOpts,
       ewtOpts:    state.ewtOpts,
+      // Persistierte Scan-Overlays (EWT/Muster/SMC), Punkt 1a
+      ewtSaved:     state.ewtSaved,
+      patternSaved: state.patternSaved,
+      smcSaved:     state.smcSaved,
       logScale:   state.logScale,
     }));
   } catch (e) {
@@ -4636,6 +5023,9 @@ function closeFibMenu() {
 
 // Von overlays.js aus aufrufbar
 window.__tvOpenFibMenu = openFibMenu;
+// AVWAP-Overlay (overlays.js) braucht das generische Overlay-Menü für
+// Ankerlinien-Stil + Löschen (Punkt 4). Bridge wie beim Fib-Menü.
+window.__tvOpenOverlayMenu = openOverlayMenu;
 
 // Gemeinsame Sizing-Quelle für Grid Bot und Position-Tool.
 // Eine Quelle, zwei Konsumenten — sonst hat man das Kapital an zwei
@@ -4673,6 +5063,7 @@ function clearPatterns() {
     try { chart.removeOverlay(id); } catch (e) {}
   });
   state.patternOverlayIds = [];
+  state.patternSaved = [];
 }
 
 function scanPatterns() {
@@ -4761,6 +5152,8 @@ function scanPatterns() {
 
   const confirmed = found.filter(p => p.confirmedAt != null).length;
   setStatus(`${found.length} Muster (${confirmed} bestätigt) · Form% = Formqualität, keine Trefferquote · Rechtsklick löscht`);
+  state.patternSaved = captureGeneratedOverlays(state.patternOverlayIds);
+  saveWorkspace();
 }
 
 // ---------- Smart Money Concepts (FVG / Order Blocks) ----------
@@ -4769,6 +5162,7 @@ function clearSMC() {
     try { chart.removeOverlay(id); } catch (e) {}
   });
   state.smcOverlayIds = [];
+  state.smcSaved = [];
 }
 
 function scanSMC() {
@@ -4852,9 +5246,13 @@ function scanSMC() {
 
   if (drawn === 0) {
     setStatus("Keine SMC-Zonen im sichtbaren Bereich");
+    state.smcSaved = [];
+    saveWorkspace();
     return;
   }
   setStatus(`${drawn} SMC-Zonen (${openCount} offen) · Rechtsklick löscht einzelne`);
+  state.smcSaved = captureGeneratedOverlays(state.smcOverlayIds);
+  saveWorkspace();
 }
 
 // Kurz-Info beim Hovern über eine SMC-Zone (nutzt die Statuszeile wie die Muster)
@@ -4880,6 +5278,7 @@ function clearEWT() {
     try { chart.removeOverlay(id); } catch (e) {}
   });
   state.ewtOverlayIds = [];
+  state.ewtSaved = [];
   // Der Scan vergroessert den rechten Rand, damit Projektionen Platz
   // haben. Ohne Ruecksetzen bliebe die Luecke nach dem Loeschen stehen.
   if (state.ewtOffsetRaised) {
@@ -5193,7 +5592,9 @@ function scanEWT() {
     }
   } catch (e) { /* aeltere Bundles ohne diese API */ }
 
-  // Uebersprungene Grade ausdruecklich nennen. Sonst sucht man den
+  // Erzeugte Overlays fuer Persistenz sichern (Punkt 1a).
+  state.ewtSaved = captureGeneratedOverlays(state.ewtOverlayIds);
+  saveWorkspace();
   // Fehler im Scanner, wo schlicht die Datenmenge nicht reicht: ein Grad
   // n erzeugt etwa len/(2n) Pivots, und fuer eine Fuenferzaehlung braucht
   // es sechs aufeinanderfolgende davon.
@@ -5369,7 +5770,7 @@ function whenChartReady(fn, minKerzen = 200) {
 // gesetzt (Linie fuer die 6, sonst Kerze). Innerhalb desselben Assets bleibt
 // eine manuelle Wahl erhalten — auch ueber Timeframe-Wechsel, weil dann das
 // Symbol gleich bleibt.
-const LINIEN_SYMBOLE = new Set(["^SPX", "^NDQ", "^DJI", "QQQ", "VTSAX", "XAUUSD"]);
+const LINIEN_SYMBOLE = new Set(["^SPX", "^NDQ", "^DJI", "QQQ", "VTSAX", "XAUUSD", "XAGUSD"]);
 function isLineSymbol(sym) {
   return !!sym && LINIEN_SYMBOLE.has(sym.id);
 }
@@ -5480,6 +5881,10 @@ function currentLayoutSnapshot() {
     // Zeichnungen gehören zur Arbeitsfläche — ohne sie ist ein Layout
     // nur die halbe Ansicht. Ohne id gespeichert, die vergibt KLineCharts neu.
     drawings: state.drawings.map(({ id, ...rest }) => rest),
+    // Persistierte Scan-Overlays (EWT/Muster/SMC) gehören zur Ansicht (Punkt 1a)
+    ewtSaved:     state.ewtSaved,
+    patternSaved: state.patternSaved,
+    smcSaved:     state.smcSaved,
     active: [...state.active],
     chartType: state.chartType,
     legendCollapsed: state.legendCollapsed,
@@ -5586,6 +5991,19 @@ async function applyNamedLayout(name) {
   updateLegend();
 
   restoreDrawings(l.drawings);
+  // Persistierte Scan-Overlays (EWT/Muster/SMC) des Layouts wiederherstellen
+  // (Punkt 1a). Erst alte entfernen (clear* setzt state.*Saved zurück),
+  // dann aus dem Layout übernehmen und neu anlegen.
+  try { clearEWT(); clearPatterns(); clearSMC(); } catch (e) {}
+  state.ewtSaved     = l.ewtSaved     || [];
+  state.patternSaved = l.patternSaved || [];
+  state.smcSaved     = l.smcSaved     || [];
+  try {
+    state.ewtOverlayIds     = restoreGeneratedOverlays(state.ewtSaved);
+    raiseEwtOffsetFromSaved(state.ewtSaved);
+    state.patternOverlayIds = restoreGeneratedOverlays(state.patternSaved);
+    state.smcOverlayIds     = restoreGeneratedOverlays(state.smcSaved);
+  } catch (e) {}
   scheduleTagDraw();
 
   // Kerzen aus- bzw. wieder einblenden — je nachdem ob das Layout
@@ -5842,6 +6260,15 @@ loadBinanceSymbols();
 loadData().then(() => {
   const saved = state.drawings;
   if (saved && saved.length) restoreDrawings(saved);
+  // Persistierte Scan-Overlays (EWT/Muster/SMC) nach dem Laden wieder
+  // anlegen (Punkt 1a). state.*Saved kommt aus dem Workspace (_ws).
+  try {
+    state.ewtOverlayIds     = restoreGeneratedOverlays(state.ewtSaved);
+    raiseEwtOffsetFromSaved(state.ewtSaved);
+    state.patternOverlayIds = restoreGeneratedOverlays(state.patternSaved);
+    state.smcOverlayIds     = restoreGeneratedOverlays(state.smcSaved);
+  } catch (e) {}
+  setTimeout(updatePaneHeaders, 120);   // Pane-Header nach dem Laden (Punkt 7)
 });
 restartWatchlistStream();
 
@@ -5944,6 +6371,7 @@ document.getElementById("gridBotBtn").addEventListener("click", () => gbToggleBa
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       state.magnetMode = state.magnetMode === "normal" ? "strong_magnet" : "normal";
+      applyMagnetToActiveDrawing();
       update();
       renderDrawbar();
     });
@@ -5982,6 +6410,94 @@ document.getElementById("faqModal").addEventListener("click", (e) => {
   // Klick auf den Hintergrund schliesst
   if (e.target.id === "faqModal") e.target.classList.add("hidden");
 });
+
+// ── Sync / Login per Sync-Code (Punkt 8) ────────────────────────────
+// Variante b: EIN Sync-Code (Passphrase) je Nutzer. Speichern schickt
+// Workspace + Layouts an den Worker (KV, Schlüssel = Hash des Codes),
+// Laden holt sie zurück und lädt die Seite neu, damit alles sauber greift.
+(function initSync() {
+  const $id = (x) => document.getElementById(x);
+  const modal = $id("syncModal"), btn = $id("syncBtn");
+  if (!modal || !btn) return;
+  const codeInput = $id("syncCodeInput");
+  const statusEl  = $id("syncStatus");
+  const saveBtn   = $id("syncSaveBtn");
+  const loadBtn   = $id("syncLoadBtn");
+  const base = CONFIG.WORKER_BASE_URL.replace(/\/$/, "");
+
+  const setStatusMsg = (msg, kind) => {
+    statusEl.textContent = msg || "";
+    statusEl.className = "sync-status" + (kind ? " " + kind : "");
+  };
+  const openModal = () => {
+    try { codeInput.value = localStorage.getItem("tv_synccode") || ""; } catch (e) {}
+    setStatusMsg("");
+    modal.classList.remove("hidden");
+    setTimeout(() => codeInput.focus(), 30);
+  };
+  const closeModal = () => modal.classList.add("hidden");
+
+  btn.addEventListener("click", openModal);
+  $id("syncClose").addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => { if (e.target.id === "syncModal") closeModal(); });
+
+  const getCode = () => (codeInput.value || "").trim();
+  const busy = (on) => { saveBtn.disabled = on; loadBtn.disabled = on; };
+
+  // Bündel aus Workspace + Layouts (beide localStorage-Schlüssel).
+  const buildBundle = () => {
+    let workspace = null, layouts = null;
+    try { workspace = JSON.parse(localStorage.getItem("tv_workspace") || "null"); } catch (e) {}
+    try { layouts   = JSON.parse(localStorage.getItem("tv_layouts")   || "null"); } catch (e) {}
+    return { workspace, layouts };
+  };
+
+  saveBtn.addEventListener("click", async () => {
+    const code = getCode();
+    if (code.length < 6) { setStatusMsg("Code zu kurz (mindestens 6 Zeichen).", "err"); return; }
+    busy(true); setStatusMsg("Speichern …");
+    try {
+      const res = await fetch(`${base}/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, workspace: buildBundle() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        try { localStorage.setItem("tv_synccode", code); } catch (e) {}
+        setStatusMsg("Gespeichert. Mit diesem Code rufst du die Einstellungen auf jedem Gerät ab.", "ok");
+      } else {
+        setStatusMsg("Fehler: " + (data.error || res.status), "err");
+      }
+    } catch (e) {
+      setStatusMsg("Netzwerkfehler beim Speichern.", "err");
+    }
+    busy(false);
+  });
+
+  loadBtn.addEventListener("click", async () => {
+    const code = getCode();
+    if (code.length < 6) { setStatusMsg("Code zu kurz (mindestens 6 Zeichen).", "err"); return; }
+    busy(true); setStatusMsg("Laden …");
+    try {
+      const res = await fetch(`${base}/sync?code=${encodeURIComponent(code)}`);
+      const data = await res.json();
+      if (!res.ok) { setStatusMsg("Fehler: " + (data.error || res.status), "err"); busy(false); return; }
+      if (!data.found || !data.workspace) { setStatusMsg("Kein gespeicherter Stand für diesen Code gefunden.", "err"); busy(false); return; }
+      const bundle = data.workspace;
+      try {
+        if (bundle.workspace != null) localStorage.setItem("tv_workspace", JSON.stringify(bundle.workspace));
+        if (bundle.layouts   != null) localStorage.setItem("tv_layouts",   JSON.stringify(bundle.layouts));
+        localStorage.setItem("tv_synccode", code);
+      } catch (e) {}
+      setStatusMsg("Geladen. Seite wird neu geladen …", "ok");
+      setTimeout(() => location.reload(), 600);
+    } catch (e) {
+      setStatusMsg("Netzwerkfehler beim Laden.", "err");
+      busy(false);
+    }
+  });
+})();
 document.querySelectorAll(".faq-navbtn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".faq-navbtn").forEach(b => b.classList.remove("active"));
@@ -6205,7 +6721,30 @@ chart.subscribeAction("onCrosshairChange", (data) => {
     if (data && data.kLineData) updateLegend(data.kLineData);
     else updateLegend();
   } catch (e) { /* Legend-Fehler nie den Chart blockieren lassen */ }
+  // Pane-Header-Werte auf den Crosshair-Balken setzen (Punkt 7).
+  try {
+    _lastCrosshairIndex = (data && data.dataIndex != null) ? data.dataIndex : null;
+    refreshPaneHeaderValues();
+  } catch (e) {}
 });
+// Pane-Header neu positionieren bei Grössenänderung und Separator-Drag.
+window.addEventListener("resize", () => { try { setTimeout(updatePaneHeaders, 60); } catch (e) {} });
+try { chart.subscribeAction("onPaneDrag", () => { try { updatePaneHeaders(); } catch (e) {} }); } catch (e) {}
+
+// Blauer Fib-Zeichenpunkt (Punkt 3): eigener mousemove-Listener am Chart —
+// zuverlässiger als onCrosshairChange, feuert unabhängig vom KLC-Zeichenstatus.
+// Nur Desktop-Maus; auf dem Handy hat das Fadenkreuz-Werkzeug seinen eigenen
+// Punkt und mousemove feuert dort nicht.
+chartEl.addEventListener("mousemove", (e) => {
+  try {
+    if (!isFibDrawing()) { clearFibDot(); return; }
+    const rect = chartEl.getBoundingClientRect();
+    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    const snap = magnetSnapToOhlc(px, py);
+    drawFibDot(snap ? snap.x : px, snap ? snap.y : py);
+  } catch (x) {}
+});
+chartEl.addEventListener("mouseleave", () => { try { clearFibDot(); } catch (e) {} });
 
 // Button-Handler
 document.getElementById("legendToggle").addEventListener("click", toggleLegend);
@@ -6220,7 +6759,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m53r";
+const TV_BUILD = "m54";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -6971,7 +7510,7 @@ quiet(() => {
       if (!ov) return;
       const idx = (state.drawings || []).findIndex(d => d.id === id);
       if (idx >= 0) {
-        state.drawings[idx].points = ov.points.map(p => ({ timestamp: p.timestamp, value: p.value }));
+        state.drawings[idx].points = serializeDrawPoints(ov.points);
         state.drawings[idx].extendData = ov.extendData ?? null;
         saveWorkspace();
       }
@@ -7241,7 +7780,7 @@ quiet(() => {
         if (!ov) return;
         const idx = (state.drawings || []).findIndex(d => d.id === id);
         if (idx >= 0) {
-          state.drawings[idx].points = ov.points.map(p => ({ timestamp: p.timestamp, value: p.value }));
+          state.drawings[idx].points = serializeDrawPoints(ov.points);
           // Ohne das geht die gezogene Kastenbreite beim Neuladen verloren.
           state.drawings[idx].extendData = ov.extendData ?? null;
           saveWorkspace();
