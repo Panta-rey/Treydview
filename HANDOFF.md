@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 13. August 2026 · Build m54**
+**Stand: 14. August 2026 · Build m55**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -111,16 +111,17 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m54)
+## Datei-MD5 (Build m55)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | f8390286e86f82a553247541755ba2fa | 1386 |
-| style.css | a9bd30630b2360ff049d2d9890f6f9f6 | 1489 |
-| app.js | e1e3d0b1247402e5718ccb4d50d97667 | 8001 |
+| index.html | c005d437da2ccd8c34476d08d3a37853 | 1413 |
+| style.css | 970916c745d6880e3ce38e531caf91cc | 1509 |
+| app.js | fe3fa2522f7f26907640573211359468 | 8155 |
+| overlays.js | d085fe2cb3b59ad1f7c517dd2e7f089b | 1629 |
+| klinecharts.min.js | 91ef1325639a4de147e755ebebf015eb | — |
 | config.js | 7877db5623e4a46b2ceb07db97b68346 | 519 |
 | data.js | 7e805239486a65af21fbd0ab86c48436 | 595 |
-| overlays.js | 77645b7b5a54cc259bd690ae6bc63329 | 1585 |
 | worker-komplett.js | ac7bc94be3ac728fd3dc6301725a9545 | 848 |
 | ewt.js | 297d592de041e9131c9402113758922d | 1493 |
 | indicators.js | 96bca96210cb52aed4f7988d0dfa8c41 | 1034 |
@@ -129,13 +130,17 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 | gridbot.js | 3a65ff885ee6d55480deb166d9717b04 | 502 |
 | patterns.js | e94d7c6a70b598fe1bfeecb67c4cc82c | 1016 |
 | derivatives.js | d44aac15f1dc1cc5410801b84f2aa81d | 157 |
-| klinecharts.min.js | 5821d09fc874fef9d903fe80e437ed14 | — |
 | snapshot.sh | 19b8c1e054a82780d7371ee89af53552 | — |
 
-> **m54 geändert:** app.js, config.js, data.js, overlays.js, style.css,
-> index.html, worker-komplett.js. Alles andere unverändert seit m53r.
-> **worker-komplett.js muss separat als Cloudflare-Worker deployt werden**
-> (nicht Teil des GitHub-Pages-Deploys).
+> **m55 geändert:** app.js, overlays.js, style.css, index.html **und
+> klinecharts.min.js** (neuer Bundle-Patch, siehe unten). config.js, data.js,
+> worker-komplett.js unverändert seit m54 — **kein Worker-Deploy nötig**.
+
+> **Bundle-Patches in klinecharts.min.js (alle per `grep` verifizierbar):**
+> `var St=0.2` (min barSpace); Log-Achsen-Drag `realFrom/realTo`; **NEU (m55,
+> Punkt 6):** Magnet-Snap auf Close bei Line-Assets —
+> `if(window.__tvLineMagnet){d=p.close}else if(d>p.high)…`. Bei einem
+> KLineCharts-Update müssen alle Patches neu gesetzt werden.
 
 `snapshot.sh` liegt im Repo-Wurzelverzeichnis, erzeugt `data/*.json`.
 `smc.js`, `gridbot.js`, `patterns.js`, `derivatives.js` sind seit vor m17
@@ -273,7 +278,98 @@ zeichnet über `needDefaultYAxisFigure` einen Achsen-Preis-Tag in US-Format
 
 ---
 
-## Build m54 — Änderungen (13. August 2026)
+## Build m55 — Änderungen (14. August 2026)
+
+Verfeinerungen aus dem Test von m54. Zwei Aufwandsgruppen.
+
+**Niedrig-Gruppe:**
+
+**3 (Fib-Menü)** — Rechtsklick auf Fib öffnete fälschlich das generische
+Linien-Menü. Ursache: `buildOverlayConfig.onRightClick` routete alles ausser
+frvp aufs generische Menü und überschrieb so die Fib-Registrierung. Das fertige
+`openFibMenu` (Level-Checkboxen, „Erweitern"/extendRight, Deckkraft/fillOpacity)
+wurde nie aufgerufen. Fix: Fib → `openFibMenu` routen; „Dicke"/lineWidth aus dem
+Menü entfernt; Fib-Defaults wie FRVP (`state.fibDefaults`, in startTool
+angewendet, in applyFibMenu gespeichert); Menü-Position auf `menuPosition`
+korrigiert (KLC-Rechtsklick-Event trägt nur Canvas-relative Koordinaten).
+
+**7b** — Collapse/Zahnrad-Icons doppelt so gross (18→28px, Icon 12→22px),
+`PANE_HEADER_H` konsistent auf 28.
+
+**Layout-Icon** — `.li-name{flex:1}`, damit Aktualisieren + ✕ rechts zusammen
+stehen statt das Update-Icon in der Mitte (space-between bei 3 Elementen).
+
+**Hoch-Gruppe:**
+
+**4 (Preisspanne-Menü)** — priceRange hatte hartkodierte Farben, das generische
+`styles.line`-Menü wirkte nicht. `createPointFigures` liest jetzt
+`extendData.fillOpacity`; neues `openRangeMenu` (nur Deckkraft, Farbe bleibt
+richtungsabhängig grün/rot). Live-Apply.
+
+**5 (Zeitspanne-Menü)** — dateRange analog; `createPointFigures` liest
+`fillOpacity` + `color`; `openRangeMenu` zeigt Farbe + Deckkraft.
+
+**1 + 8 (Alles verwerfen / Vergleich)** — Kernumbau. `clearAllDrawings` verwirft
+jetzt HART und umfassend: `chart.removeOverlay()` (alle) + alle state-Arrays
+inkl. m54-Persistenz (`ewtSaved`/`patternSaved`/`smcSaved`), Grid-Bänder,
+Fib-Dot, EWT-Offset. Asset-Wechsel = leerer Chart (für Wiederladen sind
+Layouts da). **Vergleich** ist jetzt sauberes Verwerfen statt temporärem
+Verstecken: Enter ruft `clearAllDrawings` (nur Indikatoren bleiben in
+state.active und kommen beim Verlassen zurück), Exit stellt NICHTS wieder her.
+Screenshot-Bug (FRVP/Zeitspannen/Grid/blauer Punkt blieben im Vergleich) damit
+behoben. **„Vergleich +"-Popup** (`#comparePrompt`): erscheint beim Öffnen des
+Vergleich-Dropdowns, wenn Overlays vorhanden sind — Ja öffnet den Vergleich,
+Nein das Layout-Dropdown. **Auto-Exit** wenn alle Vergleichsassets entfernt
+(removeCompareAsset → applyCompareIndicator, else-Zweig). **Dirty-Tracking**
+(`state.overlaysDirty`, gesetzt in registerDrawing/unregisterDrawing/Scans,
+zurückgesetzt bei Layout speichern/aktualisieren/laden) + **native
+`beforeunload`-Warnung** nur bei offenem Layout mit ungespeicherten Änderungen.
+> Browser erlauben beim Schliessen NUR den nativen Dialog (Verlassen/Bleiben),
+> kein eigenes Popup und keinen eigenen Text — das In-App-„Vergleich +"-Popup
+> ist dagegen ein echtes Ja/Nein.
+
+**6 (Magnet auf Line-Assets)** — Bundle-Patch in klinecharts.min.js: der
+OHLC-Snap in `coordinateToPointValue` snappt bei gesetztem
+`window.__tvLineMagnet` nur auf `p.close`. Das Flag setzt `baseStyles()` aus
+`state.chartType === "area"`. `magnetSnapToOhlc` (blauer Fib-Dot) ebenfalls
+close-only bei Line-Darstellung. Patch per `assert old in c` gesetzt,
+verifizierbar per `grep __tvLineMagnet`.
+
+**7a/c/d (Pane-Header)** — a: nicht eingeklappte Header nur über dem
+Zeichenbereich (`getSize(paneId,"main")`), damit Collapse/Zahnrad LINKS neben
+der Preisachse sitzen. c: eingeklappt spannt der Header über die ganze Pane und
+ist opak (`.pane-header.collapsed{background:var(--bg)}`) — verdeckt den
+zusammengequetschten Indikator. d: `reapplyPaneCollapse()` fährt eingeklappte
+Panes nach Neuaufbau (Asset-Wechsel via loadData, Init, applyAllActive) wieder
+ein — der Collapse-Zustand überlebt den Wechsel.
+
+**2 (AVWAP ganze Linie)** — Das Overlay zeichnet die VWAP-Kurve jetzt SELBST aus
+seinem Anker (`createPointFigures`, `window.__tvGetDataList` +
+`xAxis.convertToPixel(dataIndex)` + `yAxis.convertToPixel(vwap)`), EXAKT wie der
+frühere Indikator: kumulativ `(H+L+C)/3 × Vol ÷ Vol` ab erstem Bar ≥ Anker.
+Damit ist die ganze Kurve Teil des Overlays → überall rechtsklickbar, und
+mehrere AVWAPs funktionieren korrekt (jedes rechnet aus seinem eigenen Anker;
+vorher teilten sie sich einen Indikator). Der separate AVWAP-Indikator entfällt
+(Bridge `__tvAnchorVwap`/`__tvRemoveAnchorVwap` stösst nur noch einen Redraw an,
+kein `createIndicator`/`removeIndicator` mehr). Volumenlose Assets
+(Gold/Silber/Indizes) ergeben wie bisher keine Kurve.
+
+**Lektionen m55:**
+- `buildOverlayConfig.onRightClick` überschreibt Overlay-Registrierungs-
+  Callbacks — Menü-Routing gehört zentral dorthin, nicht in die Registrierung.
+- KLC-Overlay-Punkte rechts der Daten haben `timestamp=null`; der
+  Rechtsklick-Event trägt Canvas-relative Koordinaten (kein pageX) →
+  `menuPosition` benutzen, das den Container-Offset addiert.
+- `getSize(paneId,"main")` liefert den Zeichenbereich ohne Y-Achse (für
+  DOM-Overlays, die neben der Achse sitzen sollen).
+- Overlays können via `xAxis.convertToPixel(dataIndex)` +
+  `yAxis.convertToPixel(value)` eigene Kurven über alle Bars zeichnen und so
+  Indikatoren ersetzen (Datenzugriff über `window.__tvGetDataList`).
+- Browser-`beforeunload` erlaubt nur den nativen Dialog — kein Custom-Popup.
+
+---
+
+
 
 Acht Anpassungen (Rey), in zwei Aufwandsgruppen umgesetzt.
 

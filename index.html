@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m54">
-  <link rel="stylesheet" href="css/style.css?v=m54">
+  <link rel="manifest" href="manifest.webmanifest?v=m55">
+  <link rel="stylesheet" href="css/style.css?v=m55">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m54"></script>
+  <script src="js/lib/klinecharts.min.js?v=m55"></script>
 </head>
 <body>
 
@@ -687,6 +687,18 @@
 </div>
 
 
+<!-- ---------- Vergleich-starten-Hinweis (Punkt 8) ---------- -->
+<div class="confirm-modal hidden" id="comparePrompt">
+  <div class="confirm-box">
+    <div class="confirm-title">Aktuelles Layout gespeichert?</div>
+    <div class="confirm-sub">Beim Start eines Vergleichs werden alle Zeichnungen, Muster, Wellen und Overlays verworfen. Für späteres Wiederaufrufen zuerst als Layout speichern.</div>
+    <div class="confirm-actions">
+      <button id="cmpPromptYes" class="confirm-btn" type="button">Ja, Vergleich starten</button>
+      <button id="cmpPromptNo" class="confirm-btn confirm-btn-alt" type="button">Nein, Layout speichern</button>
+    </div>
+  </div>
+</div>
+
 <!-- ---------- Sync / Login (Punkt 8) ---------- -->
 <div class="sync-modal hidden" id="syncModal">
   <div class="sync-box">
@@ -1247,10 +1259,6 @@
         <input type="range" id="fibFillOpacity" min="0" max="40" value="5">
       </div>
       <div class="fib-row">
-        <label>Linienstärke</label>
-        <input type="number" id="fibLineWidth" min="1" max="4" value="1">
-      </div>
-      <div class="fib-row">
         <label><input type="checkbox" id="fibExtendRight"> Nach rechts verlängern</label>
       </div>
     </div>
@@ -1290,6 +1298,25 @@
   </div>
   <div class="om-divider"></div>
   <button id="overlayDelete" class="overlay-menu-del">✕ Löschen</button>
+</div>
+
+<!-- Menü für Preisspanne / Zeitspanne (Punkt 4/5). Preisspanne: nur Deckkraft
+     (Farbe bleibt richtungsabhängig). Zeitspanne: Farbe + Deckkraft. -->
+<div class="overlay-menu hidden" id="rangeMenu">
+  <button class="om-close" id="rmClose" title="Schliessen">✕</button>
+  <div class="om-row" id="rmColorRow">
+    <label>Farbe</label>
+    <input type="color" id="rmColor" value="#5aa9e6">
+  </div>
+  <div class="om-row">
+    <label>Deckkraft</label>
+    <div class="om-opacity">
+      <input type="range" id="rmOpacity" min="0" max="40" step="1" value="10">
+      <span id="rmOpacityVal">10%</span>
+    </div>
+  </div>
+  <div class="om-divider"></div>
+  <button id="rangeDelete" class="overlay-menu-del">✕ Löschen</button>
 </div>
 
 <!-- FRVP-Kontextmenü -->
@@ -1371,16 +1398,16 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m54"></script>
-<script src="js/indicators.js?v=m54"></script>
-<script src="js/overlays.js?v=m54"></script>
-<script src="js/data.js?v=m54"></script>
-<script src="js/settings.js?v=m54"></script>
-<script src="js/derivatives.js?v=m54"></script>
-<script src="js/gridbot.js?v=m54"></script>
-<script src="js/patterns.js?v=m54"></script>
-<script src="js/smc.js?v=m54"></script>
-<script src="js/ewt.js?v=m54"></script>
-<script src="js/app.js?v=m54"></script>
+<script src="js/config.js?v=m55"></script>
+<script src="js/indicators.js?v=m55"></script>
+<script src="js/overlays.js?v=m55"></script>
+<script src="js/data.js?v=m55"></script>
+<script src="js/settings.js?v=m55"></script>
+<script src="js/derivatives.js?v=m55"></script>
+<script src="js/gridbot.js?v=m55"></script>
+<script src="js/patterns.js?v=m55"></script>
+<script src="js/smc.js?v=m55"></script>
+<script src="js/ewt.js?v=m55"></script>
+<script src="js/app.js?v=m55"></script>
 </body>
 </html>

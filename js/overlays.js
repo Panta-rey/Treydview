@@ -52,14 +52,20 @@
       const digits = Math.min(precision.price, 4);
       const label = `${diff >= 0 ? "+" : ""}${diff.toFixed(digits)}  (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)`;
       const midX = (coordinates[0].x + coordinates[1].x) / 2;
+      // Deckkraft der Fläche aus extendData (Punkt 4). Farbe bleibt
+      // richtungsabhängig (grün positiv / rot negativ).
+      const ed = overlay.extendData || {};
+      const fillA = (ed.fillOpacity != null ? ed.fillOpacity : 10) / 100;
+      const baseRgb = diff >= 0 ? "63,182,139" : "208,94,94";
+      const borderCol = diff >= 0 ? "#3fb68b" : "#d05e5e";
       return [
         {
           type: "rect",
           attrs: rectAttrs(coordinates[0], coordinates[1]),
           styles: {
             style: "stroke_fill",
-            color: diff >= 0 ? "rgba(63,182,139,0.10)" : "rgba(208,94,94,0.10)",
-            borderColor: diff >= 0 ? "#3fb68b" : "#d05e5e",
+            color: `rgba(${baseRgb},${fillA})`,
+            borderColor: borderCol,
             borderSize: 1,
           },
         },
@@ -68,7 +74,7 @@
           attrs: { x: midX, y: Math.min(coordinates[0].y, coordinates[1].y) - 6, text: label, align: "center", baseline: "bottom" },
           styles: {
             color: "#0d1117",
-            backgroundColor: diff >= 0 ? "#3fb68b" : "#d05e5e",
+            backgroundColor: borderCol,
             paddingLeft: 6, paddingRight: 6, paddingTop: 3, paddingBottom: 3,
             borderRadius: 3,
           },
@@ -96,14 +102,18 @@
           : `${Math.round(ms / 3600000)} Std`;
       }
       const midX = (coordinates[0].x + coordinates[1].x) / 2;
+      // Farbe + Deckkraft aus extendData (Punkt 5).
+      const ed = overlay.extendData || {};
+      const col = ed.color || "#5aa9e6";
+      const fillA = (ed.fillOpacity != null ? ed.fillOpacity : 10) / 100;
       return [
         {
           type: "rect",
           attrs: rectAttrs(coordinates[0], coordinates[1]),
           styles: {
             style: "stroke_fill",
-            color: "rgba(90,169,230,0.10)",
-            borderColor: "#5aa9e6",
+            color: hexA(col, fillA),
+            borderColor: col,
             borderSize: 1,
           },
         },
@@ -112,7 +122,7 @@
           attrs: { x: midX, y: Math.max(coordinates[0].y, coordinates[1].y) + 6, text: label, align: "center", baseline: "top" },
           styles: {
             color: "#0d1117",
-            backgroundColor: "#5aa9e6",
+            backgroundColor: col,
             paddingLeft: 6, paddingRight: 6, paddingTop: 3, paddingBottom: 3,
             borderRadius: 3,
           },
@@ -1039,30 +1049,64 @@
     needDefaultPointFigure: true,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    // Rechtsklick auf die Ankerlinie: Stil + Löschen (Punkt 4). Feinere
-    // Einstellungen der VWAP-Kurve laufen ueber das Indikator-Zahnrad.
-    // In der Registrierung verankert, damit das Menue auf jedem
-    // Erzeugungspfad (frisch wie wiederhergestellt) sicher greift.
+    // Rechtsklick auf Ankerlinie ODER VWAP-Kurve: Stil + Löschen (Punkt 2).
+    // Beide sind jetzt Teil des Overlays, also überall auf der Linie greifbar.
     onRightClick: (event) => {
       if (window.__tvOpenOverlayMenu) { window.__tvOpenOverlayMenu(event.overlay, event); return true; }
       return false;
     },
-    createPointFigures: ({ coordinates, overlay, yAxis }) => {
+    createPointFigures: ({ coordinates, overlay, xAxis, yAxis }) => {
       if (coordinates.length < 1) return [];
       const x = coordinates[0].x;
+      const ls = (overlay.styles && overlay.styles.line) || {};
+      const col   = ls.color || (overlay.extendData && overlay.extendData.color) || "#c792ea";
+      const width = ls.size  || 2;
+      const figs = [];
       // Ankerlinie von oben nach unten durch das Preis-Pane
       const yTop    = yAxis ? yAxis.convertToPixel(yAxis.getRange?.()?.to ?? 1e9) : 0;
       const yBottom = yAxis ? yAxis.convertToPixel(yAxis.getRange?.()?.from ?? 0)  : 2000;
-      return [{
+      figs.push({
         type: "line",
         attrs: { coordinates: [{ x, y: yTop }, { x, y: yBottom }] },
-        styles: { style: "dashed", color: "rgba(199,146,234,0.6)", size: 1, dashedValue: [4, 3], smooth: false },
-      }];
+        styles: { style: "dashed", color: "rgba(199,146,234,0.55)", size: 1, dashedValue: [4, 3], smooth: false },
+      });
+      // VWAP-Kurve ab dem Anker — EXAKT wie der AVWAP-Indikator:
+      // kumulativ (H+L+C)/3 × Volumen ÷ Volumen. Jedes Overlay rechnet aus
+      // seinem eigenen Anker (mehrere AVWAPs funktionieren dadurch korrekt).
+      // Volumenlose Assets (Gold/Silber/Indizes) ergeben keine Kurve — wie
+      // beim bisherigen Indikator.
+      const anchorTs = overlay.points[0] && overlay.points[0].timestamp;
+      const getData = (typeof window !== "undefined" && window.__tvGetDataList) ? window.__tvGetDataList : null;
+      if (anchorTs && getData && xAxis && yAxis) {
+        const data = getData() || [];
+        let cumPV = 0, cumV = 0;
+        const pts = [];
+        for (let i = 0; i < data.length; i++) {
+          const d = data[i];
+          if (!d || d.timestamp < anchorTs) continue;
+          const vol = d.volume || 0;
+          const typ = (d.high + d.low + d.close) / 3;
+          cumPV += typ * vol;
+          cumV  += vol;
+          if (cumV <= 0) continue;
+          const px = xAxis.convertToPixel(i);
+          const py = yAxis.convertToPixel(cumPV / cumV);
+          if (px != null && py != null && isFinite(px) && isFinite(py)) pts.push({ x: px, y: py });
+        }
+        if (pts.length >= 2) {
+          figs.push({
+            type: "line",
+            attrs: { coordinates: pts },
+            styles: { style: "solid", color: col, size: width, smooth: false },
+          });
+        }
+      }
+      return figs;
     },
     onDrawEnd: (ev) => {
-      const ts = ev?.overlay?.points?.[0]?.timestamp;
-      if (ts && typeof window.__tvAnchorVwap === "function") {
-        window.__tvAnchorVwap(ts, ev.overlay.id);
+      // Die Kurve zeichnet das Overlay selbst — nur einen Redraw anstossen.
+      if (typeof window.__tvAnchorVwap === "function") {
+        window.__tvAnchorVwap(ev?.overlay?.points?.[0]?.timestamp, ev?.overlay?.id);
       }
       return false;
     },

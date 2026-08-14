@@ -84,6 +84,7 @@ const state = {
 
   // Grid Bot
   currentLayout: _ws?.currentLayout || null,   // Name des offenen Layouts
+  overlaysDirty: false,   // seit letztem Speichern/Laden geändert (Punkt 8, beforeunload)
   candleStreamOk: false,
   wlStreamOk: false,
   gbOpen: _ws?.gbOpen || false,
@@ -100,6 +101,7 @@ const state = {
   indOrder: _ws?.indOrder || [],
   // Zuletzt verwendete FRVP-Einstellungen — Vorlage für neue Profile (Punkt 4)
   frvpDefaults: _ws?.frvpDefaults || null,
+  fibDefaults:  _ws?.fibDefaults  || null,   // zuletzt gewählte Fib-Einstellungen (Punkt 3c)
   gbCapital: _ws?.gbCapital ?? 8000,
   gbTiers: _ws?.gbTiers || JSON.parse(JSON.stringify(GridBot.DEFAULT_TIERS)),
   gbThresholds: _ws?.gbThresholds || { ...GridBot.DEFAULT_THRESHOLDS },
@@ -254,43 +256,29 @@ const chart = klinecharts.init("mainChart");
 window.__tvGetDataList = () => chart.getDataList();
 
 // ---------- Anchored VWAP Bridge ----------
-// Overlay setzt den Anker-Timestamp; hier aktivieren wir den AVWAP-Indikator
-// mit diesem Timestamp als calcParam. Mehrere AVWAPs gleichzeitig möglich —
-// jede Instanz bekommt einen eigenen Gruppen-Key über overrideIndicator.
-const _avwapInstances = {};   // overlayId -> calcParams[0] (timestamp)
+// Das AVWAP-Overlay zeichnet die VWAP-Kurve seit Punkt 2 selbst (aus seinem
+// eigenen Anker, exakt wie der frühere Indikator). Der Indikator entfällt —
+// sonst würde die Kurve doppelt gezeichnet. Die Bridge stösst nur noch einen
+// Redraw an, damit die frisch gesetzte/veränderte Kurve sofort erscheint.
+const _avwapInstances = {};   // overlayId -> timestamp (nur noch zur Info)
 
 window.__tvAnchorVwap = (timestamp, overlayId) => {
-  _avwapInstances[overlayId] = timestamp;
-  // Alle aktiven AVWAP-Instanzen: ersten setzen, weitere via overrideIndicator.
-  // KLC erlaubt pro Pane mehrere Instanzen desselben Indikators nicht direkt —
-  // wir steuern deshalb EINE Instanz pro Anker via calcParams-Array mit allen Timestamps.
-  // Einfachste robuste Variante: pro Anker einen separaten Indikator-Aufruf,
-  // KLC erkennt verschiedene calcParams als verschiedene Instanzen.
-  try {
-    chart.createIndicator(
-      { name: "AVWAP", calcParams: [timestamp],
-        extendData: { plots: { avwap: { color: "#c792ea", width: 2 } } } },
-      true,
-      { id: "candle_pane" }
-    );
-  } catch (e) {
-    // Fallback: Indikator existiert bereits, calcParams überschreiben
-    try { chart.overrideIndicator({ name: "AVWAP", calcParams: [timestamp] }, "candle_pane"); } catch (_) {}
-  }
+  if (overlayId != null) _avwapInstances[overlayId] = timestamp;
   scheduleTagDraw();
+  try { chart.updateOverlay?.(); } catch (e) {}
 };
 
 window.__tvRemoveAnchorVwap = (overlayId) => {
   delete _avwapInstances[overlayId];
-  // Wenn keine Instanzen mehr: Indikator entfernen
-  if (Object.keys(_avwapInstances).length === 0) {
-    try { chart.removeIndicator("candle_pane", "AVWAP"); } catch (e) {}
-  }
   scheduleTagDraw();
 };
 
 function baseStyles() {
   const cs = state.chartStyle;
+  // Magnet-Modus (Punkt 6): bei Linien-Darstellung nur auf die Linie (Close)
+  // snappen, nicht auf die unsichtbaren OHLC-Punkte. Das Flag steuert den
+  // Bundle-Patch in coordinateToPointValue.
+  window.__tvLineMagnet = (state.chartType === "area");
   return {
     grid: { 
       horizontal: { color: T.grid, style: "dashed", dashedValue: [2, 2] }, 
@@ -480,7 +468,7 @@ function removeIndicator(ind) {
 // die Pane auf Header-Höhe ein) + Zahnrad (öffnet die Indikator-
 // Einstellungen wie im Indikatoren-Dropdown). Als DOM-Overlay über dem
 // Chart; Positionen kommen aus chart.getSize(paneId).
-const PANE_HEADER_H = 20;
+const PANE_HEADER_H = 28;
 let _paneHeaderEls = {};       // indKey -> DOM
 let _lastCrosshairIndex = null;
 
@@ -580,10 +568,23 @@ function updatePaneHeaders() {
     el.querySelector(".ph-name").textContent = ind.label || ind.name;
     el.querySelector(".ph-val").textContent  = paneHeaderValueText(ind, paneId, _lastCrosshairIndex);
     const st = state.paneCollapsed[key];
-    el.querySelector(".ph-collapse").textContent = (st && st.collapsed) ? "▸" : "▾";
+    const collapsed = !!(st && st.collapsed);
+    el.querySelector(".ph-collapse").textContent = collapsed ? "▸" : "▾";
+    el.classList.toggle("collapsed", collapsed);
     el.style.top = (b.top || 0) + "px";
-    el.style.left = (b.left || 0) + "px";
-    el.style.width = (b.width || chartEl.clientWidth) + "px";
+    // Nicht eingeklappt: Header nur über dem Zeichenbereich (Main), damit
+    // Collapse/Zahnrad LINKS neben der Preisachse sitzen (Punkt 7a).
+    // Eingeklappt: über die ganze Pane inkl. Achse, opak — verdeckt den
+    // zusammengequetschten Indikator komplett (Punkt 7c).
+    let bm = null;
+    try { bm = chart.getSize(paneId, "main"); } catch (e) {}
+    if (collapsed || !bm) {
+      el.style.left = (b.left || 0) + "px";
+      el.style.width = (b.width || chartEl.clientWidth) + "px";
+    } else {
+      el.style.left = (bm.left || 0) + "px";
+      el.style.width = (bm.width || chartEl.clientWidth) + "px";
+    }
   });
 }
 
@@ -592,7 +593,19 @@ function applyAllActive() {
   CONFIG.INDICATORS.filter(i => i.pane === "main").forEach(i => { if (state.active.has(i.key)) applyIndicator(i); });
   CONFIG.INDICATORS.filter(i => i.pane === "sub").forEach(i => { if (state.active.has(i.key)) applyIndicator(i); });
   scheduleTagDraw();
-  setTimeout(updatePaneHeaders, 80);   // Pane-Header aufbauen (Punkt 7)
+  setTimeout(() => { reapplyPaneCollapse(); updatePaneHeaders(); }, 80);   // Pane-Header + Collapse (Punkt 7)
+}
+
+// Eingeklappte Sub-Panes nach einem Neuaufbau (Asset-Wechsel, Layout, Init)
+// wieder einfahren — der Collapse-Zustand überlebt so den Wechsel (Punkt 7d).
+function reapplyPaneCollapse() {
+  Object.keys(state.paneCollapsed || {}).forEach(key => {
+    const st = state.paneCollapsed[key];
+    if (!st || !st.collapsed) return;
+    const paneId = state.subPaneIds[key];
+    if (!paneId) return;
+    try { chart.setPaneOptions({ id: paneId, height: PANE_HEADER_H, minHeight: PANE_HEADER_H }); } catch (e) {}
+  });
 }
 
 // ---------- VRVP-Canvas ----------
@@ -891,6 +904,10 @@ async function loadData() {
   setTimeout(autoScaleY, 80);
   updatePriceHeader(candles.at(-1), candles.at(-2));
   updateLegend();
+  // Nach Datenwechsel: eingeklappte Sub-Panes wieder einfahren und Header
+  // neu positionieren (Punkt 7d) — sonst öffnen sich die Panes beim
+  // Asset-Wechsel, der Header bliebe aber an der eingeklappten Stelle.
+  setTimeout(() => { try { reapplyPaneCollapse(); updatePaneHeaders(); } catch (e) {} }, 140);
   setStatus(`${candles.length} Candles · ${state.symbol.label} · ${state.timeframe.label}`);
   if (state.active.has("vrvp")) setTimeout(drawVrvp, 120);
 
@@ -955,6 +972,15 @@ function initDropdowns() {
     trigger.addEventListener("click", (e) => {
       e.stopPropagation();
       const wasOpen = panel.classList.contains("open");
+      // Vergleich starten: wenn Overlays vorhanden sind (etwas zu verlieren)
+      // und wir noch nicht im Vergleich sind, erst zum Layout-Speichern raten
+      // (Punkt 8). Ja öffnet den Vergleich, Nein das Layout-Dropdown.
+      if (id === "compareDropdown" && !wasOpen
+          && state.compareAssets.length === 0 && hasOverlays()) {
+        document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
+        document.getElementById("comparePrompt").classList.remove("hidden");
+        return;
+      }
       document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
       if (!wasOpen) { panel.classList.add("open"); placeDropdownPanel(dd, trigger, panel); }
       if (id === "assetDropdown" && !wasOpen) {
@@ -1281,8 +1307,62 @@ function removeCompareAsset(id) {
   window.__tvCompareAssets = state.compareAssets;
   renderCompareActive();
   renderCompareList(document.getElementById("compareSearch")?.value || "");
+  // Auto-Exit: sind keine Vergleichsassets mehr da, schaltet
+  // applyCompareIndicator zurück in die normale Kerzenansicht (Punkt 8b).
   applyCompareIndicator();
 }
+
+// Gibt es überhaupt Overlays, die ein Vergleichsstart/Asset-Wechsel verwerfen
+// würde? (Zeichnungen, EWT/Muster/SMC, Grid-Bänder.) Punkt 8.
+function hasOverlays() {
+  return (state.drawings && state.drawings.length > 0)
+    || (state.ewtSaved && state.ewtSaved.length > 0)
+    || (state.patternSaved && state.patternSaved.length > 0)
+    || (state.smcSaved && state.smcSaved.length > 0)
+    || (state.gbBandIds && state.gbBandIds.length > 0);
+}
+
+// Overlay-Änderung merken (für den beforeunload-Hinweis, Punkt 8).
+function markDirty() { state.overlaysDirty = true; }
+
+// Popup „Vergleich +": Ja öffnet den Vergleich, Nein das Layout-Dropdown.
+(function initComparePrompt() {
+  const openDropdown = ( id, after) => {
+    const dd = document.getElementById(id);
+    if (!dd) return;
+    const panel = dd.querySelector(".dd-panel");
+    const trigger = dd.querySelector(".dd-trigger, .action-btn");
+    document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
+    panel.classList.add("open");
+    try { placeDropdownPanel(dd, trigger, panel); } catch (e) {}
+    if (after) after();
+  };
+  const yes = document.getElementById("cmpPromptYes");
+  const no  = document.getElementById("cmpPromptNo");
+  if (yes) yes.addEventListener("click", () => {
+    document.getElementById("comparePrompt").classList.add("hidden");
+    openDropdown("compareDropdown", () => {
+      renderCompareActive();
+      setTimeout(() => document.getElementById("compareSearch")?.focus(), 30);
+    });
+  });
+  if (no) no.addEventListener("click", () => {
+    document.getElementById("comparePrompt").classList.add("hidden");
+    openDropdown("layoutDropdown", () => { try { renderLayoutList(); } catch (e) {} });
+  });
+})();
+
+// Native Warnung beim Schliessen/Neuladen — NUR wenn ein Layout offen ist und
+// seit dem letzten Speichern/Laden Overlays geändert wurden (Punkt 8). Browser
+// erlauben hier ausschliesslich den nativen Dialog (Verlassen/Bleiben), kein
+// eigenes Popup und keinen eigenen Text.
+window.addEventListener("beforeunload", (e) => {
+  if (state.currentLayout && state.overlaysDirty) {
+    e.preventDefault();
+    e.returnValue = "";
+    return "";
+  }
+});
 
 // Kline-Daten eines Vergleichs-Assets im aktuellen Timeframe holen
 async function refreshCompareData(entry) {
@@ -1390,9 +1470,14 @@ function magnetSnapToOhlc(px, py) {
       if (diff < bestDiff) { bestDiff = diff; closest = d; }
     }
     if (!closest) return null;
+    // Bei Linien-Darstellung nur auf den Close-Punkt der Linie snappen
+    // (Punkt 6) — konsistent mit dem Magnet-Bundle-Patch.
+    const vals = window.__tvLineMagnet
+      ? [closest.close]
+      : [closest.open, closest.high, closest.low, closest.close];
     const tol = 40;
     let best = null, bestPxDiff = tol;
-    for (const val of [closest.open, closest.high, closest.low, closest.close]) {
+    for (const val of vals) {
       if (val == null) continue;
       const p = chart.convertToPixel({ timestamp: closest.timestamp, value: val }, { paneId: "candle_pane" });
       const one = Array.isArray(p) ? p[0] : p;
@@ -1673,72 +1758,41 @@ function compareHideStyles() {
 
 function applyCompareIndicator() {
   if (state.compareAssets.length > 0) {
-    // Vergleichsmodus: ALLES entfernen was auf Preis-Basis läuft —
-    // Indikatoren, VRVP, Grid-Bot-Bänder, Muster, FVG/OB.
+    // Vergleichsmodus: Indikatoren vom Chart nehmen (bleiben in state.active
+    // und kommen beim Verlassen zurück) …
     CONFIG.INDICATORS.forEach(ind => {
       if (state.active.has(ind.key)) { try { removeIndicator(ind); } catch (e) {} }
     });
     if (state.vrvpCanvas) {
       state.vrvpCanvas.getContext("2d").clearRect(0, 0, state.vrvpCanvas.width, state.vrvpCanvas.height);
     }
-    try { gbClearBands(); } catch (e) {}
-    try { clearPatterns(); } catch (e) {}
-    try { clearSMC(); } catch (e) {}
-    // EWT-Boxen haengen an Kurswerten und saessen auf der Prozent-Skala
-    // voellig falsch — wie Muster und SMC-Zonen.
-    try { clearEWT(); } catch (e) {}
-    // Alle Overlays (FRVP, Zeichnungen, Fibonacci etc.) verstecken —
-    // sie laufen auf Preis-Basis und hätten im %-Vergleich falsche Positionen.
-    // IDs merken für Wiederherstellung.
-    state._hiddenDrawingIds = [];
-    state._drawingsHidden = true;
-    (state.drawings || []).forEach(d => {
-      try { chart.removeOverlay(d.id); state._hiddenDrawingIds.push(d.id); } catch (e) {}
-    });
+    // … und ALLE kursbezogenen Overlays PERMANENT verwerfen (Punkt 8):
+    // Grid, Muster, SMC, EWT, FRVP, Zeichnungen, Fib, Ranges, AVWAP, Long/Short.
+    // Kein Verstecken/Wiederherstellen mehr — der Vergleich ist eine saubere,
+    // eigene Ansicht. Für Wiederladen ist die Layout-Speicherung da.
+    clearAllDrawings();
     if (state.tagCanvas) {
       state.tagCanvas.getContext("2d").clearRect(0, 0, state.tagCanvas.width, state.tagCanvas.height);
     }
+    if (typeof updatePaneHeaders === "function") { try { updatePaneHeaders(); } catch (e) {} }
     chart.setStyles(compareHideStyles());
     setTimeout(() => {
       try { drawCompare(); } catch (e) {}
-      // VRVP nochmals leeren: onVisibleRangeChange kann nach dem ersten
-      // Clear noch einmal feuern (KLC interne Scroll-Anpassung beim
-      // style-Wechsel). Der Flag in onVisibleRangeChange verhindert neue
-      // Zeichnungen; hier stellen wir sicher dass der Canvas leer ist.
       if (state.vrvpCanvas) {
         state.vrvpCanvas.getContext("2d").clearRect(0, 0, state.vrvpCanvas.width, state.vrvpCanvas.height);
       }
     }, 100);
   } else {
+    // Vergleich verlassen: Kerzen zurück, Indikatoren wieder aufsetzen.
+    // Zeichnungen/Scans werden NICHT wiederhergestellt — sie wurden beim
+    // Eintritt verworfen (Punkt 8b: normale Ansicht, aber leer).
     chart.setStyles(baseStyles());
     CONFIG.INDICATORS.forEach(ind => {
       if (!state.active.has(ind.key)) return;
       try { removeIndicator(ind); } catch (e) {}
       try { applyIndicator(ind); } catch (e) {}
     });
-    if (state.gbOpen && !state.gbCollapsed) { try { gbDrawBands(); } catch (e) {} }
-    // Gespeicherte Overlays (FRVP, Zeichnungen) wiederherstellen
-    // Merker statt Id-Liste: Zeichnungen, die WAEHREND des Vergleichs
-    // entstanden sind, haben nie eine Chart-Id bekommen und fehlten
-    // deshalb in _hiddenDrawingIds.
-    if (state._drawingsHidden || (state._hiddenDrawingIds && state._hiddenDrawingIds.length)) {
-      state._hiddenDrawingIds = [];
-      state._drawingsHidden = false;
-      try { restoreDrawings(state.drawings); } catch (e) {}
-    }
-    // Scan-Overlays (EWT/Muster/SMC) waren im Vergleich entfernt — zurückholen.
-    try {
-      if ((state.ewtSaved || []).length && !(state.ewtOverlayIds || []).length) {
-        state.ewtOverlayIds = restoreGeneratedOverlays(state.ewtSaved);
-        raiseEwtOffsetFromSaved(state.ewtSaved);
-      }
-      if ((state.patternSaved || []).length && !(state.patternOverlayIds || []).length) {
-        state.patternOverlayIds = restoreGeneratedOverlays(state.patternSaved);
-      }
-      if ((state.smcSaved || []).length && !(state.smcOverlayIds || []).length) {
-        state.smcOverlayIds = restoreGeneratedOverlays(state.smcSaved);
-      }
-    } catch (e) {}
+    if (typeof updatePaneHeaders === "function") { setTimeout(updatePaneHeaders, 80); }
     scheduleTagDraw();
     if (_compareCanvas) {
       _compareCanvas.getContext("2d").clearRect(0, 0, _compareCanvas.width, _compareCanvas.height);
@@ -2272,14 +2326,9 @@ function registerDrawing(id, name, points, extendData, styles) {
   // nehmen. Sonst blieb genau diese eine Zeichnung sichtbar, weil
   // applyCompareIndicator nur die BEIM EINTRITT vorhandenen entfernt hat.
   if (state.compareAssets && state.compareAssets.length > 0) {
-    state.drawings.push({
-      id, name,
-      points: serializeDrawPoints(points),
-      extendData: extendData ?? null, styles: styles ?? null,
-    });
-    state._drawingsHidden = true;
+    // Im Vergleich werden keine kursbezogenen Zeichnungen geführt (Punkt 8c) —
+    // eine im Vergleich erstellte Zeichnung wird sofort verworfen.
     try { chart.removeOverlay(id); } catch (e) {}
-    saveWorkspace();
     return;
   }
   state.drawings.push({
@@ -2288,12 +2337,13 @@ function registerDrawing(id, name, points, extendData, styles) {
     extendData: extendData ?? null,
     styles: styles ?? null,
   });
+  markDirty();
   saveWorkspace();
 }
 
 function unregisterDrawing(id) {
   const i = state.drawings.findIndex(d => d.id === id);
-  if (i >= 0) { state.drawings.splice(i, 1); saveWorkspace(); }
+  if (i >= 0) { state.drawings.splice(i, 1); markDirty(); saveWorkspace(); }
 }
 
 // Magnet-Umschaltung auf ein bereits LAUFENDES Zeichnen anwenden (Punkt 2).
@@ -3007,6 +3057,16 @@ function buildOverlayConfig(overlayName) {
     onRightClick: (e) => {
       if (overlayName === "frvp") {
         openFrvpMenu(e.overlay, e);
+      } else if (overlayName === "fibRetracement" || overlayName === "fibExtension") {
+        // Fib bekommt sein eigenes Menü (Level-Auswahl, Erweitern, Deckkraft),
+        // NICHT das generische Linien-Menü (Farbe/Dicke/gestrichelt wirken bei
+        // Fib nicht sinnvoll). Punkt 3.
+        openFibMenu(e);
+      } else if (overlayName === "priceRange" || overlayName === "dateRange") {
+        // Preisspanne/Zeitspanne: eigenes Menü (Deckkraft, bei Zeitspanne
+        // zusätzlich Farbe) — das generische styles.line greift bei diesen
+        // gefüllten Overlays nicht (Punkt 4/5).
+        openRangeMenu(e.overlay, e);
       } else {
         openOverlayMenu(e.overlay, e);
       }
@@ -3034,6 +3094,11 @@ function startTool(overlayName) {
       showVAH: true, showVAL: true, showPOC: true,
       colorUp: "rgba(63,182,139,0.55)", colorDown: "rgba(208,94,94,0.55)",
       colorVAH: "#e8b64c", colorVAL: "#e8b64c", colorPOC: "#ffffff" };
+  }
+  // Fib: zuletzt gewählte Einstellungen (Level-Auswahl, Erweitern, Deckkraft)
+  // als Vorlage für neue Zeichnungen (Punkt 3c), sonst die Overlay-Defaults.
+  if ((overlayName === "fibRetracement" || overlayName === "fibExtension") && state.fibDefaults) {
+    overlayConfig.extendData = { ...state.fibDefaults };
   }
   // Mobile: KLCs eigener klick-basierter Erstellungsmodus (ausgelöst durch
   // chart.createOverlay() OHNE points) hört auf dieselben touchstart/
@@ -3248,6 +3313,64 @@ function openOverlayMenu(overlay, event) {
     syncMenuOpen();
   };
 }
+
+// Menü für Preisspanne / Zeitspanne (Punkt 4/5). Live-Apply auf extendData;
+// createPointFigures dieser Overlays liest fillOpacity (beide) und color
+// (nur Zeitspanne). Preisspanne behält die richtungsabhängige Farbe.
+let _rangeTargetId = null;
+function openRangeMenu(overlay, event) {
+  if (!overlay) return;
+  const menu = document.getElementById("rangeMenu");
+  if (!menu) return;
+  _rangeTargetId = overlay.id;
+  const ed = overlay.extendData || {};
+  const isDate = overlay.name === "dateRange";
+  document.getElementById("rmColorRow").style.display = isDate ? "" : "none";
+  const colEl = document.getElementById("rmColor");
+  const opEl  = document.getElementById("rmOpacity");
+  const opVal = document.getElementById("rmOpacityVal");
+  if (isDate) colEl.value = ed.color || "#5aa9e6";
+  const op = ed.fillOpacity != null ? ed.fillOpacity : 10;
+  opEl.value = op;
+  opVal.textContent = op + "%";
+
+  const apply = () => {
+    const ov = chart.getOverlayById(_rangeTargetId);
+    if (!ov) return;
+    const alpha = parseInt(opEl.value, 10);
+    opVal.textContent = alpha + "%";
+    const nd = { ...(ov.extendData || {}) };
+    nd.fillOpacity = alpha;
+    if (isDate) nd.color = colEl.value;
+    try {
+      chart.overrideOverlay({ id: _rangeTargetId, extendData: nd });
+      const rec = state.drawings.find(d => d.id === _rangeTargetId);
+      if (rec) { rec.extendData = nd; saveWorkspace(); }
+    } catch (e) {}
+  };
+  opEl.oninput = apply;
+  colEl.oninput = apply;
+
+  const { x, y } = menuPosition(event, 190, 160);
+  placeMenu(menu, x, y);
+  menu.classList.remove("hidden");
+  document.body.classList.add("menu-open");
+  clampMenuToViewport(menu);
+
+  document.getElementById("rmClose").onclick = () => {
+    menu.classList.add("hidden"); _rangeTargetId = null; syncMenuOpen();
+  };
+  document.getElementById("rangeDelete").onclick = () => {
+    if (_rangeTargetId) { try { chart.removeOverlay(_rangeTargetId); } catch (e) {} }
+    menu.classList.add("hidden"); _rangeTargetId = null; syncMenuOpen();
+  };
+}
+document.addEventListener("click", (e) => {
+  const rm = document.getElementById("rangeMenu");
+  if (rm && !rm.classList.contains("hidden") && !rm.contains(e.target)) {
+    rm.classList.add("hidden"); _rangeTargetId = null; syncMenuOpen();
+  }
+});
 
 // Farbe (hex oder rgba) in {hex, alpha%} zerlegen — für die Menü-Regler.
 function parseColor(c) {
@@ -3974,6 +4097,7 @@ function saveWorkspace() {
     drawings: state.drawings,
     indOrder: state.indOrder,
     frvpDefaults: state.frvpDefaults,
+    fibDefaults:  state.fibDefaults,
     gbCapital: state.gbCapital,
     gbTiers: state.gbTiers,
     gbThresholds: state.gbThresholds,
@@ -4199,19 +4323,33 @@ function switchSymbol(sym) {
   reloadAllCompareData();
 }
 
-// Alle User-Zeichnungen entfernen. Grid-Bänder und Muster bleiben, die
-// werden vom jeweiligen Modul selbst verwaltet.
+// Alles Kursbezogene HART verwerfen (Punkt 1): Zeichnungen, Muster, EWT, SMC,
+// Grid-Bänder, Long/Short, FRVP, AVWAP, Fib, Preis-/Zeitspanne, Text, Freihand
+// sowie die m54-Persistenz-Arrays und den blauen Fib-Punkt. Indikatoren
+// (RSI/MACD …) bleiben — die gehören zum Nutzer-Setup, nicht zum Asset.
+// Für Wiederladen ist die Layout-Speicherfunktion gedacht.
 function clearAllDrawings() {
-  // removeOverlay() ohne id löscht ALLE Overlays. chart.getOverlayStore()
-  // existiert in 9.8.12 nicht — der frühere Versuch lief still ins Leere.
+  // removeOverlay() ohne id löscht ALLE Overlays (auch Grid/FRVP/Long-Short).
   try { chart.removeOverlay(); } catch (e) {}
   state.drawings = [];
+  state.gbBandIds = [];
   state.patternOverlayIds = [];
   state.smcOverlayIds = [];
   state.ewtOverlayIds = [];
+  // m54-Persistenz ebenfalls verwerfen — sonst käme es beim Reload/Compare-Exit zurück.
+  state.ewtSaved = [];
+  state.patternSaved = [];
+  state.smcSaved = [];
   state.gbActiveTier = null;
   state.selectedOverlayId = null;
   state.drawingId = null;
+  try { clearFibDot(); } catch (e) {}
+  // EWT-Rechtsrand-Offset zurücknehmen
+  if (state.ewtOffsetRaised) {
+    try { chart.setOffsetRightDistance(state.ewtOffsetPrev || 80); } catch (e) {}
+    state.ewtOffsetRaised = false;
+  }
+  state.overlaysDirty = false;   // frischer Chart: nichts Ungespeichertes
 }
 
 // ---------- Lazy Loading: ältere Kerzen beim Zurückscrollen ----------
@@ -4972,7 +5110,6 @@ function openFibMenu(event) {
   const op = ed.fillOpacity != null ? ed.fillOpacity : 5;
   document.getElementById("fibFillOpacity").value = op;
   document.getElementById("fibFillVal").textContent = op + "%";
-  document.getElementById("fibLineWidth").value = ed.lineWidth || 1;
 
   // Level-Checkboxen
   const box = document.getElementById("fibLevels");
@@ -4989,9 +5126,12 @@ function openFibMenu(event) {
   const menu = document.getElementById("fibMenu");
   menu.classList.remove("hidden");
   document.body.classList.add("menu-open");
-  const x = Math.min(event.pageX ?? event.x ?? 100, window.innerWidth - 252);
-  const y = Math.min(event.pageY ?? event.y ?? 100, window.innerHeight - 420);
-  placeMenu(menu, Math.max(8, x), Math.max(8, y));
+  // KLCs Rechtsklick-Event trägt Canvas-relative Koordinaten (pointerCoordinate/.x),
+  // kein pageX. menuPosition addiert den Container-Offset korrekt und klemmt
+  // ans Fenster — dieselbe Quelle wie das generische Overlay-Menü.
+  const { x, y } = menuPosition(event, 252, 420);
+  placeMenu(menu, x, y);
+  clampMenuToViewport(menu);
 }
 
 function applyFibMenu() {
@@ -5007,10 +5147,17 @@ function applyFibMenu() {
     showFill:    document.getElementById("fibShowFill").checked,
     extendRight: document.getElementById("fibExtendRight").checked,
     fillOpacity: parseInt(document.getElementById("fibFillOpacity").value, 10),
-    lineWidth:   parseInt(document.getElementById("fibLineWidth").value, 10) || 1,
     hiddenLevels,
   };
   try { chart.overrideOverlay({ id: _fibTargetId, extendData }); } catch (e) {}
+  // Ins Zeichnungs-Register spiegeln, damit Layouts die Einstellung behalten
+  try {
+    const rec = state.drawings.find(d => d.id === _fibTargetId);
+    if (rec) rec.extendData = extendData;
+  } catch (e) {}
+  // Als Default für neue Fib-Zeichnungen merken (wie FRVP, Punkt 3c).
+  state.fibDefaults = { ...extendData };
+  saveWorkspace();
   closeFibMenu();
 }
 
@@ -5153,6 +5300,7 @@ function scanPatterns() {
   const confirmed = found.filter(p => p.confirmedAt != null).length;
   setStatus(`${found.length} Muster (${confirmed} bestätigt) · Form% = Formqualität, keine Trefferquote · Rechtsklick löscht`);
   state.patternSaved = captureGeneratedOverlays(state.patternOverlayIds);
+  markDirty();
   saveWorkspace();
 }
 
@@ -5252,6 +5400,7 @@ function scanSMC() {
   }
   setStatus(`${drawn} SMC-Zonen (${openCount} offen) · Rechtsklick löscht einzelne`);
   state.smcSaved = captureGeneratedOverlays(state.smcOverlayIds);
+  markDirty();
   saveWorkspace();
 }
 
@@ -5594,6 +5743,7 @@ function scanEWT() {
 
   // Erzeugte Overlays fuer Persistenz sichern (Punkt 1a).
   state.ewtSaved = captureGeneratedOverlays(state.ewtOverlayIds);
+  markDirty();
   saveWorkspace();
   // Fehler im Scanner, wo schlicht die Datenmenge nicht reicht: ein Grad
   // n erzeugt etwa len/(2n) Pivots, und fuer eine Fuenferzaehlung braucht
@@ -5900,6 +6050,7 @@ function currentLayoutSnapshot() {
     gbActiveTier: state.gbActiveTier,
     indOrder: state.indOrder,
     frvpDefaults: state.frvpDefaults,
+    fibDefaults:  state.fibDefaults,
     gbCapital: state.gbCapital,
     gbTiers: state.gbTiers,
     gbThresholds: state.gbThresholds,
@@ -5913,6 +6064,7 @@ function saveNamedLayout(name) {
   layouts[name.trim()] = currentLayoutSnapshot();
   saveLayouts(layouts);
   state.currentLayout = name.trim();
+  state.overlaysDirty = false;   // gespeichert = sauber (Punkt 8)
   saveWorkspace();
   renderLayoutList();
   setStatus(`Layout "${name.trim()}" gespeichert`);
@@ -5923,6 +6075,7 @@ async function applyNamedLayout(name) {
   const l = layouts[name];
   if (!l) return;
   state.currentLayout = name;
+  state.overlaysDirty = false;   // frisch geladen = sauber (Punkt 8)
 
   state.symbol      = l.symbol || state.symbol;
   state.timeframe   = CONFIG.TIMEFRAMES.find(t => t.id === l.timeframeId) || state.timeframe;
@@ -6042,6 +6195,7 @@ function renderLayoutList() {
       l[name] = currentLayoutSnapshot();
       saveLayouts(l);
       state.currentLayout = name;
+      state.overlaysDirty = false;   // aktualisiert = sauber (Punkt 8)
       saveWorkspace();
       renderLayoutList();
       setStatus(`Layout "${name}" überschrieben`);
@@ -6759,7 +6913,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m54";
+const TV_BUILD = "m55";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
