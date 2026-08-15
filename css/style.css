@@ -429,7 +429,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
 /* ---- Einklappbare Legende ---- */
 .chart-legend{position:absolute;top:42px;left:10px;z-index:20;display:flex;align-items:flex-start;gap:6px;max-width:70%;pointer-events:none;}
-.legend-toggle{pointer-events:auto;background:transparent;border:none;color:var(--text-dim);width:18px;height:18px;border-radius:3px;cursor:pointer;font-size:11px;line-height:1;flex-shrink:0;}
+.legend-toggle{pointer-events:auto;background:transparent;border:none;color:var(--text-dim);width:20px;height:20px;border-radius:3px;cursor:pointer;font-size:14px;line-height:1;flex-shrink:0;}
 .legend-toggle:hover{background:var(--bg-hover);}
 .legend-toggle:hover{color:var(--accent);}
 .legend-body{display:flex;flex-direction:column;gap:2px;padding:2px 4px;}
@@ -680,6 +680,8 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 /* Compare-Chips: Auge zum Ein-/Ausblenden */
 .cc-eye{background:transparent;border:none;color:var(--text-dim);cursor:pointer;padding:1px 3px;display:flex;align-items:center;border-radius:2px;}
 .cc-eye:hover{color:var(--accent);background:var(--bg-hover);}
+.cc-gear{background:transparent;border:none;color:var(--text-dim);cursor:pointer;padding:1px 3px;font-size:13px;line-height:1;border-radius:2px;}
+.cc-gear:hover{color:var(--accent);background:var(--bg-hover);}
 .compare-chip.hidden-asset{opacity:.45;}
 .compare-chip.hidden-asset .cc-label{text-decoration:line-through;}
 
@@ -839,7 +841,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m56"; }
+:root { --tv-build: "m57"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1460,6 +1462,14 @@ input, textarea, select, [contenteditable="true"] {
 .pane-header .ph-btn:hover{ background:var(--bg-hover); color:var(--text); }
 .pane-header .ph-drag{ cursor:grab; }
 .pane-header .ph-drag:active{ cursor:grabbing; }
+/* Ziehen zum Umsortieren: Ghost-Label folgt dem Cursor, Linie zeigt das Ziel (Punkt 3a) */
+.pane-drag-ghost{ position:fixed; z-index:2000; pointer-events:none;
+  background:var(--accent,#e8b64c); color:#0d1117; font-size:11px; font-weight:600;
+  padding:3px 8px; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,.4);
+  font-family:var(--font-mono,monospace); white-space:nowrap; }
+.pane-drop-marker{ position:absolute; left:0; right:0; height:2px; z-index:9;
+  background:var(--accent,#e8b64c); box-shadow:0 0 6px var(--accent,#e8b64c);
+  pointer-events:none; display:none; }
 /* Eingeklappt: opaker Hintergrund verdeckt den zusammengequetschten
    Indikator vollständig — nur Header + Icons bleiben sichtbar (Punkt 7c). */
 .pane-header.collapsed{ background:var(--bg); }

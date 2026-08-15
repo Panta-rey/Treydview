@@ -1668,15 +1668,20 @@
     needDefaultYAxisFigure: false,
     createPointFigures: ({ coordinates, overlay }) => {
       if (coordinates.length < 2) return [];
+      // styles.line (aus dem Rechtsklick-Menü) hat Vorrang; extendData ist der
+      // Fallback aus der Erstellung (Punkt 2).
+      const ls = (overlay.styles && overlay.styles.line) || {};
       const ed = overlay.extendData || {};
-      const color = ed.color || "#e8b64c";
-      const size  = ed.size || 1.5;
+      const color = ls.color || ed.color || "#e8b64c";
+      const size  = ls.size  || ed.size  || 1.5;
+      const style = ls.style || "solid";
+      const dash  = ls.dashedValue || [4, 4];
       const figs = [];
       for (let i = 0; i < coordinates.length - 1; i++) {
         figs.push({
           type: "line",
           attrs: { coordinates: [coordinates[i], coordinates[i + 1]] },
-          styles: { style: "solid", color, size, smooth: false },
+          styles: { style, color, size, smooth: false, dashedValue: dash },
         });
       }
       return figs;

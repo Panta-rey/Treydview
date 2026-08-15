@@ -319,6 +319,10 @@ function baseStyles() {
           line: { show: cs.lastLine !== false, style: "dashed", dashedValue: [4, 4], size: 1 },
           // Text zeichnet der eigene Tag-Renderer (immer zuoberst) — KLC nur Linie
           text: { show: false },
+          // Pulsierender KLC-Punkt am letzten Preis aus (Punkt 5b) — TreydView
+          // zeichnet die Preis-Tags selbst; der Ripple-Punkt ist redundant und
+          // wirkt im Vergleich fehl am Platz.
+          point: { show: false },
         },
         // Lokale Hochs/Tiefs im sichtbaren Bereich
         high: { show: cs.hiLoShow !== false, textSize: cs.hiLoSize || 12,
@@ -346,8 +350,8 @@ function baseStyles() {
       axisLine: { color: "rgba(143,163,184,0.15)" },
       tickText: { color: T.text, family: "'IBM Plex Mono',monospace" },
     },
-    // Pane-Trennlinie immer als weisse Linie (Punkt 6g).
-    separator: { size: 1, color: "#ffffff" },
+    // Pane-Trennlinie: dunkel weiss, hell grau (Punkt 3b).
+    separator: { size: 1, color: state.theme === "light" ? "#c2c8d0" : "#ffffff" },
     crosshair: {
       horizontal: { 
         line: { color: "rgba(232,182,76,0.4)", style: "dashed", dashedValue: [4, 4] }, 
@@ -663,11 +667,52 @@ function subPaneKeysByPosition() {
 function startPaneDrag(key) {
   _paneDrag = { key, order: subPaneKeysByPosition(), lastY: 0 };
   document.body.style.cursor = "grabbing";
-  const move = (e) => { _paneDrag && (_paneDrag.lastY = e.clientY); };
+
+  // Visuelles Feedback (Punkt 3a): ein Ghost-Label folgt dem Cursor und eine
+  // Linie zeigt, wohin das Pane einsortiert wird.
+  const ind = CONFIG.INDICATORS.find(i => i.key === key);
+  const ghost = document.createElement("div");
+  ghost.className = "pane-drag-ghost";
+  ghost.textContent = (ind && (ind.label || ind.name)) || "Pane";
+  document.body.appendChild(ghost);
+  const marker = document.createElement("div");
+  marker.className = "pane-drop-marker";
+  chartEl.style.position = "relative";
+  chartEl.appendChild(marker);
+
+  const positionMarker = (y) => {
+    const rect = chartEl.getBoundingClientRect();
+    const order = _paneDrag.order;
+    let markY = null;
+    for (let i = 0; i < order.length; i++) {
+      try {
+        const b = chart.getSize(state.subPaneIds[order[i]]);
+        if (!b) continue;
+        const mid = rect.top + (b.top || 0) + (b.height || 0) / 2;
+        if (y < mid) { markY = (b.top || 0); break; }
+      } catch (e) {}
+    }
+    if (markY == null) {
+      const last = order[order.length - 1];
+      try { const b = chart.getSize(state.subPaneIds[last]); if (b) markY = (b.top || 0) + (b.height || 0); } catch (e) {}
+    }
+    if (markY != null) { marker.style.top = markY + "px"; marker.style.display = "block"; }
+    else marker.style.display = "none";
+  };
+
+  const move = (e) => {
+    if (!_paneDrag) return;
+    _paneDrag.lastY = e.clientY;
+    ghost.style.left = (e.clientX + 14) + "px";
+    ghost.style.top  = (e.clientY + 8) + "px";
+    positionMarker(e.clientY);
+  };
   const up = (e) => {
     document.removeEventListener("mousemove", move);
     document.removeEventListener("mouseup", up);
     document.body.style.cursor = "";
+    try { ghost.remove(); } catch (err) {}
+    try { marker.remove(); } catch (err) {}
     const drag = _paneDrag; _paneDrag = null;
     if (!drag) return;
     const y = (e && e.clientY != null) ? e.clientY : drag.lastY;
@@ -1370,12 +1415,17 @@ function renderCompareActive() {
     chip.innerHTML = `<span class="cc-dot" style="background:${a.color}"></span>`
       + `<span class="cc-label">${a.label}</span>`
       + `<button class="cc-eye" title="${a.hidden ? "Einblenden" : "Ausblenden"}"><svg viewBox="0 0 24 24" width="13" height="13">${eye}</svg></button>`
+      + `<button class="cc-gear" title="Linie anpassen">⚙</button>`
       + `<button class="cc-remove" title="Entfernen">✕</button>`;
     // stopPropagation: sonst schliesst der globale Click-Handler das
     // Dropdown und man kann nicht mehrere Assets hintereinander entfernen.
     chip.querySelector(".cc-eye").addEventListener("click", (e) => {
       e.stopPropagation();
       toggleCompareAsset(a.id);
+    });
+    chip.querySelector(".cc-gear").addEventListener("click", (e) => {
+      e.stopPropagation();
+      openCompareStyleMenu(a.id, e);
     });
     chip.querySelector(".cc-remove").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -1730,15 +1780,17 @@ function drawCompare() {
     return pos == null ? null : { pos };
   }, "#ffffff", 2, dataList, posToY, chart);
 
-  // Vergleichs-Linien
+  // Vergleichs-Linien (Farbe/Deckkraft/Linienstärke je Asset einstellbar, Punkt 5a)
   state.compareAssets.forEach((asset, idx) => {
     if (asset.hidden) return;
     const ref = assetRefs[idx], arr = aligned[idx];
     if (ref == null) return;
+    const col = (asset.opacity != null && asset.opacity < 100)
+      ? hexToRgba(asset.color, asset.opacity) : asset.color;
     drawLine(ctx, dataList, fromIdx, toIdx, (d, i) => {
       const pos = posOf(arr[i], ref);
       return pos == null ? null : { pos };
-    }, asset.color, 2, dataList, posToY, chart);
+    }, col, asset.width || 2, dataList, posToY, chart);
   });
 
   // 0%-Linie (Position 0)
@@ -1755,12 +1807,14 @@ function drawCompare() {
   ctx.font = "13px 'IBM Plex Mono', monospace";
   ctx.textAlign = "right";
   const steps = 6;
+  let axisW = 0;   // breitestes Prozent-Label — die Chips enden davor (Punkt 6)
   for (let s = 0; s <= steps; s++) {
     const pos = pMin + (pMax - pMin) * (s / steps);
     const y = posToY(pos);
-    if (y < paneTop + 8 || y > paneTop + paneH - 8) continue;
     const pct = posToPct(pos);
     const label = (pct >= 0 ? "+" : "") + fmtComparePct(pct) + "%";
+    axisW = Math.max(axisW, ctx.measureText(label).width);
+    if (y < paneTop + 8 || y > paneTop + paneH - 8) continue;
     ctx.fillText(label, axisX, y + 4);
   }
 
@@ -1800,17 +1854,24 @@ function drawCompare() {
 
   ctx.font = "12px 'IBM Plex Mono', monospace";
   ctx.textAlign = "left";
+  const rightEdge = w - axisW - 10;   // direkt links vor der Prozent-Achse (Punkt 6)
+  const textOn = (hex) => {
+    const h = String(hex || "").replace("#", "");
+    if (h.length < 6) return "#0d1117";
+    const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62 ? "#0d1117" : "#ffffff";
+  };
   chips.forEach(c => {
     const txt = `${c.label} ${c.pct >= 0 ? "+" : ""}${fmtComparePct(c.pct)}%`;
     const tw = ctx.measureText(txt).width;
-    const bx = w - tw - 12, by = c.y - 7;
-    ctx.fillStyle = T.bg || "rgba(13,17,23,0.9)";
-    ctx.fillRect(bx - 3, by, tw + 6, 14);
-    ctx.strokeStyle = c.color;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(bx - 3, by, tw + 6, 14);
+    const by = c.y - 8;
+    const bx = rightEdge - tw;
+    // Ausgefüllter Chip in Asset-Farbe, kontrastreiche Schrift (weiss, bzw.
+    // dunkel auf sehr hellem Grund wie dem weissen Hauptasset) — Punkt 6.
     ctx.fillStyle = c.color;
-    ctx.fillText(txt, bx, by + 10);
+    ctx.fillRect(bx - 5, by, tw + 10, 16);
+    ctx.fillStyle = textOn(c.color);
+    ctx.fillText(txt, bx, by + 11);
   });
 
   ctx.restore();
@@ -1920,7 +1981,9 @@ function applyCompareIndicator() {
 
 // Bei Symbol-/TF-Wechsel: alle Vergleichsdaten neu laden
 async function reloadAllCompareData() {
-  for (const entry of state.compareAssets) await refreshCompareData(entry);
+  // Parallel statt sequenziell — bei vielen Vergleichsassets (z. B. aus einem
+  // geladenen Layout) war das serielle Nachladen der Flaschenhals (Punkt 7).
+  await Promise.all(state.compareAssets.map(entry => refreshCompareData(entry).catch(() => {})));
   applyCompareIndicator();
 }
 
@@ -2097,7 +2160,7 @@ function toggleLegend() {
   const legend = document.getElementById("chartLegend");
   const btn = document.getElementById("legendToggle");
   legend.classList.toggle("collapsed", state.legendCollapsed);
-  btn.textContent = state.legendCollapsed ? "▸" : "▾";
+  btn.textContent = state.legendCollapsed ? "▸" : "◂";
 }
 
 // ---------- Chart-Typ (Kerzen / Linie) ----------
@@ -3560,6 +3623,55 @@ document.addEventListener("click", (e) => {
   }
 });
 
+// Menü für eine Vergleichslinie (Punkt 5a): Farbe, Deckkraft, Linienstärke.
+// Live-Apply auf das Asset + Neuzeichnen; Werte werden im Asset gespeichert und
+// überleben so das Layout.
+function openCompareStyleMenu(assetId, event) {
+  const menu = document.getElementById("compareStyleMenu");
+  if (!menu) return;
+  const asset = state.compareAssets.find(a => a.id === assetId);
+  if (!asset) return;
+  const colEl = document.getElementById("csColor");
+  const opEl  = document.getElementById("csOpacity");
+  const opVal = document.getElementById("csOpacityVal");
+  const wEl   = document.getElementById("csWidth");
+  colEl.value = asset.color || "#5aa9e6";
+  const op = asset.opacity != null ? asset.opacity : 100;
+  opEl.value = op; opVal.textContent = op + "%";
+  wEl.value = asset.width || 2;
+
+  const apply = () => {
+    asset.color = colEl.value;
+    asset.opacity = parseInt(opEl.value, 10);
+    asset.width = parseInt(wEl.value, 10) || 2;
+    opVal.textContent = asset.opacity + "%";
+    // Farbpunkt im Dropdown mitziehen
+    try {
+      const dot = document.querySelector(`#compareActive .compare-chip .cc-dot`);
+      if (dot) renderCompareActive();
+    } catch (e) {}
+    try { drawCompare(); } catch (e) {}
+    saveWorkspace();
+  };
+  colEl.oninput = apply;
+  opEl.oninput = apply;
+  wEl.oninput = apply;
+
+  const { x, y } = menuPosition(event, 200, 170);
+  placeMenu(menu, x, y);
+  menu.classList.remove("hidden");
+  document.body.classList.add("menu-open");
+  clampMenuToViewport(menu);
+  document.getElementById("csClose").onclick = () => { menu.classList.add("hidden"); syncMenuOpen(); };
+}
+document.addEventListener("click", (e) => {
+  const cm = document.getElementById("compareStyleMenu");
+  if (cm && !cm.classList.contains("hidden") && !cm.contains(e.target)
+      && !(e.target.closest && e.target.closest(".cc-gear"))) {
+    cm.classList.add("hidden"); syncMenuOpen();
+  }
+});
+
 // Farbe (hex oder rgba) in {hex, alpha%} zerlegen — für die Menü-Regler.
 function parseColor(c) {
   if (!c) return { hex: "#e8b64c", alpha: 100 };
@@ -3600,6 +3712,12 @@ function openFrvpMenu(overlay, event) {
   document.getElementById("frvpOpacityVal").textContent = opac + "%";
   document.getElementById("frvpOpacity").oninput = (e) => {
     document.getElementById("frvpOpacityVal").textContent = e.target.value + "%";
+    // Deckkraft sofort sichtbar (Punkt 1)
+    try {
+      const cur = chart.getOverlayById(overlay.id);
+      const base = (cur && cur.extendData) ? cur.extendData : ext;
+      chart.overrideOverlay({ id: overlay.id, extendData: { ...base, opacity: parseInt(e.target.value, 10) || 55 } });
+    } catch (err) {}
   };
   document.getElementById("frvpExtendRight").checked = ext.extendRight === true;
 
@@ -5324,8 +5442,10 @@ function openFibMenu(event) {
   clampMenuToViewport(menu);
 }
 
-function applyFibMenu() {
-  if (!_fibTargetId) return;
+// Aktuelle Menü-Einstellungen als extendData sammeln und live aufs Overlay
+// anwenden — ohne zu schliessen (Punkt 1: Deckkraft & Co. sofort sichtbar).
+function _fibLiveApply() {
+  if (!_fibTargetId) return null;
   const hiddenLevels = {};
   document.querySelectorAll("#fibLevels input[type=checkbox]").forEach(cb => {
     if (!cb.checked) hiddenLevels[cb.dataset.lv] = true;
@@ -5340,6 +5460,13 @@ function applyFibMenu() {
     hiddenLevels,
   };
   try { chart.overrideOverlay({ id: _fibTargetId, extendData }); } catch (e) {}
+  return extendData;
+}
+
+function applyFibMenu() {
+  if (!_fibTargetId) return;
+  const extendData = _fibLiveApply();
+  if (!extendData) { closeFibMenu(); return; }
   // Ins Zeichnungs-Register spiegeln, damit Layouts die Einstellung behalten
   try {
     const rec = state.drawings.find(d => d.id === _fibTargetId);
@@ -6861,6 +6988,15 @@ document.getElementById("fibDelete").addEventListener("click", () => {
 });
 document.getElementById("fibFillOpacity").addEventListener("input", (e) => {
   document.getElementById("fibFillVal").textContent = e.target.value + "%";
+  _fibLiveApply();   // Deckkraft sofort sichtbar (Punkt 1)
+});
+// Übrige Fib-Optionen ebenfalls live anwenden (Level-Auswahl, Erweitern, Flags)
+["fibShowLabels", "fibShowLevels", "fibShowPrices", "fibShowFill", "fibExtendRight"].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("change", () => _fibLiveApply());
+});
+document.getElementById("fibLevels").addEventListener("change", (e) => {
+  if (e.target && e.target.type === "checkbox") _fibLiveApply();
 });
 document.addEventListener("click", (e) => {
   const m = document.getElementById("fibMenu");
@@ -7104,7 +7240,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m56";
+const TV_BUILD = "m57";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

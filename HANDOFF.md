@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 15. August 2026 · Build m56**
+**Stand: 15. August 2026 · Build m57**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -111,14 +111,14 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m56)
+## Datei-MD5 (Build m57)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | 3d38eb5495f36c7a41287cb158d80848 | 1422 |
-| style.css | f22b1ebf74580bf9177b611065dfbc3c | 1515 |
-| app.js | e13aafd8e9531330ee1855c8132fbd35 | 8346 |
-| overlays.js | 2b99b537e308736ee4536da8c51b4500 | 1686 |
+| index.html | 4e6dc64bd67b3442c8579256f92d37d1 | — |
+| style.css | 4645aab338907ea5cbe5e2eb5d53cd5d | — |
+| app.js | 037df16b964f4863629db777f5e725ef | — |
+| overlays.js | d6539970134e44623e8150355e4aa2e1 | — |
 | settings.js | 33507654835e3f09c0e26103cd314516 | 264 |
 | klinecharts.min.js | 91ef1325639a4de147e755ebebf015eb | — |
 | config.js | 7877db5623e4a46b2ceb07db97b68346 | 519 |
@@ -132,9 +132,9 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 | ewt.js | 297d592de041e9131c9402113758922d | 1493 |
 | snapshot.sh | 19b8c1e054a82780d7371ee89af53552 | — |
 
-> **m56 geändert:** app.js, overlays.js, settings.js, style.css, index.html.
-> **klinecharts.min.js, config.js, data.js, worker-komplett.js unverändert seit
-> m55** — kein Bundle- und kein Worker-Deploy nötig.
+> **m57 geändert:** app.js, overlays.js, style.css, index.html.
+> settings.js, klinecharts.min.js, config.js, data.js, worker-komplett.js
+> unverändert seit m56 — kein Bundle-, Worker- oder settings-Deploy nötig.
 
 `snapshot.sh` liegt im Repo-Wurzelverzeichnis, erzeugt `data/*.json`.
 `smc.js`, `gridbot.js`, `patterns.js`, `derivatives.js` sind seit vor m17
@@ -272,7 +272,68 @@ zeichnet über `needDefaultYAxisFigure` einen Achsen-Preis-Tag in US-Format
 
 ---
 
-## Build m56 — Änderungen (15. August 2026)
+## Build m57 — Änderungen (15. August 2026)
+
+Verfeinerungen + Compare-Ausbau aus dem m56-Test.
+
+**Niedrig-Gruppe:**
+
+**1 (Deckkraft live)** — Fib- und FRVP-Menü wenden die Deckkraft jetzt live beim
+Ziehen an (`_fibLiveApply`; FRVP-`oninput` → overrideOverlay). Overlay-, Range-
+und Position-Menü waren bereits live. Bei Fib sind auch Level-Auswahl und
+„Erweitern" live.
+
+**2 (Polylinie-Menü)** — Die Polylinie liest jetzt `styles.line`
+(Farbe/Dicke/Stil/gestrichelt) mit Fallback auf extendData; das generische Menü
+greift.
+
+**3b (Separator bei Hell)** — `baseStyles().separator.color` theme-abhängig
+(dunkel `#ffffff`, hell `#c2c8d0`).
+
+**5b (Pulsierender blauer Punkt)** — Ursache: KLCs `priceMark.last.point`
+(Ripple-Animation). In `baseStyles` `point.show:false` gesetzt — generell aus,
+da TreydView die Preis-Tags selbst zeichnet.
+
+**7 (Compare-Laden)** — `reloadAllCompareData` lädt parallel (`Promise.all`)
+statt seriell.
+
+**8 (Collapse-Icon)** — `#legendToggle` bei offen `◂` (statt `▾`), collapsed
+`▸`; Icon 18→20px / Schrift 11→14px.
+
+**Hoch-Gruppe:**
+
+**3a (Drag visuelles Mitziehen)** — `startPaneDrag` zeigt beim Umsortieren ein
+Ghost-Label (`.pane-drag-ghost`, folgt dem Cursor) und eine Einfüge-Linie
+(`.pane-drop-marker`) an der Zielposition.
+
+**4 (FAQ aktualisiert)** — Line-Assets (Gold/Silber/Indizes), Vergleich neu
+(Verwerfen, Pop-up, Zahnrad, Auto-Exit), Zeichentools (Preis-/Datumfeld,
+Messwerkzeuge inkl. kombiniert, Polylinie-Gummiband, Magnet auf Linie,
+AVWAP ganze Linie), Pane-Kopf (Einklappen/Zahnrad-Löschen/Umsortieren),
+Sync-Code. Nebenbei ein bestehendes doppeltes `</section>` (gridbot) behoben.
+
+**5a (Compare-Zahnrad)** — Pro Vergleichsasset ein Zahnrad zwischen Auge und ✕
+(`.cc-gear`), öffnet `openCompareStyleMenu` (Farbe, Deckkraft, Linienstärke,
+Live-Apply). `drawCompare` nutzt `asset.opacity` (via hexToRgba) und
+`asset.width`; Werte im Asset gespeichert (überleben Layout).
+
+**6 (Compare-Chips)** — `drawCompare` misst die Prozent-Achsenbreite und
+positioniert die Etiketten direkt links davor; ausgefüllt in Asset-Farbe mit
+kontrastreicher Schrift (weiss, bzw. dunkel auf hellem Grund wie dem weissen
+Hauptasset — luminanzbasiert).
+
+**Lektionen m57:**
+- KLCs `priceMark.last` hat ein separates `point`-Feld (Ripple-Animation) —
+  `last.show:false` blendet es nicht mit aus, dafür braucht es `point.show`.
+- Menü-Regler live machen = `oninput` ruft `overrideOverlay`; für Overlays mit
+  vielen Feldern die aktuelle extendData als Basis nehmen und nur das eine Feld
+  ändern.
+- Für Etiketten links vor einer selbst gezeichneten Achse die max. Label-Breite
+  messen und davor ausrichten; Textfarbe luminanzbasiert wählen.
+
+---
+
+
 
 Verfeinerungen + neue Zeichentools aus dem m55-Test.
 
