@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 14. August 2026 · Build m55**
+**Stand: 15. August 2026 · Build m56**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -111,36 +111,30 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m55)
+## Datei-MD5 (Build m56)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | c005d437da2ccd8c34476d08d3a37853 | 1413 |
-| style.css | 970916c745d6880e3ce38e531caf91cc | 1509 |
-| app.js | fe3fa2522f7f26907640573211359468 | 8155 |
-| overlays.js | d085fe2cb3b59ad1f7c517dd2e7f089b | 1629 |
+| index.html | 3d38eb5495f36c7a41287cb158d80848 | 1422 |
+| style.css | f22b1ebf74580bf9177b611065dfbc3c | 1515 |
+| app.js | e13aafd8e9531330ee1855c8132fbd35 | 8346 |
+| overlays.js | 2b99b537e308736ee4536da8c51b4500 | 1686 |
+| settings.js | 33507654835e3f09c0e26103cd314516 | 264 |
 | klinecharts.min.js | 91ef1325639a4de147e755ebebf015eb | — |
 | config.js | 7877db5623e4a46b2ceb07db97b68346 | 519 |
 | data.js | 7e805239486a65af21fbd0ab86c48436 | 595 |
 | worker-komplett.js | ac7bc94be3ac728fd3dc6301725a9545 | 848 |
-| ewt.js | 297d592de041e9131c9402113758922d | 1493 |
 | indicators.js | 96bca96210cb52aed4f7988d0dfa8c41 | 1034 |
-| settings.js | a0a42e402cbf44a755b469cb004a3836 | 250 |
 | smc.js | 95601db23d23cf8f2cf19eb161c33dc6 | 248 |
 | gridbot.js | 3a65ff885ee6d55480deb166d9717b04 | 502 |
 | patterns.js | e94d7c6a70b598fe1bfeecb67c4cc82c | 1016 |
 | derivatives.js | d44aac15f1dc1cc5410801b84f2aa81d | 157 |
+| ewt.js | 297d592de041e9131c9402113758922d | 1493 |
 | snapshot.sh | 19b8c1e054a82780d7371ee89af53552 | — |
 
-> **m55 geändert:** app.js, overlays.js, style.css, index.html **und
-> klinecharts.min.js** (neuer Bundle-Patch, siehe unten). config.js, data.js,
-> worker-komplett.js unverändert seit m54 — **kein Worker-Deploy nötig**.
-
-> **Bundle-Patches in klinecharts.min.js (alle per `grep` verifizierbar):**
-> `var St=0.2` (min barSpace); Log-Achsen-Drag `realFrom/realTo`; **NEU (m55,
-> Punkt 6):** Magnet-Snap auf Close bei Line-Assets —
-> `if(window.__tvLineMagnet){d=p.close}else if(d>p.high)…`. Bei einem
-> KLineCharts-Update müssen alle Patches neu gesetzt werden.
+> **m56 geändert:** app.js, overlays.js, settings.js, style.css, index.html.
+> **klinecharts.min.js, config.js, data.js, worker-komplett.js unverändert seit
+> m55** — kein Bundle- und kein Worker-Deploy nötig.
 
 `snapshot.sh` liegt im Repo-Wurzelverzeichnis, erzeugt `data/*.json`.
 `smc.js`, `gridbot.js`, `patterns.js`, `derivatives.js` sind seit vor m17
@@ -278,7 +272,98 @@ zeichnet über `needDefaultYAxisFigure` einen Achsen-Preis-Tag in US-Format
 
 ---
 
-## Build m55 — Änderungen (14. August 2026)
+## Build m56 — Änderungen (15. August 2026)
+
+Verfeinerungen + neue Zeichentools aus dem m55-Test.
+
+**Niedrig-Gruppe:**
+
+**1 (AVWAP gestrichelt)** — Die VWAP-Kurve las `style`/`dashedValue` nicht aus
+`styles.line` (war hart „solid"). Jetzt aus dem Menü steuerbar.
+
+**2 (Fib-Level spaltenweise)** — `.fib-levels` von CSS-Grid (row-major) auf
+`column-count:2` + `break-inside:avoid` — erste Spalte komplett von oben nach
+unten, dann zweite.
+
+**3c/3d** — „Horizontaler Strahl" aus beiden Zeichenlisten entfernt;
+`lines.tools` neu geordnet (Horizontale Linie, Preislinie, Vertikale Linie,
+Trendlinie, Strahl, Verlängerte Linie, Parallelkanal, Parallele Linien,
+Polylinie, Rechteck).
+
+**6a** — Collapse/Zahnrad-Icons von 28→24px.
+
+**7 (Vergleich-Popup Bug)** — Der globale document-click-Handler (`if
+(!e.target.closest(".dropdown"))`) schloss das eben geöffnete Dropdown sofort,
+weil das Popup kein `.dropdown` ist. Fix: `e.stopPropagation()` in den
+Ja/Nein-Handlern.
+
+**Hoch-Gruppe:**
+
+**3a/3b (Preis-/Datumfeld)** — `openOverlayMenu` zeigt für horizontale Linien
+(horizontalStraightLine/priceLine) ein Preisfeld, für vertikale
+(verticalStraightLine) ein Datumfeld. Eingabe setzt die Overlay-Punkte per
+`overrideOverlay({points})` und spiegelt sie ins Zeichnungs-Register.
+
+**4 (Preis- und Zeitspanne kombiniert)** — Neues Overlay `priceDateRange`
+(overlays.js): gefülltes Rechteck mit zwei Labels — Preisänderung (+/‑ und %)
+oben, Zeitspanne (Tage/Std) unten. In der Messwerkzeug-Kategorie,
+SAVED_OVERLAYS, FLAECHIG (Drag), Punktzahl 2, Routing aufs Range-Menü (nur
+Deckkraft, Farbe richtungsabhängig).
+
+**5 (Polylinie Gummiband + blauer Dot)** — `startPolyline`: neuer
+mousemove-Handler zieht die Linie zum Cursor (`_polyCursorPoint`, Preview über
+fixierte Punkte + Cursor) und zeichnet den blauen magnetischen Punkt
+(`drawFibDot` + `magnetSnapToOhlc`). `toPoint` snappt gesetzte Punkte bei
+Magnet. Abschluss weiterhin per Rechtsklick/Doppelklick. Der Fib-Dot-Handler
+überlässt der Polylinie ihren eigenen Punkt (`activeTool === "polyline"` →
+return).
+
+**6b (Löschen im Zahnrad-Menü)** — `Settings.open(indKey, onApply, onDelete)`:
+neuer roter „Indikator entfernen"-Button im Footer (nur bei übergebenem
+onDelete = Pane-Zahnrad). Callback entfernt den Indikator, löscht
+`state.active`+`paneCollapsed`, hakt die Dropdown-Checkbox ab und ruft
+renderIndPanel.
+
+**6c (Ziehen zum Umsortieren)** — Drag-Icon (⠿) rechts im Header. `startPaneDrag`
+merkt die Reihenfolge, beim Loslassen bestimmt `reorderSubPanes` die neue
+Position und baut die Sub-Pane-Indikatoren in neuer Reihenfolge neu auf
+(removeIndicator→applyIndicator; kurzes Flackern bewusst in Kauf genommen, da
+KLineCharts keine native Pane-Reihenfolge kennt). Collapse-Zustand/-Höhe bleiben.
+
+**6d (collapsed Icons links neben Achse)** — Der opake collapsed-Header deckt
+weiter die ganze Pane, aber `.ph-actions` wird um die Achsenbreite
+(`root.width − main.width`) nach links versetzt — bündig zum Preispanel wie im
+offenen Zustand.
+
+**6e (Graph unter Header)** — `applyPaneTopGap()` setzt pro Sub-Pane
+`gap.top = PANE_HEADER_H + 2` (KLC deutet gap ≥ 1 als Pixel), damit die Kurve
+unter der Header-Unterkante beginnt. Machbare Näherung — Achsen-Labels/Gitter
+bleiben oben. Bei Init/Asset-Wechsel/Ausklappen/Indikator-Toggle angewandt,
+nicht auf eingeklappte Panes.
+
+**6f (kein kurzes Öffnen bei Asset-Wechsel)** — `reapplyPaneCollapse` läuft jetzt
+synchron nach `updateLegend`, im nächsten `requestAnimationFrame` und direkt
+nach `autoScaleY` (statt erst nach 140 ms) — die Pane bleibt beim Wechsel
+eingeklappt, kein sichtbares Aufblitzen.
+
+**6g (Pane-Grenze weiss)** — `baseStyles()` setzt `separator:{size:1,
+color:"#ffffff"}`.
+
+**Lektionen m56:**
+- Der globale Dropdown-Schliesser reagiert auf JEDEN Klick ausserhalb `.dropdown`
+  — In-App-Popups, die danach ein Dropdown öffnen, brauchen `stopPropagation`.
+- `getSize(paneId,"main")` vs `getSize(paneId)` (Root) liefert die Achsenbreite
+  als Differenz — für Icons neben der Achse und für den collapsed-Versatz.
+- `setPaneOptions({gap:{top}})` mit Pixelwert (≥1) schafft oberen Freiraum für
+  DOM-Header über Panes.
+- KLC hat keine Pane-Reorder: Umsortieren = Sub-Panes in neuer Reihenfolge neu
+  erstellen (Flackern), Collapse/Höhe vorher sichern.
+- Overlay-Punkte per `overrideOverlay({points})` gezielt setzen (Preis-/Datum-
+  Eingabe) — `serializeDrawPoints` fürs Register nicht vergessen.
+
+---
+
+
 
 Verfeinerungen aus dem Test von m54. Zwei Aufwandsgruppen.
 

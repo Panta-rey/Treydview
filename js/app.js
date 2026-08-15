@@ -346,6 +346,8 @@ function baseStyles() {
       axisLine: { color: "rgba(143,163,184,0.15)" },
       tickText: { color: T.text, family: "'IBM Plex Mono',monospace" },
     },
+    // Pane-Trennlinie immer als weisse Linie (Punkt 6g).
+    separator: { size: 1, color: "#ffffff" },
     crosshair: {
       horizontal: { 
         line: { color: "rgba(232,182,76,0.4)", style: "dashed", dashedValue: [4, 4] }, 
@@ -504,6 +506,7 @@ function togglePaneCollapse(ind) {
     } else {
       chart.setPaneOptions({ id: paneId, height: st.prevHeight || 100, minHeight: 30 });
       st.collapsed = false;
+      try { chart.setPaneOptions({ id: paneId, gap: { top: PANE_HEADER_H + 2, bottom: 4 } }); } catch (e) {}
     }
   } catch (e) {}
   state.paneCollapsed[ind.key] = st;
@@ -549,17 +552,30 @@ function updatePaneHeaders() {
       const acts = document.createElement("div");  acts.className = "ph-actions";
       const col  = document.createElement("button"); col.className = "ph-btn ph-collapse"; col.title = "Ein-/Ausklappen"; col.type = "button";
       const gear = document.createElement("button"); gear.className = "ph-btn ph-gear"; gear.title = "Einstellungen"; gear.textContent = "⚙"; gear.type = "button";
+      const drag = document.createElement("button"); drag.className = "ph-btn ph-drag"; drag.title = "Ziehen zum Umsortieren"; drag.textContent = "⠿"; drag.type = "button";
       col.addEventListener("click", (e) => { e.stopPropagation(); togglePaneCollapse(ind); });
+      drag.addEventListener("mousedown", (e) => { e.stopPropagation(); e.preventDefault(); startPaneDrag(ind.key, e); });
       gear.addEventListener("click", (e) => {
         e.stopPropagation();
         if (!((ind.inputs && ind.inputs.length) || (ind.plots && ind.plots.length))) return;
         Settings.open(ind.key, (k) => {
           const i = CONFIG.INDICATORS.find(x => x.key === k);
           if (state.active.has(k)) { removeIndicator(i); applyIndicator(i); }
-          scheduleTagDraw(); updateLegend(); setTimeout(updatePaneHeaders, 30);
+          scheduleTagDraw(); updateLegend(); setTimeout(() => { applyPaneTopGap(); updatePaneHeaders(); }, 30);
+        }, (k) => {
+          // Löschen (Punkt 6b): Pane schliessen + Indikator im Dropdown abwählen.
+          const i = CONFIG.INDICATORS.find(x => x.key === k);
+          state.active.delete(k);
+          try { removeIndicator(i); } catch (err) {}
+          delete state.paneCollapsed[k];
+          try { const cb = document.getElementById("ind_" + k); if (cb) cb.checked = false; } catch (err) {}
+          scheduleTagDraw(); saveWorkspace(); updateLegend();
+          if (typeof renderIndPanel === "function") { try { renderIndPanel(); } catch (err) {} }
+          resize();
+          setTimeout(() => { applyPaneTopGap(); updatePaneHeaders(); }, 60);
         });
       });
-      acts.appendChild(col); acts.appendChild(gear);
+      acts.appendChild(col); acts.appendChild(gear); acts.appendChild(drag);
       el.appendChild(name); el.appendChild(val); el.appendChild(acts);
       chartEl.style.position = "relative";
       chartEl.appendChild(el);
@@ -578,12 +594,19 @@ function updatePaneHeaders() {
     // zusammengequetschten Indikator komplett (Punkt 7c).
     let bm = null;
     try { bm = chart.getSize(paneId, "main"); } catch (e) {}
+    const axisW = (bm && b.width && bm.width) ? Math.max(0, b.width - bm.width) : 0;
+    const acts = el.querySelector(".ph-actions");
     if (collapsed || !bm) {
+      // Eingeklappt: opaker Header über die ganze Pane (verdeckt den Indikator),
+      // aber die Icons um die Achsenbreite nach links — bündig zum Preispanel
+      // wie im offenen Zustand (Punkt 6d).
       el.style.left = (b.left || 0) + "px";
       el.style.width = (b.width || chartEl.clientWidth) + "px";
+      if (acts) acts.style.marginRight = axisW + "px";
     } else {
       el.style.left = (bm.left || 0) + "px";
       el.style.width = (bm.width || chartEl.clientWidth) + "px";
+      if (acts) acts.style.marginRight = "0px";
     }
   });
 }
@@ -593,7 +616,7 @@ function applyAllActive() {
   CONFIG.INDICATORS.filter(i => i.pane === "main").forEach(i => { if (state.active.has(i.key)) applyIndicator(i); });
   CONFIG.INDICATORS.filter(i => i.pane === "sub").forEach(i => { if (state.active.has(i.key)) applyIndicator(i); });
   scheduleTagDraw();
-  setTimeout(() => { reapplyPaneCollapse(); updatePaneHeaders(); }, 80);   // Pane-Header + Collapse (Punkt 7)
+  setTimeout(() => { applyPaneTopGap(); reapplyPaneCollapse(); updatePaneHeaders(); }, 80);   // Pane-Header + Collapse (Punkt 7)
 }
 
 // Eingeklappte Sub-Panes nach einem Neuaufbau (Asset-Wechsel, Layout, Init)
@@ -606,6 +629,93 @@ function reapplyPaneCollapse() {
     if (!paneId) return;
     try { chart.setPaneOptions({ id: paneId, height: PANE_HEADER_H, minHeight: PANE_HEADER_H }); } catch (e) {}
   });
+}
+
+// Oberen Freiraum jeder Sub-Pane auf Header-Höhe setzen, damit der Indikator-
+// Graph erst UNTER der Header-Unterkante beginnt (Punkt 6e). KLC deutet
+// gap.top >= 1 als Pixelwert. Nicht auf eingeklappte Panes anwenden (dort ist
+// der Graph ohnehin verdeckt und gap≈Höhe würde die Skalierung stören).
+function applyPaneTopGap() {
+  Object.keys(state.subPaneIds || {}).forEach(key => {
+    const st = state.paneCollapsed[key];
+    if (st && st.collapsed) return;
+    const paneId = state.subPaneIds[key];
+    if (!paneId) return;
+    try { chart.setPaneOptions({ id: paneId, gap: { top: PANE_HEADER_H + 2, bottom: 4 } }); } catch (e) {}
+  });
+}
+
+// ── Pane-Umsortierung per Ziehen (Punkt 6c) ─────────────────────────
+// KLineCharts kennt keine native Pane-Reihenfolge. Beim Loslassen werden die
+// Sub-Pane-Indikatoren daher entfernt und in neuer Reihenfolge neu erstellt
+// (kurzes Flackern in Kauf genommen). Collapse-Zustand und -Höhe bleiben.
+let _paneDrag = null;
+
+function subPaneKeysByPosition() {
+  const keys = Object.keys(state.subPaneIds).filter(k => state.active.has(k));
+  return keys.map(k => {
+    let top = 0;
+    try { const b = chart.getSize(state.subPaneIds[k]); if (b) top = b.top || 0; } catch (e) {}
+    return { k, top };
+  }).sort((a, b) => a.top - b.top).map(o => o.k);
+}
+
+function startPaneDrag(key) {
+  _paneDrag = { key, order: subPaneKeysByPosition(), lastY: 0 };
+  document.body.style.cursor = "grabbing";
+  const move = (e) => { _paneDrag && (_paneDrag.lastY = e.clientY); };
+  const up = (e) => {
+    document.removeEventListener("mousemove", move);
+    document.removeEventListener("mouseup", up);
+    document.body.style.cursor = "";
+    const drag = _paneDrag; _paneDrag = null;
+    if (!drag) return;
+    const y = (e && e.clientY != null) ? e.clientY : drag.lastY;
+    const order = drag.order.slice();
+    const from = order.indexOf(drag.key);
+    if (from < 0) return;
+    let to = order.length;
+    const rect = chartEl.getBoundingClientRect();
+    for (let i = 0; i < order.length; i++) {
+      let mid = Infinity;
+      try {
+        const b = chart.getSize(state.subPaneIds[order[i]]);
+        if (b) mid = rect.top + (b.top || 0) + (b.height || 0) / 2;
+      } catch (err) {}
+      if (y < mid) { to = i; break; }
+    }
+    order.splice(from, 1);
+    if (to > from) to -= 1;
+    if (to === from) return;   // keine echte Änderung
+    order.splice(to, 0, drag.key);
+    reorderSubPanes(order);
+  };
+  document.addEventListener("mousemove", move);
+  document.addEventListener("mouseup", up);
+}
+
+function reorderSubPanes(orderedKeys) {
+  const meta = {};
+  orderedKeys.forEach(k => {
+    let h = 100;
+    try { const b = chart.getSize(state.subPaneIds[k]); if (b && b.height) h = b.height; } catch (e) {}
+    const st = state.paneCollapsed[k];
+    meta[k] = { collapsed: !!(st && st.collapsed), height: (st && st.collapsed) ? (st.prevHeight || 100) : h };
+  });
+  orderedKeys.forEach(k => {
+    const ind = CONFIG.INDICATORS.find(i => i.key === k);
+    if (ind) { try { removeIndicator(ind); } catch (e) {} }
+  });
+  orderedKeys.forEach(k => {
+    const ind = CONFIG.INDICATORS.find(i => i.key === k);
+    if (ind) { try { applyIndicator(ind); } catch (e) {} }
+  });
+  setTimeout(() => {
+    orderedKeys.forEach(k => {
+      if (meta[k] && meta[k].collapsed) state.paneCollapsed[k] = { collapsed: true, prevHeight: meta[k].height };
+    });
+    reapplyPaneCollapse(); applyPaneTopGap(); updatePaneHeaders(); scheduleTagDraw();
+  }, 60);
 }
 
 // ---------- VRVP-Canvas ----------
@@ -901,13 +1011,18 @@ async function loadData() {
   // (BTC ~60'000, ETH ~2'500). Ohne Auto-Skalierung müsste man die
   // Y-Achse erst suchen. autoScaleY() skaliert neu und entsperrt danach
   // die Achse fürs vertikale Draggen.
-  setTimeout(autoScaleY, 80);
+  setTimeout(() => { try { autoScaleY(); reapplyPaneCollapse(); } catch (e) {} }, 80);
   updatePriceHeader(candles.at(-1), candles.at(-2));
   updateLegend();
+  // Collapse SOFORT + im nächsten Frame wieder anwenden — verhindert das kurze
+  // Aufklappen der Panes beim Asset-Wechsel (Punkt 6f), bevor der 140ms-Pfad
+  // unten Header und Gap final setzt.
+  try { reapplyPaneCollapse(); } catch (e) {}
+  requestAnimationFrame(() => { try { reapplyPaneCollapse(); } catch (e) {} });
   // Nach Datenwechsel: eingeklappte Sub-Panes wieder einfahren und Header
   // neu positionieren (Punkt 7d) — sonst öffnen sich die Panes beim
   // Asset-Wechsel, der Header bliebe aber an der eingeklappten Stelle.
-  setTimeout(() => { try { reapplyPaneCollapse(); updatePaneHeaders(); } catch (e) {} }, 140);
+  setTimeout(() => { try { applyPaneTopGap(); reapplyPaneCollapse(); updatePaneHeaders(); } catch (e) {} }, 140);
   setStatus(`${candles.length} Candles · ${state.symbol.label} · ${state.timeframe.label}`);
   if (state.active.has("vrvp")) setTimeout(drawVrvp, 120);
 
@@ -1339,14 +1454,16 @@ function markDirty() { state.overlaysDirty = true; }
   };
   const yes = document.getElementById("cmpPromptYes");
   const no  = document.getElementById("cmpPromptNo");
-  if (yes) yes.addEventListener("click", () => {
+  if (yes) yes.addEventListener("click", (e) => {
+    e.stopPropagation();   // sonst schliesst der globale Klick-Handler das Dropdown sofort wieder
     document.getElementById("comparePrompt").classList.add("hidden");
     openDropdown("compareDropdown", () => {
       renderCompareActive();
       setTimeout(() => document.getElementById("compareSearch")?.focus(), 30);
     });
   });
-  if (no) no.addEventListener("click", () => {
+  if (no) no.addEventListener("click", (e) => {
+    e.stopPropagation();
     document.getElementById("comparePrompt").classList.add("hidden");
     openDropdown("layoutDropdown", () => { try { renderLayoutList(); } catch (e) {} });
   });
@@ -1915,7 +2032,7 @@ function renderIndPanel() {
       saveWorkspace();
       updateLegend();
       resize();
-      setTimeout(updatePaneHeaders, 60);
+      setTimeout(() => { applyPaneTopGap(); updatePaneHeaders(); }, 60);
     });
     const label = document.createElement("label");
     label.htmlFor = "ind_" + ind.key; label.textContent = ind.label;
@@ -2185,7 +2302,7 @@ function drawIndicatorTags() {
 const SAVED_OVERLAYS = new Set([
   "segment", "horizontalStraightLine", "verticalStraightLine", "priceLine",
   "rectangle", "rayLine", "priceChannelLine", "parallelStraightLine",
-  "frvp", "fibRetracement", "fibExtension", "priceRange", "dateRange",
+  "frvp", "fibRetracement", "fibExtension", "priceRange", "dateRange", "priceDateRange",
   "simpleAnnotation", "freehand", "positionTool", "polyline", "avwap",
   // m54: liefen bisher durch onDrawEnd -> captureDrawing wie die anderen,
   // fehlten aber in dieser Liste, deshalb wurden sie nie ins Layout
@@ -2596,7 +2713,7 @@ function findOverlayNear(x, y, lineTol, pointTol) {
 
     // Flaechige Werkzeuge: der ganze aufgezogene Kasten zaehlt, nicht nur
     // seine Kanten.
-    const FLAECHIG = { rectangle: 1, priceRange: 1, dateRange: 1 };
+    const FLAECHIG = { rectangle: 1, priceRange: 1, dateRange: 1, priceDateRange: 1 };
     if (FLAECHIG[ov.name] && pts.length >= 2) {
       const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
       const l = Math.min(...xs) - lineTol, r = Math.max(...xs) + lineTol;
@@ -2826,14 +2943,18 @@ function stopFreehand() {
 let _polyPoints = null;
 let _polyHandlers = null;
 let _polyPreviewId = null;
+let _polyCursorPoint = null;   // aktueller Cursor-Punkt fürs Gummiband (Punkt 5)
 
 function _polyRedrawPreview() {
   if (_polyPreviewId != null) { try { chart.removeOverlay(_polyPreviewId); } catch (e) {} _polyPreviewId = null; }
-  if (!_polyPoints || _polyPoints.length < 2) return;
+  // Gummiband: fixierte Punkte + aktuell verfolgter Cursor-Punkt.
+  const pts = (_polyPoints || []).slice();
+  if (_polyCursorPoint && pts.length >= 1) pts.push(_polyCursorPoint);
+  if (pts.length < 2) return;
   try {
     _polyPreviewId = chart.createOverlay({
       name: "polyline",
-      points: _polyPoints.slice(),
+      points: pts,
       extendData: { color: state.drawStyle.color, size: state.drawStyle.width || 1.5 },
     });
     if (Array.isArray(_polyPreviewId)) _polyPreviewId = _polyPreviewId[0];
@@ -2853,8 +2974,11 @@ function startPolyline() {
 
   const toPoint = (ev) => {
     const rect = el.getBoundingClientRect();
-    const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
-    const y = (ev.touches ? ev.touches[0].clientY : ev.clientY) - rect.top;
+    let x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
+    let y = (ev.touches ? ev.touches[0].clientY : ev.clientY) - rect.top;
+    // Magnet: Punkt auf OHLC bzw. bei Line-Assets auf Close snappen (Punkt 5)
+    const snap = magnetSnapToOhlc(x, y);
+    if (snap) { x = snap.x; y = snap.y; }
     try {
       const v = chart.convertFromPixel({ x, y }, { paneId: "candle_pane" });
       return (v && v.timestamp != null && v.value != null) ? { timestamp: v.timestamp, value: v.value } : null;
@@ -2871,6 +2995,23 @@ function startPolyline() {
     _polyRedrawPreview();
   };
 
+  // Gummiband + blauer magnetischer Punkt beim Zeichnen (Punkt 5).
+  const onMove = (ev) => {
+    if (!_polyPoints) return;
+    const rect = el.getBoundingClientRect();
+    let x = ev.clientX - rect.left;
+    let y = ev.clientY - rect.top;
+    const snap = magnetSnapToOhlc(x, y);
+    const dx = snap ? snap.x : x;
+    const dy = snap ? snap.y : y;
+    try { drawFibDot(dx, dy); } catch (e) {}
+    try {
+      const v = chart.convertFromPixel({ x: dx, y: dy }, { paneId: "candle_pane" });
+      _polyCursorPoint = (v && v.timestamp != null && v.value != null) ? { timestamp: v.timestamp, value: v.value } : null;
+    } catch (e) { _polyCursorPoint = null; }
+    if (_polyPoints.length >= 1) _polyRedrawPreview();
+  };
+
   // Rechtsklick beendet die Polylinie (kein Kontextmenü währenddessen)
   const onContext = (ev) => {
     ev.preventDefault();
@@ -2881,11 +3022,12 @@ function startPolyline() {
   // Doppelklick beendet ebenfalls
   const onDbl = (ev) => { ev.preventDefault(); ev.stopPropagation(); finishPolyline(); };
 
-  _polyHandlers = { onClick, onContext, onDbl, el };
+  _polyHandlers = { onClick, onContext, onDbl, onMove, el };
   el.addEventListener("mousedown", onClick, { capture: true });
   el.addEventListener("touchstart", onClick, { capture: true, passive: false });
   el.addEventListener("contextmenu", onContext, { capture: true });
   el.addEventListener("dblclick", onDbl, { capture: true });
+  el.addEventListener("mousemove", onMove);
 }
 
 function finishPolyline() {
@@ -2923,15 +3065,18 @@ function stopPolyline() {
   try { chart.setScrollEnabled(true); chart.setZoomEnabled(true); } catch (e) {}
   if (_polyPreviewId != null) { try { chart.removeOverlay(_polyPreviewId); } catch (e) {} _polyPreviewId = null; }
   if (_polyHandlers) {
-    const { onClick, onContext, onDbl, el } = _polyHandlers;
+    const { onClick, onContext, onDbl, onMove, el } = _polyHandlers;
     el.removeEventListener("mousedown", onClick, { capture: true });
     el.removeEventListener("touchstart", onClick, { capture: true });
     el.removeEventListener("contextmenu", onContext, { capture: true });
     el.removeEventListener("dblclick", onDbl, { capture: true });
+    if (onMove) el.removeEventListener("mousemove", onMove);
     el.classList.remove("cursor-crosshair");
   }
   _polyHandlers = null;
   _polyPoints = null;
+  _polyCursorPoint = null;
+  try { clearFibDot(); } catch (e) {}   // blauen Zeichenpunkt entfernen (Punkt 5)
   state.activeTool = null;
   renderDrawbar();
 }
@@ -3062,7 +3207,7 @@ function buildOverlayConfig(overlayName) {
         // NICHT das generische Linien-Menü (Farbe/Dicke/gestrichelt wirken bei
         // Fib nicht sinnvoll). Punkt 3.
         openFibMenu(e);
-      } else if (overlayName === "priceRange" || overlayName === "dateRange") {
+      } else if (overlayName === "priceRange" || overlayName === "dateRange" || overlayName === "priceDateRange") {
         // Preisspanne/Zeitspanne: eigenes Menü (Deckkraft, bei Zeitspanne
         // zusätzlich Farbe) — das generische styles.line greift bei diesen
         // gefüllten Overlays nicht (Punkt 4/5).
@@ -3304,6 +3449,49 @@ function openOverlayMenu(overlay, event) {
   wEl.oninput    = apply;
   dashEl.onchange = apply;
 
+  // Preisfeld (horizontale Linien) / Datumfeld (vertikale Linien) — Punkt 3a/3b:
+  // genaue Platzierung per Eingabe statt nur per Ziehen.
+  const priceRow = document.getElementById("omPriceRow");
+  const dateRow  = document.getElementById("omDateRow");
+  const priceEl  = document.getElementById("omPrice");
+  const dateEl   = document.getElementById("omDate");
+  const isHoriz  = overlay.name === "horizontalStraightLine" || overlay.name === "priceLine";
+  const isVert   = overlay.name === "verticalStraightLine";
+  const p0 = (overlay.points && overlay.points[0]) || {};
+  if (priceRow) priceRow.style.display = isHoriz ? "" : "none";
+  if (dateRow)  dateRow.style.display  = isVert  ? "" : "none";
+  if (isHoriz && priceEl && p0.value != null) {
+    priceEl.value = p0.value;
+    priceEl.onchange = () => {
+      const v = parseFloat(priceEl.value);
+      if (!isFinite(v)) return;
+      try {
+        const cur = chart.getOverlayById(overlay.id);
+        const pts = (cur && cur.points ? cur.points : [p0]).map(p => ({ ...p, value: v }));
+        chart.overrideOverlay({ id: overlay.id, points: pts });
+        const rec = state.drawings.find(d => d.id === overlay.id);
+        if (rec) { rec.points = serializeDrawPoints(pts); saveWorkspace(); }
+      } catch (e) {}
+    };
+  }
+  if (isVert && dateEl && p0.timestamp != null) {
+    // datetime-local erwartet lokale Zeit ohne Zeitzone
+    const d = new Date(p0.timestamp);
+    const pad = (n) => String(n).padStart(2, "0");
+    dateEl.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    dateEl.onchange = () => {
+      const ts = new Date(dateEl.value).getTime();
+      if (!isFinite(ts)) return;
+      try {
+        const cur = chart.getOverlayById(overlay.id);
+        const pts = (cur && cur.points ? cur.points : [p0]).map(p => ({ ...p, timestamp: ts }));
+        chart.overrideOverlay({ id: overlay.id, points: pts });
+        const rec = state.drawings.find(d => d.id === overlay.id);
+        if (rec) { rec.points = serializeDrawPoints(pts); saveWorkspace(); }
+      } catch (e) {}
+    };
+  }
+
   menu.classList.remove("hidden");
   document.body.classList.add("menu-open");
   clampMenuToViewport(menu);
@@ -3502,6 +3690,7 @@ const TOOL_ICONS = {
   fibExtension:           dsSvg(dsLine("M4 13 L11 6 L18 10") + dsLine("M4 17 H22 M4 21 H22") + dsDot(11,6) + dsDot(18,10)),
   frvp:                   dsSvg(dsLine("M4 5 H13 M4 10 H9 M4 15 H17 M4 20 H7") + dsLine("M21 4 V20")),
   priceRange:             dsSvg(dsLine("M12 20 V5 M8 9 L12 5 L16 9") + dsLine("M6 20 H18") + dsDot(19,4) + dsDot(5,20)),
+  priceDateRange:         dsSvg(dsLine("M12 20 V5 M8 9 L12 5 L16 9") + dsLine("M6 20 H18") + dsDot(19,4) + dsDot(5,20)),
   avwap:                  dsSvg(dsLine("M8 5 V19 M12 3 V21 M16 6 V18") + dsLine("M4 17 L20 7")),
   dateRange:              dsSvg(dsLine("M4 12 H20 M16 8 L20 12 L16 16") + dsLine("M4 6 V18") + dsDot(21,5) + dsDot(3,19)),
   rectangle:              dsSvg(dsLine("M5 6 H19 V18 H5 Z") + dsDot(5,6) + dsDot(19,6) + dsDot(5,18) + dsDot(19,18)),
@@ -3515,17 +3704,16 @@ const DRAW_CATEGORIES = [
     id: "lines", title: "Linien",
     icon: TOOL_ICONS.segment,
     tools: [
-      { overlay: "straightLine",            label: "Verlängerte Linie", desc: "Gerade durch zwei Punkte, endlos in beide Richtungen" },
-      { overlay: "segment",                label: "Trendlinie",       desc: "Verbindet Hochs oder Tiefs" },
       { overlay: "horizontalStraightLine",  label: "Horizontale Linie",desc: "Support- und Resistance-Level" },
-      { overlay: "verticalStraightLine",    label: "Vertikale Linie",  desc: "Zeitereignis markieren" },
       { overlay: "priceLine",               label: "Preislinie",       desc: "Horizontale mit Preislabel" },
-      { overlay: "rectangle",               label: "Rechteck",         desc: "Preiszonen, Orderblöcke" },
+      { overlay: "verticalStraightLine",    label: "Vertikale Linie",  desc: "Zeitereignis markieren" },
+      { overlay: "segment",                 label: "Trendlinie",       desc: "Verbindet Hochs oder Tiefs" },
       { overlay: "rayLine",                 label: "Strahl",           desc: "Halbgerade ab einem Punkt" },
-      { overlay: "horizontalRayLine",       label: "Horizontaler Strahl", desc: "Waagrechte ab einem Punkt in eine Richtung" },
+      { overlay: "straightLine",            label: "Verlängerte Linie", desc: "Gerade durch zwei Punkte, endlos in beide Richtungen" },
       { overlay: "priceChannelLine",        label: "Parallelkanal",    desc: "Zwei parallele Trendlinien" },
       { overlay: "parallelStraightLine",    label: "Parallele Linien", desc: "Mehrere parallele Geraden" },
-      { overlay: "polyline",                label: "Polylinie",         desc: "Mehrpunkt-Linie, ESC zum Beenden" },
+      { overlay: "polyline",                label: "Polylinie",         desc: "Mehrpunkt-Linie, Rechtsklick beendet" },
+      { overlay: "rectangle",               label: "Rechteck",         desc: "Preiszonen, Orderblöcke" },
     ],
   },
   {
@@ -3550,6 +3738,7 @@ const DRAW_CATEGORIES = [
     tools: [
       { overlay: "priceRange", label: "Preisspanne",  desc: "Prozentuale Preisänderung" },
       { overlay: "dateRange",  label: "Zeitspanne",   desc: "Zeit und Kerzenanzahl" },
+      { overlay: "priceDateRange", label: "Preis- und Zeitspanne", desc: "Preisänderung und Zeitspanne zugleich" },
     ],
   },
   {
@@ -3856,13 +4045,15 @@ quiet(() => {
   //   parallelStraightLine — vom Parallelkanal abgedeckt
   const MOBILE_DRAW_GROUPS = [
     { title: "Trendlinien", tools: [
-      { overlay: "straightLine",           label: "Verlängerte Linie" },
+      { overlay: "horizontalStraightLine", label: "Horizontale Linie" },
+      { overlay: "priceLine",              label: "Preislinie" },
+      { overlay: "verticalStraightLine",   label: "Vertikale Linie" },
       { overlay: "segment",                label: "Trendlinie" },
       { overlay: "rayLine",                label: "Strahl" },
-      { overlay: "horizontalStraightLine", label: "Horizontale Linie" },
-      { overlay: "verticalStraightLine",   label: "Vertikale Linie" },
-      { overlay: "horizontalRayLine",      label: "Horizontaler Strahl" },
+      { overlay: "straightLine",           label: "Verlängerte Linie" },
       { overlay: "priceChannelLine",       label: "Paralleler Kanal" },
+      { overlay: "polyline",               label: "Polylinie" },
+      { overlay: "rectangle",              label: "Rechteck" },
     ]},
     { title: "Gann und Fibonacci", tools: [
       { overlay: "fibRetracement", label: "Fib-Retracement" },
@@ -3881,7 +4072,6 @@ quiet(() => {
     // Vorhandene Werkzeuge, die in den TradingView-Favoriten nicht auftauchen.
     // Hier gesammelt, damit nichts stillschweigend verschwindet.
     { title: "Weitere", tools: [
-      { overlay: "priceLine",        label: "Preislinie" },
       { overlay: "simpleAnnotation", label: "Textfeld" },
       { overlay: "freehand",         label: "Freihand" },
     ]},
@@ -6891,6 +7081,7 @@ try { chart.subscribeAction("onPaneDrag", () => { try { updatePaneHeaders(); } c
 // Punkt und mousemove feuert dort nicht.
 chartEl.addEventListener("mousemove", (e) => {
   try {
+    if (state.activeTool === "polyline") return;   // Polylinie hat ihren eigenen Dot-Handler (Punkt 5)
     if (!isFibDrawing()) { clearFibDot(); return; }
     const rect = chartEl.getBoundingClientRect();
     const px = e.clientX - rect.left, py = e.clientY - rect.top;
@@ -6913,7 +7104,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m55";
+const TV_BUILD = "m56";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -7073,7 +7264,7 @@ const TOOL_POINT_COUNT = {
   // Auf dem Handy genuegt ein Tipp; den vierten Punkt (rechter Rand) liefert
   // expandPoints. totalStep in overlays.js bleibt bei 4 — ein hoeherer Wert
   // wuerde den Desktop auf vier Klicks umstellen und Regel 1 verletzen.
-  dateRange: 2, avwap: 1, simpleAnnotation: 1, positionTool: 3,
+  dateRange: 2, priceDateRange: 2, avwap: 1, simpleAnnotation: 1, positionTool: 3,
   // Neu auf dem Handy: beide sind KLineCharts-Bordmittel.
   // straightLine    = Gerade durch zwei Punkte, in BEIDE Richtungen unendlich
   // horizontalRayLine = Waagrechte ab einem Punkt in eine Richtung

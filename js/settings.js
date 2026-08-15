@@ -41,7 +41,7 @@ const Settings = {
     return out;
   },
 
-  open(indKey, onApply) {
+  open(indKey, onApply, onDelete) {
     const ind = CONFIG.INDICATORS.find(i => i.key === indKey);
     if (!ind) return;
     const hasInputs = (ind.inputs || []).length > 0;
@@ -90,15 +90,10 @@ const Settings = {
       if (inp.type === "select") {
         input = document.createElement("select");
         input.className = "settings-input";
-        // Optionen duerfen einfache Strings sein oder {value,label} —
-        // letzteres, wenn der gespeicherte Wert kurz sein soll ("1w"),
-        // die Beschriftung aber lesbar ("1 Woche").
         (inp.options || []).forEach(opt => {
-          const val = (opt && typeof opt === "object") ? opt.value : opt;
-          const lbl = (opt && typeof opt === "object") ? opt.label : opt;
           const o = document.createElement("option");
-          o.value = val; o.textContent = lbl;
-          if (val === current.inputs[inp.key]) o.selected = true;
+          o.value = opt; o.textContent = opt;
+          if (opt === current.inputs[inp.key]) o.selected = true;
           input.appendChild(o);
         });
       } else {
@@ -251,5 +246,19 @@ const Settings = {
 
     document.getElementById("settingsClose").onclick = () => overlay.classList.add("hidden");
     overlay.onclick = (e) => { if (e.target === overlay) overlay.classList.add("hidden"); };
+
+    // Löschen-Button (Punkt 6b): nur wenn ein onDelete-Callback übergeben wird
+    // (Pane-Zahnrad). Schliesst das Panel und ruft den Callback, der die Pane
+    // schliesst und den Indikator im Dropdown abwählt.
+    const delBtn = document.getElementById("settingsDelete");
+    if (delBtn) {
+      if (typeof onDelete === "function") {
+        delBtn.style.display = "";
+        delBtn.onclick = () => { overlay.classList.add("hidden"); onDelete(indKey); };
+      } else {
+        delBtn.style.display = "none";
+        delBtn.onclick = null;
+      }
+    }
   },
 };

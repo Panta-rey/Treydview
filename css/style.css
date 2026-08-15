@@ -168,7 +168,9 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 .settings-input{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--font-mono);font-size:12px;padding:4px 8px;width:110px;outline:none;}
 .settings-input:focus{border-color:var(--accent);}
 input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
-.settings-footer{padding:12px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;}
+.settings-footer{padding:12px 16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;gap:10px;}
+.btn-delete-ind{background:transparent;color:#d05e5e;border:1px solid rgba(208,94,94,.4);border-radius:var(--radius);padding:7px 16px;font-family:var(--font-mono);font-size:12px;font-weight:600;cursor:pointer;}
+.btn-delete-ind:hover{background:rgba(208,94,94,.12);border-color:#d05e5e;}
 .btn-apply{background:var(--accent);color:#0d1117;border:none;border-radius:var(--radius);padding:7px 20px;font-family:var(--font-mono);font-size:12px;font-weight:600;cursor:pointer;}
 .btn-apply:hover{filter:brightness(1.1);}
 
@@ -583,8 +585,8 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .fib-row input[type=checkbox]{accent-color:var(--accent);cursor:pointer;}
 .fib-row input[type=range]{width:88px;accent-color:var(--accent);}
 .fib-row input[type=number]{width:48px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;outline:none;}
-.fib-levels{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;}
-.fib-lv{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-dim);cursor:pointer;}
+.fib-levels{column-count:2;column-gap:10px;}
+.fib-lv{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-dim);cursor:pointer;break-inside:avoid;margin-bottom:3px;}
 .fib-lv input{accent-color:var(--accent);cursor:pointer;}
 .fib-lv-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0;}
 .fib-actions{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--border);}
@@ -784,6 +786,8 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .overlay-menu{min-width:180px;padding:8px;}
 .om-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:3px 4px;font-size:12px;color:var(--text-dim);}
 .om-row label{white-space:nowrap;}
+.om-numfield{flex:1;min-width:0;background:var(--bg-input,#0c0f13);border:1px solid var(--border,#242a33);border-radius:5px;color:var(--text);font-size:12px;padding:4px 6px;font-family:var(--font-mono);}
+.om-numfield:focus{outline:none;border-color:var(--accent);}
 .om-row input[type=color]{width:36px;height:22px;padding:0;border:1px solid var(--border);border-radius:3px;background:none;cursor:pointer;}
 .om-row input[type=number]{width:52px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:2px 5px;}
 .om-opacity{display:flex;align-items:center;gap:7px;flex:1;justify-content:flex-end;}
@@ -835,7 +839,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m55"; }
+:root { --tv-build: "m56"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1449,11 +1453,13 @@ input, textarea, select, [contenteditable="true"] {
   text-overflow:ellipsis; flex:1 1 auto; }
 .pane-header .ph-actions{ display:flex; gap:3px; margin-left:auto; pointer-events:auto; }
 .pane-header .ph-btn{
-  width:28px; height:28px; display:flex; align-items:center; justify-content:center;
+  width:24px; height:24px; display:flex; align-items:center; justify-content:center;
   border:none; background:transparent; color:var(--text-dim); cursor:pointer;
-  border-radius:4px; font-size:22px; line-height:1; padding:0;
+  border-radius:4px; font-size:18px; line-height:1; padding:0;
 }
 .pane-header .ph-btn:hover{ background:var(--bg-hover); color:var(--text); }
+.pane-header .ph-drag{ cursor:grab; }
+.pane-header .ph-drag:active{ cursor:grabbing; }
 /* Eingeklappt: opaker Hintergrund verdeckt den zusammengequetschten
    Indikator vollständig — nur Header + Icons bleiben sichtbar (Punkt 7c). */
 .pane-header.collapsed{ background:var(--bg); }

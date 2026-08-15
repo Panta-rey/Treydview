@@ -132,6 +132,61 @@
     },
   });
 
+  // ---------- Preis- und Zeitspanne kombiniert (Punkt 4) ----------
+  // Zeigt gleichzeitig die Preisänderung (+/‑ und %) UND die Zeitspanne
+  // (Tage/Stunden). Menü wie Preisspanne (nur Deckkraft); Farbe
+  // richtungsabhängig grün/rot.
+  klinecharts.registerOverlay({
+    name: "priceDateRange",
+    totalStep: 3,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates, overlay, precision }) => {
+      if (coordinates.length < 2) return [];
+      const p0 = overlay.points[0].value;
+      const p1 = overlay.points[1].value;
+      const diff = p1 - p0;
+      const pct = p0 !== 0 ? (diff / p0) * 100 : 0;
+      const digits = Math.min(precision.price, 4);
+      const priceLabel = `${diff >= 0 ? "+" : ""}${diff.toFixed(digits)}  (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)`;
+
+      const t0 = overlay.points[0].timestamp;
+      const t1 = overlay.points[1].timestamp;
+      let timeLabel = "–";
+      if (t0 && t1) {
+        const ms = Math.abs(t1 - t0);
+        const days = ms / 86400000;
+        timeLabel = days >= 2 ? `${Math.round(days)} Tage` : `${Math.round(ms / 3600000)} Std`;
+      }
+
+      const midX = (coordinates[0].x + coordinates[1].x) / 2;
+      const ed = overlay.extendData || {};
+      const fillA = (ed.fillOpacity != null ? ed.fillOpacity : 10) / 100;
+      const baseRgb = diff >= 0 ? "63,182,139" : "208,94,94";
+      const borderCol = diff >= 0 ? "#3fb68b" : "#d05e5e";
+      const topY = Math.min(coordinates[0].y, coordinates[1].y);
+      const botY = Math.max(coordinates[0].y, coordinates[1].y);
+      return [
+        {
+          type: "rect",
+          attrs: rectAttrs(coordinates[0], coordinates[1]),
+          styles: { style: "stroke_fill", color: `rgba(${baseRgb},${fillA})`, borderColor: borderCol, borderSize: 1 },
+        },
+        {
+          type: "text",
+          attrs: { x: midX, y: topY - 6, text: priceLabel, align: "center", baseline: "bottom" },
+          styles: { color: "#0d1117", backgroundColor: borderCol, paddingLeft: 6, paddingRight: 6, paddingTop: 3, paddingBottom: 3, borderRadius: 3 },
+          ignoreEvent: true,
+        },
+        {
+          type: "text",
+          attrs: { x: midX, y: botY + 6, text: timeLabel, align: "center", baseline: "top" },
+          styles: { color: "#0d1117", backgroundColor: borderCol, paddingLeft: 6, paddingRight: 6, paddingTop: 3, paddingBottom: 3, borderRadius: 3 },
+          ignoreEvent: true,
+        },
+      ];
+    },
+  });
+
   // ---------- FRVP — Fixed Range Volume Profile ----------
   klinecharts.registerOverlay({
     name: "frvp",
@@ -1061,6 +1116,8 @@
       const ls = (overlay.styles && overlay.styles.line) || {};
       const col   = ls.color || (overlay.extendData && overlay.extendData.color) || "#c792ea";
       const width = ls.size  || 2;
+      const lineStyle = ls.style || "solid";
+      const lineDash  = ls.dashedValue || [4, 4];
       const figs = [];
       // Ankerlinie von oben nach unten durch das Preis-Pane
       const yTop    = yAxis ? yAxis.convertToPixel(yAxis.getRange?.()?.to ?? 1e9) : 0;
@@ -1097,7 +1154,7 @@
           figs.push({
             type: "line",
             attrs: { coordinates: pts },
-            styles: { style: "solid", color: col, size: width, smooth: false },
+            styles: { style: lineStyle, color: col, size: width, smooth: false, dashedValue: lineDash },
           });
         }
       }

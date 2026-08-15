@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m55">
-  <link rel="stylesheet" href="css/style.css?v=m55">
+  <link rel="manifest" href="manifest.webmanifest?v=m56">
+  <link rel="stylesheet" href="css/style.css?v=m56">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m55"></script>
+  <script src="js/lib/klinecharts.min.js?v=m56"></script>
 </head>
 <body>
 
@@ -615,6 +615,7 @@
     </div>
     <div class="settings-body" id="settingsBody"></div>
     <div class="settings-footer">
+      <button class="btn-delete-ind" id="settingsDelete" style="display:none">Indikator entfernen</button>
       <button class="btn-apply" id="settingsApply">Übernehmen</button>
     </div>
   </div>
@@ -1278,6 +1279,14 @@
 <!-- Generisches Overlay-Kontextmenü (Einzellöschen) -->
 <div class="overlay-menu hidden" id="overlayMenu">
   <button class="om-close" id="omClose" title="Schliessen">✕</button>
+  <div class="om-row" id="omPriceRow" style="display:none">
+    <label>Preis</label>
+    <input type="number" id="omPrice" step="any" class="om-numfield">
+  </div>
+  <div class="om-row" id="omDateRow" style="display:none">
+    <label>Datum</label>
+    <input type="datetime-local" id="omDate" class="om-numfield">
+  </div>
   <div class="om-row">
     <label>Farbe</label>
     <input type="color" id="omColor" value="#e8b64c">
@@ -1398,16 +1407,16 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m55"></script>
-<script src="js/indicators.js?v=m55"></script>
-<script src="js/overlays.js?v=m55"></script>
-<script src="js/data.js?v=m55"></script>
-<script src="js/settings.js?v=m55"></script>
-<script src="js/derivatives.js?v=m55"></script>
-<script src="js/gridbot.js?v=m55"></script>
-<script src="js/patterns.js?v=m55"></script>
-<script src="js/smc.js?v=m55"></script>
-<script src="js/ewt.js?v=m55"></script>
-<script src="js/app.js?v=m55"></script>
+<script src="js/config.js?v=m56"></script>
+<script src="js/indicators.js?v=m56"></script>
+<script src="js/overlays.js?v=m56"></script>
+<script src="js/data.js?v=m56"></script>
+<script src="js/settings.js?v=m56"></script>
+<script src="js/derivatives.js?v=m56"></script>
+<script src="js/gridbot.js?v=m56"></script>
+<script src="js/patterns.js?v=m56"></script>
+<script src="js/smc.js?v=m56"></script>
+<script src="js/ewt.js?v=m56"></script>
+<script src="js/app.js?v=m56"></script>
 </body>
 </html>
