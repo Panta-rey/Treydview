@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 15. August 2026 · Build m57**
+**Stand: 16. August 2026 · Build m58**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -111,14 +111,14 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m57)
+## Datei-MD5 (Build m58)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | 4e6dc64bd67b3442c8579256f92d37d1 | — |
-| style.css | 4645aab338907ea5cbe5e2eb5d53cd5d | — |
-| app.js | 037df16b964f4863629db777f5e725ef | — |
-| overlays.js | d6539970134e44623e8150355e4aa2e1 | — |
+| index.html | a74ae4204df79e72a5abbda445d47718 | — |
+| style.css | baca0b6069c220be49d24336a9a20c9e | — |
+| app.js | dababb915c242b02b2a8029be48d7edc | — |
+| overlays.js | 774791c7ed157fbc47d83a73e0a0cf82 | — |
 | settings.js | 33507654835e3f09c0e26103cd314516 | 264 |
 | klinecharts.min.js | 91ef1325639a4de147e755ebebf015eb | — |
 | config.js | 7877db5623e4a46b2ceb07db97b68346 | 519 |
@@ -132,9 +132,9 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 | ewt.js | 297d592de041e9131c9402113758922d | 1493 |
 | snapshot.sh | 19b8c1e054a82780d7371ee89af53552 | — |
 
-> **m57 geändert:** app.js, overlays.js, style.css, index.html.
+> **m58 geändert:** app.js, overlays.js, style.css, index.html.
 > settings.js, klinecharts.min.js, config.js, data.js, worker-komplett.js
-> unverändert seit m56 — kein Bundle-, Worker- oder settings-Deploy nötig.
+> unverändert — kein Bundle-, Worker- oder settings-Deploy nötig.
 
 `snapshot.sh` liegt im Repo-Wurzelverzeichnis, erzeugt `data/*.json`.
 `smc.js`, `gridbot.js`, `patterns.js`, `derivatives.js` sind seit vor m17
@@ -272,7 +272,68 @@ zeichnet über `needDefaultYAxisFigure` einen Achsen-Preis-Tag in US-Format
 
 ---
 
-## Build m57 — Änderungen (15. August 2026)
+## Build m58 — Änderungen (16. August 2026)
+
+Fehlkorrekturen aus m57 (falsche Ursachen) + Zeichen-Vorschauen.
+
+**Niedrig-Gruppe (m57-Fixes saßen an der falschen Stelle):**
+
+**1 (FRVP Deckkraft live)** — FRVP liest nicht `opacity`, sondern
+`colorUp`/`colorDown` (rgba mit *eingerechneter* Deckkraft). Der oninput
+berechnet diese jetzt mit `hexToRgba(hex, op)` neu — Balken ändern die Deckkraft
+sofort.
+
+**6a** — Compare-Zahnrad 13→16px.
+
+**6c (pulsierender Punkt)** — Der Punkt ist `candle.area.point` (Area-/Linien-
+Darstellung), **nicht** `priceMark.last.point`. Deshalb im Vergleich (dort
+`type:"area"`) und bei Line-Assets sichtbar. Jetzt `area.point.show:false` in
+`baseStyles` **und** `compareHideStyles`; der falsche priceMark-Fix entfernt.
+
+**7 (Compare-Label)** — `w = chartEl.clientWidth` ist die volle Breite inkl.
+Preisskala; Achse (`w-4`) und Chips saßen im Preisskala-Bereich. Jetzt über
+`getSize("candle_pane","main")` die Zeichenbereich-Breite (`contentW`) berechnet
+— Achse und Etiketten enden links davor.
+
+**Hoch-Gruppe:**
+
+**2 (FRVP-Hilfslinien)** — Während des Zeichnens (`overlay.currentStep !== -1`)
+zeichnet FRVP statt der teuren Balken zwei vertikale Hilfslinien an Start-/End-X.
+Nach dem Fixieren (currentStep -1) das volle Profil. Wiederhergestellte FRVP
+haben currentStep -1 (setPoints: points≥totalStep-1) → volle Darstellung.
+
+**3 (Fib-Extension Gummiband)** — Während des Zeichnens die Linien A→B→C als
+gestricheltes Gummiband mitziehen; erst nach dem dritten Punkt die vollen
+Fibonacci-Figuren.
+
+**4 (Freihand live)** — `onMove` zeichnet das bisher gezogene Stück als
+Preview-Overlay (`_fhRedrawPreview`), bei Loslassen/Abbruch entfernt.
+
+**5 (Polylinie-Menü)** — Der styles.line-Pfad (m57) griff bei custom-Overlays
+nicht zuverlässig. Umgestellt auf **extendData** (der Pfad, den Polylinie/
+Freihand beim Erstellen nutzen): beide lesen jetzt color/size/style/dashedValue
+aus extendData; `openOverlayMenu` legt den Stil bei polyline/freehand
+zusätzlich in extendData ab (sicher gespreadet, ohne den Text von
+simpleAnnotation zu berühren).
+
+**6b (gestrichelt im Compare-Menü)** — Checkbox `#csDashed`, `asset.dashed`
+gespeichert; `drawCompare` setzt `ctx.setLineDash([6,4])` je Linie und
+setzt danach zurück.
+
+**Lektionen m58:**
+- Der pulsierende Punkt am Linien-Ende ist `candle.area.point`, nicht
+  `priceMark.last.point` — Letzteres existiert für die Kerzendarstellung.
+- FRVP-Deckkraft steckt in `colorUp`/`colorDown`, nicht in `opacity`.
+- Im Compare ist `chartEl.clientWidth` inkl. Preisskala — für Achsen/Etiketten
+  `getSize(paneId,"main")` nehmen.
+- Zeichen-Zustand im Overlay: `overlay.currentStep !== -1` = wird gerade
+  gezeichnet; `-1` = fertig (auch nach Wiederherstellung).
+- Custom-Overlays (createPointFigures) am zuverlässigsten über `extendData`
+  stylen — der styles.line-Merge greift bei ihnen nicht immer sichtbar.
+
+---
+
+
 
 Verfeinerungen + Compare-Ausbau aus dem m56-Test.
 

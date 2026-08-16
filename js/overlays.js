@@ -194,7 +194,19 @@
     needDefaultPointFigure: false,  // Kein automatisches Verbindungsrechteck oben
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, overlay, xAxis, yAxis }) => {
+    createPointFigures: ({ coordinates, overlay, xAxis, yAxis, bounding }) => {
+      // Während des Zeichnens (currentStep !== -1) statt der teuren Balken nur
+      // zwei vertikale Hilfslinien an Start- und End-X als visuelle Führung
+      // (Punkt 2). Erst nach dem Fixieren wird das Profil berechnet.
+      if (overlay.currentStep !== -1) {
+        const hh = (bounding && bounding.height) ? bounding.height : 100000;
+        return coordinates.map(c => ({
+          type: "line",
+          attrs: { coordinates: [{ x: c.x, y: 0 }, { x: c.x, y: hh }] },
+          styles: { style: "dashed", color: "rgba(232,182,76,0.75)", size: 1, dashedValue: [4, 4] },
+          ignoreEvent: true,
+        }));
+      }
       if (coordinates.length < 2) return [];
       const getData = (typeof window !== "undefined" && window.__tvGetDataList) ? window.__tvGetDataList : null;
       if (!getData) return [];
@@ -544,6 +556,22 @@
     needDefaultXAxisFigure: true,
     needDefaultYAxisFigure: true,
     createPointFigures: ({ coordinates, overlay }) => {
+      // Während des Zeichnens (currentStep !== -1): die Linien A→B→C als
+      // Gummiband mitziehen (Punkt 3) — erst nach dem dritten Punkt die vollen
+      // Fibonacci-Figuren.
+      if (overlay.currentStep !== -1) {
+        if (coordinates.length < 2) return [];
+        const guide = [];
+        for (let i = 0; i < coordinates.length - 1; i++) {
+          guide.push({
+            type: "line",
+            attrs: { coordinates: [coordinates[i], coordinates[i + 1]] },
+            styles: { style: "dashed", dashedValue: [4, 4], color: "rgba(232,182,76,0.8)", size: 1 },
+            ignoreEvent: true,
+          });
+        }
+        return guide;
+      }
       if (coordinates.length < 3) return [];
       const [cA, cB, cC] = coordinates;
       const pts = overlay.points || [];
@@ -1004,10 +1032,11 @@
         type: "line",
         attrs: { coordinates },
         styles: {
-          style: "solid",
+          style: ed.style || "solid",
           color: ed.color || "#e8b64c",
           size: ed.size || 2,
           smooth: true,
+          dashedValue: ed.dashedValue || [4, 4],
         },
       }];
     },
@@ -1668,14 +1697,14 @@
     needDefaultYAxisFigure: false,
     createPointFigures: ({ coordinates, overlay }) => {
       if (coordinates.length < 2) return [];
-      // styles.line (aus dem Rechtsklick-Menü) hat Vorrang; extendData ist der
-      // Fallback aus der Erstellung (Punkt 2).
-      const ls = (overlay.styles && overlay.styles.line) || {};
+      // Stil aus extendData (zuverlässig durch Erstellung + Menü gesetzt),
+      // styles.line als Fallback (Punkt 5).
       const ed = overlay.extendData || {};
-      const color = ls.color || ed.color || "#e8b64c";
-      const size  = ls.size  || ed.size  || 1.5;
-      const style = ls.style || "solid";
-      const dash  = ls.dashedValue || [4, 4];
+      const ls = (overlay.styles && overlay.styles.line) || {};
+      const color = ed.color || ls.color || "#e8b64c";
+      const size  = ed.size  || ls.size  || 1.5;
+      const style = ed.style || ls.style || "solid";
+      const dash  = ed.dashedValue || ls.dashedValue || [4, 4];
       const figs = [];
       for (let i = 0; i < coordinates.length - 1; i++) {
         figs.push({

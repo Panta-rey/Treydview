@@ -297,6 +297,10 @@ function baseStyles() {
       area: {
         lineColor: cs.lineColor,
         lineSize:  cs.lineWidth,
+        // Pulsierender Punkt am letzten Wert der Linie/Flaeche aus (Punkt 6c) —
+        // TreydView zeichnet die Preis-Tags selbst. Der Punkt gehoert zur
+        // Area-Darstellung und erscheint sonst im Vergleich und bei Line-Assets.
+        point: { show: false },
         // Linien-Assets (Indizes/Fonds/Gold) IMMER ohne Flaeche — unabhaengig
         // vom globalen Fuell-Schalter. Fuer alle anderen folgt die Flaeche
         // der Nutzereinstellung cs.areaFill.
@@ -319,10 +323,6 @@ function baseStyles() {
           line: { show: cs.lastLine !== false, style: "dashed", dashedValue: [4, 4], size: 1 },
           // Text zeichnet der eigene Tag-Renderer (immer zuoberst) — KLC nur Linie
           text: { show: false },
-          // Pulsierender KLC-Punkt am letzten Preis aus (Punkt 5b) — TreydView
-          // zeichnet die Preis-Tags selbst; der Ripple-Punkt ist redundant und
-          // wirkt im Vergleich fehl am Platz.
-          point: { show: false },
         },
         // Lokale Hochs/Tiefs im sichtbaren Bereich
         high: { show: cs.hiLoShow !== false, textSize: cs.hiLoSize || 12,
@@ -1698,6 +1698,15 @@ function drawCompare() {
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, w, h);
 
+  // Rechter Rand des Zeichenbereichs OHNE die (im Vergleich transparente, aber
+  // Platz belegende) KLC-Preisskala. Prozent-Achse und Etiketten enden hier —
+  // sonst sitzen sie über/hinter dem Preisskala-Panel (Punkt 7).
+  let contentW = w;
+  try {
+    const bMain = chart.getSize("candle_pane", "main");
+    if (bMain && bMain.width) contentW = (bMain.left || 0) + bMain.width;
+  } catch (e) {}
+
   // Pane-Grenzen (nur Preis-Pane, nicht Sub-Panes)
   let paneTop = 0, paneH = h;
   try {
@@ -1787,11 +1796,13 @@ function drawCompare() {
     if (ref == null) return;
     const col = (asset.opacity != null && asset.opacity < 100)
       ? hexToRgba(asset.color, asset.opacity) : asset.color;
+    ctx.setLineDash(asset.dashed ? [6, 4] : []);   // gestrichelt-Option (Punkt 6b)
     drawLine(ctx, dataList, fromIdx, toIdx, (d, i) => {
       const pos = posOf(arr[i], ref);
       return pos == null ? null : { pos };
     }, col, asset.width || 2, dataList, posToY, chart);
   });
+  ctx.setLineDash([]);   // zurücksetzen für die restlichen Zeichnungen
 
   // 0%-Linie (Position 0)
   const y0 = posToY(0);
@@ -1802,7 +1813,7 @@ function drawCompare() {
   ctx.setLineDash([]);
 
   // Eigene Y-Achse rechts (Prozent-Beschriftung; im Log-Modus nichtlinear)
-  const axisX = w - 4;
+  const axisX = contentW - 4;
   ctx.fillStyle = T.text;
   ctx.font = "13px 'IBM Plex Mono', monospace";
   ctx.textAlign = "right";
@@ -1854,7 +1865,7 @@ function drawCompare() {
 
   ctx.font = "12px 'IBM Plex Mono', monospace";
   ctx.textAlign = "left";
-  const rightEdge = w - axisW - 10;   // direkt links vor der Prozent-Achse (Punkt 6)
+  const rightEdge = contentW - axisW - 10;   // direkt links vor der Prozent-Achse (Punkt 7)
   const textOn = (hex) => {
     const h = String(hex || "").replace("#", "");
     if (h.length < 6) return "#0d1117";
@@ -1927,6 +1938,7 @@ function compareHideStyles() {
       area: {
         lineColor: "rgba(0,0,0,0)", lineSize: 0,
         backgroundColor: [{ offset: 0, color: "rgba(0,0,0,0)" }, { offset: 1, color: "rgba(0,0,0,0)" }],
+        point: { show: false },   // pulsierenden Punkt im Vergleich aus (Punkt 6c)
       },
       priceMark: { last: { show: false }, high: { show: false }, low: { show: false } },
     },
@@ -2906,6 +2918,22 @@ function restoreDrawings(list) {
 // braucht Tracking bei gedrückter Maus, also sammeln wir die Punkte
 // selbst und erzeugen das Overlay erst beim Loslassen.
 let _fhPoints = null;
+let _fhPreviewId = null;
+
+// Live-Vorschau beim Freihand-Zeichnen (Punkt 4): das schon gezeichnete Stück
+// als Overlay anzeigen, damit man sieht, dass gezeichnet wird.
+function _fhRedrawPreview() {
+  if (_fhPreviewId != null) { try { chart.removeOverlay(_fhPreviewId); } catch (e) {} _fhPreviewId = null; }
+  if (!_fhPoints || _fhPoints.length < 2) return;
+  try {
+    const id = chart.createOverlay({
+      name: "freehand",
+      points: _fhPoints.slice(),
+      extendData: { color: state.drawStyle.color, size: state.drawStyle.width || 2 },
+    });
+    _fhPreviewId = Array.isArray(id) ? id[0] : id;
+  } catch (e) {}
+}
 
 function startFreehand() {
   state.activeTool = "freehand";
@@ -2942,6 +2970,7 @@ function startFreehand() {
     // Nur neue Punkte aufnehmen — sonst hunderte identische bei Stillstand
     if (p && (_fhPoints.length === 0 || p.timestamp !== _fhPoints.at(-1).timestamp || p.value !== _fhPoints.at(-1).value)) {
       _fhPoints.push(p);
+      _fhRedrawPreview();   // Linie vorzu mitzeichnen (Punkt 4)
     }
     ev.preventDefault();
   };
@@ -2949,6 +2978,7 @@ function startFreehand() {
     if (!_fhPoints) return;
     const pts = _fhPoints;
     _fhPoints = null;
+    if (_fhPreviewId != null) { try { chart.removeOverlay(_fhPreviewId); } catch (e) {} _fhPreviewId = null; }
     if (pts.length >= 2) {
       try {
         const ed = { color: state.drawStyle.color, size: state.drawStyle.width || 2 };
@@ -2992,6 +3022,7 @@ function stopFreehand() {
   document.removeEventListener("mouseup", onUp);
   document.removeEventListener("touchend", onUp);
   el.classList.remove("cursor-crosshair");
+  if (_fhPreviewId != null) { try { chart.removeOverlay(_fhPreviewId); } catch (e) {} _fhPreviewId = null; }
   _fhHandlers = null;
   _fhPoints = null;
   state.activeTool = null;
@@ -3501,10 +3532,18 @@ function openOverlayMenu(overlay, event) {
       dashedValue: dashEl.checked ? [6, 4] : [2, 2],
     };
     try {
-      chart.overrideOverlay({ id: overlay.id, styles: { line } });
+      const patch = { id: overlay.id, styles: { line } };
+      // Custom-Overlays (Polylinie/Freihand) zeichnen aus extendData — dort
+      // zusätzlich ablegen, sonst greift das Menü bei ihnen nicht (Punkt 5).
+      if (overlay.name === "polyline" || overlay.name === "freehand") {
+        const cur = chart.getOverlayById(overlay.id);
+        const curEd = (cur && typeof cur.extendData === "object" && cur.extendData) ? cur.extendData : {};
+        patch.extendData = { ...curEd, color: line.color, size: line.size, style: line.style, dashedValue: line.dashedValue };
+      }
+      chart.overrideOverlay(patch);
       // Ins Zeichnungs-Register spiegeln, damit Layouts den Stil behalten
       const rec = state.drawings.find(d => d.id === overlay.id);
-      if (rec) { rec.styles = { line }; saveWorkspace(); }
+      if (rec) { rec.styles = { line }; if (patch.extendData) rec.extendData = patch.extendData; saveWorkspace(); }
     } catch (e) {}
   };
   colEl.oninput  = apply;
@@ -3635,15 +3674,18 @@ function openCompareStyleMenu(assetId, event) {
   const opEl  = document.getElementById("csOpacity");
   const opVal = document.getElementById("csOpacityVal");
   const wEl   = document.getElementById("csWidth");
+  const dashEl = document.getElementById("csDashed");
   colEl.value = asset.color || "#5aa9e6";
   const op = asset.opacity != null ? asset.opacity : 100;
   opEl.value = op; opVal.textContent = op + "%";
   wEl.value = asset.width || 2;
+  dashEl.checked = !!asset.dashed;
 
   const apply = () => {
     asset.color = colEl.value;
     asset.opacity = parseInt(opEl.value, 10);
     asset.width = parseInt(wEl.value, 10) || 2;
+    asset.dashed = dashEl.checked;
     opVal.textContent = asset.opacity + "%";
     // Farbpunkt im Dropdown mitziehen
     try {
@@ -3656,6 +3698,7 @@ function openCompareStyleMenu(assetId, event) {
   colEl.oninput = apply;
   opEl.oninput = apply;
   wEl.oninput = apply;
+  dashEl.onchange = apply;
 
   const { x, y } = menuPosition(event, 200, 170);
   placeMenu(menu, x, y);
@@ -3711,12 +3754,17 @@ function openFrvpMenu(overlay, event) {
   document.getElementById("frvpOpacity").value = opac;
   document.getElementById("frvpOpacityVal").textContent = opac + "%";
   document.getElementById("frvpOpacity").oninput = (e) => {
-    document.getElementById("frvpOpacityVal").textContent = e.target.value + "%";
-    // Deckkraft sofort sichtbar (Punkt 1)
+    const op = parseInt(e.target.value, 10) || 55;
+    document.getElementById("frvpOpacityVal").textContent = op + "%";
+    // Deckkraft sofort sichtbar (Punkt 1): FRVP liest nicht `opacity`, sondern
+    // colorUp/colorDown mit eingerechneter Deckkraft — daher neu berechnen.
     try {
       const cur = chart.getOverlayById(overlay.id);
       const base = (cur && cur.extendData) ? cur.extendData : ext;
-      chart.overrideOverlay({ id: overlay.id, extendData: { ...base, opacity: parseInt(e.target.value, 10) || 55 } });
+      chart.overrideOverlay({ id: overlay.id, extendData: { ...base, opacity: op,
+        colorUp:   hexToRgba(document.getElementById("frvpColorUp").value,   op),
+        colorDown: hexToRgba(document.getElementById("frvpColorDown").value, op),
+      }});
     } catch (err) {}
   };
   document.getElementById("frvpExtendRight").checked = ext.extendRight === true;
@@ -7240,7 +7288,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m57";
+const TV_BUILD = "m58";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

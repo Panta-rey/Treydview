@@ -680,7 +680,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 /* Compare-Chips: Auge zum Ein-/Ausblenden */
 .cc-eye{background:transparent;border:none;color:var(--text-dim);cursor:pointer;padding:1px 3px;display:flex;align-items:center;border-radius:2px;}
 .cc-eye:hover{color:var(--accent);background:var(--bg-hover);}
-.cc-gear{background:transparent;border:none;color:var(--text-dim);cursor:pointer;padding:1px 3px;font-size:13px;line-height:1;border-radius:2px;}
+.cc-gear{background:transparent;border:none;color:var(--text-dim);cursor:pointer;padding:1px 3px;font-size:16px;line-height:1;border-radius:2px;}
 .cc-gear:hover{color:var(--accent);background:var(--bg-hover);}
 .compare-chip.hidden-asset{opacity:.45;}
 .compare-chip.hidden-asset .cc-label{text-decoration:line-through;}
@@ -841,7 +841,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m57"; }
+:root { --tv-build: "m58"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
