@@ -786,6 +786,11 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
 /* Erweitertes Overlay-Kontextmenü (Punkt 3): Farbe/Deckkraft/Dicke/gestrichelt */
 .overlay-menu{min-width:180px;padding:8px;}
+/* Verschiebbare Menüs: Titelleiste als Ziehgriff (Punkt 1, nur Desktop) */
+.om-titlebar{ cursor:move; font-size:11px; font-weight:600; color:var(--text-dim);
+  padding:2px 22px 6px 4px; margin-bottom:4px; user-select:none;
+  border-bottom:1px solid var(--border); }
+.om-titlebar:active{ cursor:grabbing; }
 .om-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:3px 4px;font-size:12px;color:var(--text-dim);}
 .om-row label{white-space:nowrap;}
 .om-numfield{flex:1;min-width:0;background:var(--bg-input,#0c0f13);border:1px solid var(--border,#242a33);border-radius:5px;color:var(--text);font-size:12px;padding:4px 6px;font-family:var(--font-mono);}
@@ -841,7 +846,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m58"; }
+:root { --tv-build: "m59"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -868,6 +873,9 @@ input, textarea, select, [contenteditable="true"] {
 .ls-choice button:hover { background: var(--bg-hover); border-color: var(--accent); }
 
 @media (max-width: 720px), (pointer: coarse) {
+
+  /* Verschiebbare Menü-Titelleiste ist ein Desktop-Feature (Punkt 1) */
+  .om-titlebar { display: none; }
 
   /* Sichere Ränder als Variablen — so bleiben Leisten, Chartfläche und
      Blätter zwangsläufig deckungsgleich.

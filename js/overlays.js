@@ -1028,9 +1028,23 @@
     createPointFigures: ({ coordinates, overlay }) => {
       if (coordinates.length < 2) return [];
       const ed = overlay.extendData || {};
+      // Dezente einmalige Glättung (Punkt 2): 3-Punkt-Mittelwert entfernt das
+      // Zittern vom Handzeichnen, Endpunkte bleiben erhalten.
+      let coords = coordinates;
+      if (ed.smooth && coordinates.length >= 3) {
+        const out = [coordinates[0]];
+        for (let i = 1; i < coordinates.length - 1; i++) {
+          out.push({
+            x: (coordinates[i - 1].x + coordinates[i].x + coordinates[i + 1].x) / 3,
+            y: (coordinates[i - 1].y + coordinates[i].y + coordinates[i + 1].y) / 3,
+          });
+        }
+        out.push(coordinates[coordinates.length - 1]);
+        coords = out;
+      }
       return [{
         type: "line",
-        attrs: { coordinates },
+        attrs: { coordinates: coords },
         styles: {
           style: ed.style || "solid",
           color: ed.color || "#e8b64c",

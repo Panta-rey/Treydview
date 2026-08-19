@@ -1,5 +1,5 @@
 # TreydView — HANDOFF.md
-**Stand: 16. August 2026 · Build m58**
+**Stand: 16. August 2026 · Build m59**
 Repo: github.com/Panta-rey/Treydview · Live: https://panta-rey.github.io/Treydview/
 Arbeitssprache: Deutsch (de-CH, ss statt ß)
 
@@ -111,14 +111,14 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 - Exchange-Daten direkt aus dem Browser (CORS), nur im Browser testbar
 - Persistenz: localStorage, Schlüssel `tv_workspace`
 
-## Datei-MD5 (Build m58)
+## Datei-MD5 (Build m59)
 
 | Datei | MD5 | Zeilen |
 |---|---|---|
-| index.html | a74ae4204df79e72a5abbda445d47718 | — |
-| style.css | baca0b6069c220be49d24336a9a20c9e | — |
-| app.js | dababb915c242b02b2a8029be48d7edc | — |
-| overlays.js | 774791c7ed157fbc47d83a73e0a0cf82 | — |
+| index.html | 56e1dd84d36927fce1d176c66cc0a24d | — |
+| style.css | 4a240c7df9020d8726032107c5a29a6e | — |
+| app.js | 33e1e2efa48c4a37892e9c9485998e34 | — |
+| overlays.js | 4be1a4d7287151f031652833a93c0e18 | — |
 | settings.js | 33507654835e3f09c0e26103cd314516 | 264 |
 | klinecharts.min.js | 91ef1325639a4de147e755ebebf015eb | — |
 | config.js | 7877db5623e4a46b2ceb07db97b68346 | 519 |
@@ -132,7 +132,7 @@ Zero-Build Vanilla JS, GitHub Pages, kein Bundler, kein Framework.
 | ewt.js | 297d592de041e9131c9402113758922d | 1493 |
 | snapshot.sh | 19b8c1e054a82780d7371ee89af53552 | — |
 
-> **m58 geändert:** app.js, overlays.js, style.css, index.html.
+> **m59 geändert:** app.js, overlays.js, style.css, index.html.
 > settings.js, klinecharts.min.js, config.js, data.js, worker-komplett.js
 > unverändert — kein Bundle-, Worker- oder settings-Deploy nötig.
 
@@ -272,7 +272,44 @@ zeichnet über `needDefaultYAxisFigure` einen Achsen-Preis-Tag in US-Format
 
 ---
 
-## Build m58 — Änderungen (16. August 2026)
+## Build m59 — Änderungen (16. August 2026)
+
+**Niedrig-Gruppe:**
+
+**3 (Wert-Balken bündig zur Skala)** — `drawTag` zeichnete den Balken bei
+`W - Textbreite - 10`, also textbreitenabhängig versetzt. Jetzt über
+`getSize(paneId,"yAxis")` an der linken Skala-Kante ausgerichtet und auf volle
+Skala-Breite gezogen — pro Pane (Preis-/Indikator-Achsen unterschiedlich breit),
+mit `_axisCache` pro Render. Textfarbe weiterhin über die globale `textOn`
+(config.js).
+
+**Hoch-Gruppe:**
+
+**1 (Menüs verschiebbar)** — `makeMenuDraggable(menuId, title)` fügt jedem
+Overlay-Menü (Overlay, Fib, Range, FRVP, Compare-Stil) eine `.om-titlebar` als
+Ziehgriff ein und verschiebt das Menü per Drag mit Viewport-Klemmung. Nur
+Desktop: Drag-Handler hat `tvIsMobile()`-Guard, Titelleiste per
+`@media (max-width:720px),(pointer:coarse){.om-titlebar{display:none}}`
+ausgeblendet. Mobile bleibt unangetastet.
+
+**2 (Freihand «glätten»)** — Checkbox `#omSmooth` im Overlay-Menü, nur bei
+Freihand sichtbar (`overlay.name === "freehand"`). Toggelt `extendData.smooth`;
+die Freihand-`createPointFigures` glättet dann dezent per 3-Punkt-Mittelwert
+(Endpunkte bleiben, Rohpunkte unverändert → jederzeit an-/abwählbar).
+
+**Lektionen m59:**
+- Wert-Balken an der Skala: Breite/Position aus `getSize(paneId,"yAxis")`
+  (left+width), nicht aus der Textbreite ableiten.
+- Menüs verschiebbar: Titelleiste per JS injizieren + Drag mit
+  Fenster-Klemmung; Desktop-Guard über `tvIsMobile()` + `@media`.
+- Glätten ohne Datenverlust: nicht die gespeicherten Punkte ändern, sondern in
+  `createPointFigures` optional glätten (Flag in extendData) — reversibel.
+- Globale `textOn` (config.js) vs. lokale in drawCompare (shadowt nur dort) —
+  ESLint-Globals-Extraktor unterscheidet Scope nicht, daher manuell geprüft.
+
+---
+
+
 
 Fehlkorrekturen aus m57 (falsche Ursachen) + Zeichen-Vorschauen.
 

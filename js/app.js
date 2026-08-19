@@ -2303,17 +2303,31 @@ function drawIndicatorTags() {
   const lastTs = data[data.length - 1].timestamp;
   const cs = state.chartStyle;
 
-  const drawTag = (y, text, bg, size) => {
+  const _axisCache = {};
+  const axisBox = (paneId) => {
+    const id = paneId || "candle_pane";
+    if (_axisCache[id]) return _axisCache[id];
+    let box = { left: W - 62, width: 62 };   // Fallback
+    try {
+      const ax = chart.getSize(id, "yAxis");
+      if (ax && ax.width) box = { left: ax.left, width: ax.width };
+    } catch (e) {}
+    _axisCache[id] = box;
+    return box;
+  };
+
+  const drawTag = (y, text, bg, size, paneId) => {
     if (y == null || !isFinite(y) || y < 0 || y > H) return;
     ctx.font = size + "px 'IBM Plex Mono', monospace";
-    const tw = ctx.measureText(text).width;
     const th = size + 6;
-    const x0 = W - tw - 10;
+    // Balken exakt so breit wie die Y-Achse dieser Pane und an deren linker
+    // Kante beginnend (Punkt 3) — sonst sitzt er textbreitenabhängig versetzt.
+    const { left: axLeft, width: axW } = axisBox(paneId);
     ctx.fillStyle = bg;
-    ctx.fillRect(x0, y - th / 2, tw + 10, th);
+    ctx.fillRect(axLeft, y - th / 2, axW, th);
     ctx.fillStyle = textOn(bg.startsWith("#") ? bg : "#888888");
     ctx.textBaseline = "middle";
-    ctx.fillText(text, x0 + 5, y + 0.5);
+    ctx.fillText(text, axLeft + 5, y + 0.5);
   };
 
   // --- Indikator-Tags: echt pro Linie (showLast) ---
@@ -2353,7 +2367,7 @@ function drawIndicatorTags() {
       }
       let y = null;
       try { y = chart.convertToPixel({ timestamp: lastTs, value: v }, { paneId, absolute: true }).y; } catch (e) {}
-      drawTag(y, formatTagValue(v, ind.pane !== "sub"), hex, 12);
+      drawTag(y, formatTagValue(v, ind.pane !== "sub"), hex, 12, paneId);
     });
   });
 
@@ -2364,7 +2378,7 @@ function drawIndicatorTags() {
     const bg = up ? cs.upColor : cs.downColor;
     let y = null;
     try { y = chart.convertToPixel({ timestamp: lastTs, value: k.close }, { paneId: "candle_pane", absolute: true }).y; } catch (e) {}
-    drawTag(y, formatTagValue(k.close, true), bg, cs.lastSize || 12);
+    drawTag(y, formatTagValue(k.close, true), bg, cs.lastSize || 12, "candle_pane");
   }
 }
 
@@ -3562,6 +3576,26 @@ function openOverlayMenu(overlay, event) {
   const p0 = (overlay.points && overlay.points[0]) || {};
   if (priceRow) priceRow.style.display = isHoriz ? "" : "none";
   if (dateRow)  dateRow.style.display  = isVert  ? "" : "none";
+
+  // Glätten-Option nur bei Freihand (Punkt 2). Setzt extendData.smooth; die
+  // Freihand-createPointFigures glättet dann dezent (roh bleibt erhalten, also
+  // jederzeit an-/abwählbar).
+  const smoothRow = document.getElementById("omSmoothRow");
+  const smoothEl  = document.getElementById("omSmooth");
+  if (smoothRow) smoothRow.style.display = overlay.name === "freehand" ? "" : "none";
+  if (overlay.name === "freehand" && smoothEl) {
+    smoothEl.checked = !!(overlay.extendData && overlay.extendData.smooth);
+    smoothEl.onchange = () => {
+      try {
+        const cur = chart.getOverlayById(overlay.id);
+        const curEd = (cur && typeof cur.extendData === "object" && cur.extendData) ? cur.extendData : {};
+        const nd = { ...curEd, smooth: smoothEl.checked };
+        chart.overrideOverlay({ id: overlay.id, extendData: nd });
+        const rec = state.drawings.find(d => d.id === overlay.id);
+        if (rec) { rec.extendData = nd; saveWorkspace(); }
+      } catch (e) {}
+    };
+  }
   if (isHoriz && priceEl && p0.value != null) {
     priceEl.value = p0.value;
     priceEl.onchange = () => {
@@ -3714,6 +3748,45 @@ document.addEventListener("click", (e) => {
     cm.classList.add("hidden"); syncMenuOpen();
   }
 });
+
+// Overlay-Menüs am Titel verschiebbar machen — nur Desktop (Punkt 1). Auf
+// Touch/Mobile bleibt alles wie gehabt (Titelleiste per CSS ausgeblendet, Drag
+// per tvIsMobile()-Guard deaktiviert).
+function makeMenuDraggable(menuId, title) {
+  const menu = document.getElementById(menuId);
+  if (!menu || menu.querySelector(".om-titlebar")) return;
+  const bar = document.createElement("div");
+  bar.className = "om-titlebar";
+  bar.textContent = title;
+  menu.insertBefore(bar, menu.firstChild);
+  bar.addEventListener("mousedown", (e) => {
+    if (tvIsMobile()) return;
+    e.preventDefault();
+    const rect = menu.getBoundingClientRect();
+    const offX = e.clientX - rect.left, offY = e.clientY - rect.top;
+    menu.style.right = "auto";   // evtl. rechtsbündige Startposition lösen
+    const move = (ev) => {
+      let x = ev.clientX - offX, y = ev.clientY - offY;
+      x = Math.max(4, Math.min(x, window.innerWidth  - menu.offsetWidth  - 4));
+      y = Math.max(4, Math.min(y, window.innerHeight - menu.offsetHeight - 4));
+      menu.style.left = x + "px";
+      menu.style.top  = y + "px";
+    };
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  });
+}
+[
+  ["overlayMenu", "Linie"],
+  ["fibMenu", "Fibonacci"],
+  ["rangeMenu", "Bereich"],
+  ["frvpMenu", "Volumen-Profil"],
+  ["compareStyleMenu", "Vergleichslinie"],
+].forEach(([id, t]) => { try { makeMenuDraggable(id, t); } catch (e) {} });
 
 // Farbe (hex oder rgba) in {hex, alpha%} zerlegen — für die Menü-Regler.
 function parseColor(c) {
@@ -7288,7 +7361,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m58";
+const TV_BUILD = "m59";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
