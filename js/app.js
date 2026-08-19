@@ -559,6 +559,7 @@ function updatePaneHeaders() {
       const drag = document.createElement("button"); drag.className = "ph-btn ph-drag"; drag.title = "Ziehen zum Umsortieren"; drag.textContent = "⠿"; drag.type = "button";
       col.addEventListener("click", (e) => { e.stopPropagation(); togglePaneCollapse(ind); });
       drag.addEventListener("mousedown", (e) => { e.stopPropagation(); e.preventDefault(); startPaneDrag(ind.key, e); });
+      drag.addEventListener("touchstart", (e) => { e.stopPropagation(); e.preventDefault(); startPaneDrag(ind.key, e); }, { passive: false });
       gear.addEventListener("click", (e) => {
         e.stopPropagation();
         if (!((ind.inputs && ind.inputs.length) || (ind.plots && ind.plots.length))) return;
@@ -700,22 +701,30 @@ function startPaneDrag(key) {
     else marker.style.display = "none";
   };
 
+  const evXY = (e) => {
+    const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
+    return t ? { x: t.clientX, y: t.clientY } : { x: e.clientX, y: e.clientY };
+  };
   const move = (e) => {
     if (!_paneDrag) return;
-    _paneDrag.lastY = e.clientY;
-    ghost.style.left = (e.clientX + 14) + "px";
-    ghost.style.top  = (e.clientY + 8) + "px";
-    positionMarker(e.clientY);
+    if (e.cancelable) e.preventDefault();   // kein Mitscrollen auf Touch
+    const { x, y } = evXY(e);
+    _paneDrag.lastY = y;
+    ghost.style.left = (x + 14) + "px";
+    ghost.style.top  = (y + 8) + "px";
+    positionMarker(y);
   };
   const up = (e) => {
     document.removeEventListener("mousemove", move);
     document.removeEventListener("mouseup", up);
+    document.removeEventListener("touchmove", move);
+    document.removeEventListener("touchend", up);
     document.body.style.cursor = "";
     try { ghost.remove(); } catch (err) {}
     try { marker.remove(); } catch (err) {}
     const drag = _paneDrag; _paneDrag = null;
     if (!drag) return;
-    const y = (e && e.clientY != null) ? e.clientY : drag.lastY;
+    const y = (e ? evXY(e).y : null) != null ? evXY(e).y : drag.lastY;
     const order = drag.order.slice();
     const from = order.indexOf(drag.key);
     if (from < 0) return;
@@ -737,6 +746,8 @@ function startPaneDrag(key) {
   };
   document.addEventListener("mousemove", move);
   document.addEventListener("mouseup", up);
+  document.addEventListener("touchmove", move, { passive: false });
+  document.addEventListener("touchend", up);
 }
 
 function reorderSubPanes(orderedKeys) {
@@ -1051,6 +1062,16 @@ async function loadData() {
   // Antwort gehört zu einem inzwischen überholten Wechsel → verwerfen.
   if (seq !== _loadSeq) return;
   chart.applyNewData(candles);
+  // Mobil: Preisskala kompakt halten — über 1000 keine Kommastellen, sonst
+  // sinnvoll gestaffelt. Desktop bleibt bei der Standard-Präzision (Mobil-
+  // Wunsch). Betrifft nur die Achsen-Beschriftung, nicht die eigenen Tags.
+  if (tvIsMobile()) {
+    try {
+      const last = (candles.at(-1) && candles.at(-1).close) || 0;
+      const p = last >= 1000 ? 0 : last >= 1 ? 2 : 4;
+      chart.setPriceVolumePrecision(p, 0);
+    } catch (e) {}
+  }
   scheduleTagDraw();
   // 2.9: Nach einem Asset-Wechsel liegen die Preisniveaus ganz woanders
   // (BTC ~60'000, ETH ~2'500). Ohne Auto-Skalierung müsste man die
@@ -1701,11 +1722,15 @@ function drawCompare() {
   // Rechter Rand des Zeichenbereichs OHNE die (im Vergleich transparente, aber
   // Platz belegende) KLC-Preisskala. Prozent-Achse und Etiketten enden hier —
   // sonst sitzen sie über/hinter dem Preisskala-Panel (Punkt 7).
+  // Auf Mobile ist der Platz knapp und die Preisskala ohnehin ausgeblendet, die
+  // Prozent-Achse soll dort rechtsbündig sitzen (Mobil-Wunsch).
   let contentW = w;
-  try {
-    const bMain = chart.getSize("candle_pane", "main");
-    if (bMain && bMain.width) contentW = (bMain.left || 0) + bMain.width;
-  } catch (e) {}
+  if (!tvIsMobile()) {
+    try {
+      const bMain = chart.getSize("candle_pane", "main");
+      if (bMain && bMain.width) contentW = (bMain.left || 0) + bMain.width;
+    } catch (e) {}
+  }
 
   // Pane-Grenzen (nur Preis-Pane, nicht Sub-Panes)
   let paneTop = 0, paneH = h;
@@ -4282,39 +4307,13 @@ quiet(() => {
   // Bewusst NICHT enthalten:
   //   positionTool         — sitzt als eigener Knopf in der Bottom Bar
   //   parallelStraightLine — vom Parallelkanal abgedeckt
-  const MOBILE_DRAW_GROUPS = [
-    { title: "Trendlinien", tools: [
-      { overlay: "horizontalStraightLine", label: "Horizontale Linie" },
-      { overlay: "priceLine",              label: "Preislinie" },
-      { overlay: "verticalStraightLine",   label: "Vertikale Linie" },
-      { overlay: "segment",                label: "Trendlinie" },
-      { overlay: "rayLine",                label: "Strahl" },
-      { overlay: "straightLine",           label: "Verlängerte Linie" },
-      { overlay: "priceChannelLine",       label: "Paralleler Kanal" },
-      { overlay: "polyline",               label: "Polylinie" },
-      { overlay: "rectangle",              label: "Rechteck" },
-    ]},
-    { title: "Gann und Fibonacci", tools: [
-      { overlay: "fibRetracement", label: "Fib-Retracement" },
-      { overlay: "fibExtension",   label: "Fib-Extension" },
-    ]},
-    { title: "Prognosen und Messungen", tools: [
-      { overlay: "frvp",       label: "Fixed Range Vol." },
-      { overlay: "priceRange", label: "Preisspanne" },
-      { overlay: "avwap",      label: "Verankerter VWAP" },
-      { overlay: "dateRange",  label: "Datumsbereich" },
-    ]},
-    { title: "Geometrische Formen", tools: [
-      { overlay: "rectangle", label: "Rechteck" },
-      { overlay: "polyline",  label: "Pfad" },
-    ]},
-    // Vorhandene Werkzeuge, die in den TradingView-Favoriten nicht auftauchen.
-    // Hier gesammelt, damit nichts stillschweigend verschwindet.
-    { title: "Weitere", tools: [
-      { overlay: "simpleAnnotation", label: "Textfeld" },
-      { overlay: "freehand",         label: "Freihand" },
-    ]},
-  ];
+  // Kategorien, Reihenfolge und Werkzeuge exakt wie Desktop (eine Quelle:
+  // DRAW_CATEGORIES) — nur Touch-Darstellung (Punkt 2). So bleibt Mobile
+  // automatisch synchron, inkl. Parallele Linien und Preis-/Zeitspanne.
+  const MOBILE_DRAW_GROUPS = DRAW_CATEGORIES.map(cat => ({
+    title: cat.title,
+    tools: cat.tools.map(t => ({ overlay: t.overlay, label: t.label })),
+  }));
 
   MOBILE_DRAW_GROUPS.forEach(group => {
     const head = document.createElement("div");
@@ -7361,7 +7360,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m59";
+const TV_BUILD = "m60";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -7406,7 +7405,7 @@ quiet(() => {
   const gap = document.createElement("span");
   gap.className = "tb-gap";
   r1.appendChild(gap);
-  ["layoutDropdown", "wlToggleBtn", "themeBtn", "fullscreenBtn", "faqBtn"]
+  ["layoutDropdown", "wlToggleBtn", "themeBtn", "fullscreenBtn", "faqBtn", "syncBtn"]
     .forEach(id => { const el = $(id); if (el) r1.appendChild(el); });
 
   // Zeile 2: Asset Intervall Vergleich Typ-Zahnrad · Lücke · Preis Änderung

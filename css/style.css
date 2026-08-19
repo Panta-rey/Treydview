@@ -204,6 +204,22 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 @media (max-width: 720px), (pointer: coarse) {
   /* Grössere Tap-Ziele in der Topbar */
   .action-btn { width: 42px; height: 42px; }
+  /* Topbar-Reihe 1: kompakt wie das Vergleich-Icon — schafft Platz (Mobil-Wunsch) */
+  .tb-row .action-btn { width: 34px; height: 30px; }
+  .tb-row .action-btn .ab-icon { width: 19px; height: 19px; }
+  /* Doppeltipp-Zoom des Browsers unterbinden (Punkt 3); der Chart selbst hat
+     bereits touch-action:none. manipulation lässt normale Taps unberührt. */
+  body { touch-action: manipulation; }
+  /* Indikator-Pane-Kopf: Collapse etwas grösser, Zahnrad kleiner (Punkt 4a) */
+  .pane-header .ph-collapse { font-size: 21px; }
+  .pane-header .ph-gear     { font-size: 15px; }
+  /* Der Kopf ist ein DOM-Overlay über dem oberen Pane-Rand und verdeckt sonst
+     KLCs Separator (Pane-Grenze) und den oberen Teil der Werteskala. Auf Touch
+     fing er alle Gesten ab → Umsortieren/Skalieren/Höhe-Ziehen trafen die
+     Haupt-Pane statt der Sub-Pane (Punkt 4b/4c). Jetzt sind nur die Icons
+     interaktiv, der übrige Kopf lässt Touches an den Chart durch. */
+  .pane-header { pointer-events: none; }
+  .pane-header .ph-btn { pointer-events: auto; }
   /* Dropdown-Einträge: mehr Höhe zum Tippen */
   .dd-item { padding: 12px 14px; font-size: 13px; }
   /* Panels dürfen nie höher als der Screen werden -> scrollbar */
@@ -846,7 +862,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m59"; }
+:root { --tv-build: "m60"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
