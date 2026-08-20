@@ -874,7 +874,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m61"; }
+:root { --tv-build: "m62"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1067,7 +1067,8 @@ input, textarea, select, [contenteditable="true"] {
   #cycleFund { order: 2; }
   #cycleOi   { order: 3; }
   #cycleMayer, #cycleEr { display: none !important; }
-  .cycle-pill { font-size: 10px; padding: 3px 6px; }
+  /* M1b: die drei mobil sichtbaren Pills (F&G, Fund, OI) leicht grösser. */
+  .cycle-pill { font-size: 12px; padding: 5px 9px; }
 
   .action-btn { width: 38px; height: 38px; }
   .ab-icon    { width: 19px; height: 19px; }
@@ -1148,8 +1149,10 @@ input, textarea, select, [contenteditable="true"] {
   .statusline { white-space: normal; line-height: 1.35; }
   .main-chart { min-height: 160px; }
 
-  /* ── Alle Panels öffnen als Blatt über der Bottom Bar ────────────── */
-  .dd-panel, .dd-panel--wide, .dd-panel--right {
+  /* ── Nicht verankerte Panels öffnen als Blatt über der Bottom Bar ──── */
+  .dd-panel:not(.dd-anchored),
+  .dd-panel--wide:not(.dd-anchored),
+  .dd-panel--right:not(.dd-anchored) {
     position: fixed !important;
     top: auto !important; bottom: var(--tv-botbar) !important;
     left: 0 !important; right: 0 !important;
@@ -1160,7 +1163,7 @@ input, textarea, select, [contenteditable="true"] {
     box-shadow: 0 -8px 32px rgba(0,0,0,.55);
     z-index: 640;
   }
-  .dd-panel.open::before {
+  .dd-panel:not(.dd-anchored).open::before {
     content: ""; display: block; width: 38px; height: 4px;
     border-radius: 2px; background: var(--border); margin: 9px auto 8px;
   }
@@ -1170,13 +1173,44 @@ input, textarea, select, [contenteditable="true"] {
      der Look: rundum abgerundet, keine Slide-up-Animation, der dekorative
      ::before-Griff entfaellt (der interaktive Griff #ddGrip ersetzt ihn). */
   .dd-panel.dd-anchored {
+    /* Verankerte Panels werden komplett von placeMobileDropdown (Position/
+       Breite, inline !important) und dieser Regel bestimmt — sie sind aus den
+       Sheet-Regeln (Portrait UND Landscape) per :not(.dd-anchored) ausgenommen.
+       Deshalb hier alles Nötige selbst mitbringen: Scroll, Höhe, Ecken. */
     border-radius: 12px !important;
     border: 1px solid var(--border) !important;
     box-shadow: 0 6px 28px rgba(0,0,0,.55) !important;
     animation: none !important;
-    max-height: 62vh;
+    height: auto !important;
+    max-height: 62vh !important;               /* schlägt Landscape max-height:100% */
+    overflow-y: auto !important; overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
   }
   .dd-panel.dd-anchored.open::before { display: none !important; }
+
+  /* ── M1a: Layout & Watchlist als zentriertes Vollbild-Modal (wie FAQ) ──
+     Der Dimmer #llBackdrop (JS, klickbar = schliessen) liegt darunter; das
+     Panel wird zentriert. Höhere Spezifität + !important schlagen die
+     Sheet-Regeln in beiden Orientierungen. */
+  .ll-backdrop {
+    position: fixed; inset: 0; z-index: 895;
+    background: rgba(0, 0, 0, .6); display: none;
+  }
+  #layoutPanel.open,
+  .watchlist:not(.hidden) {
+    position: fixed !important;
+    top: 50% !important; left: 50% !important;
+    right: auto !important; bottom: auto !important;
+    transform: translate(-50%, -50%) !important;
+    width: min(360px, 92vw) !important; min-width: 0 !important; max-width: none !important;
+    height: auto !important; max-height: 82vh !important;
+    overflow-y: auto !important; overflow-x: hidden; -webkit-overflow-scrolling: touch;
+    border-radius: 14px !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: 0 12px 44px rgba(0, 0, 0, .6) !important;
+    z-index: 900 !important;
+  }
+  #layoutPanel.open::before { display: none !important; }
 
   /* Griff: dickere Linie an der zum Knopf zeigenden Kante. Grosses,
      unsichtbares Tap-Ziel per ::after, damit er leicht zu treffen ist. */
@@ -1481,7 +1515,13 @@ input, textarea, select, [contenteditable="true"] {
   }
   #tbRow1 .tb-gap { display: none; }
   #tbRow1 .cycle-bar { flex-direction: column; gap: 6px; }
-  #tbRow1 .cycle-pill { font-size: 9px; padding: 3px 4px; }
+  /* M1b: linke Leiste, Pills leicht grösser */
+  #tbRow1 .cycle-pill { font-size: 11px; padding: 5px 6px; }
+  /* M2a: linke Bar-Icons auf dasselbe Aussenmass wie die rechte Leiste
+     (.bottom-bar .action-btn/.dd-trigger = 40×40). Die linke Leiste ist mit
+     54px breit genug (40 + Innenabstand). */
+  #tbRow1 .action-btn,
+  #tbRow1 .dd-trigger { width: 40px; height: 40px; min-height: 40px; }
 
   /* Zeile 2 bleibt oben, zwischen den Leisten */
   #tbRow2 {
@@ -1521,8 +1561,12 @@ input, textarea, select, [contenteditable="true"] {
     width: auto; height: auto;
   }
 
-  /* Blätter öffnen von der rechten Leiste zur Mitte hin */
-  .dd-panel, .dd-panel--wide, .dd-panel--right,
+  /* Nicht verankerte Blätter öffnen von der rechten Leiste zur Mitte hin.
+     Verankerte Dropdowns (dd-anchored) sind ausgenommen — sie positioniert
+     placeMobileDropdown selbst (links→rechts / rechts→links). */
+  .dd-panel:not(.dd-anchored),
+  .dd-panel--wide:not(.dd-anchored),
+  .dd-panel--right:not(.dd-anchored),
   .watchlist, .gb-bar, .draw-sheet {
     top: 0 !important; bottom: 0 !important;
     left: auto !important; right: var(--tv-rbar) !important;
