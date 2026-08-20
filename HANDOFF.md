@@ -2467,3 +2467,66 @@ GitHub braucht einen Personal Access Token statt Passwort;
 hinzufügen, sonst liefert iOS die alte Fassung aus.
 
 **HANDOFF.md bleibt lokal — nie committen.**
+
+## Build m61 — Änderungen (20. August 2026)
+
+Sieben umgesetzte Punkte aus TreydView 1.4 (Desktop 1–3, Mobil 1–4/6/8a = Niedrig;
+Mobil 5/7/8b/8c = Hoch). Mobil 5 „Die Drop Down" war zunächst abgebrochen, dann
+präzisiert (5a Hochformat / 5b Querformat).
+
+### Desktop
+- **D1 — Rechtsklick-Menüs verschiebbar (Rest):** `makeMenuDraggable` in `bindMenuDrag(menu,handle)`
+  zerlegt. Neue `makeMenuDraggableByHead(menuId, headSelector)` nutzt den BESTEHENDEN Kopf als
+  Ziehgriff (kein Doppeltitel): `posMenu`→`.frvp-menu-header`, `chartStyleMenu`→`.csm-header`.
+  `querySelector` ist auf das jeweilige Menü begrenzt → trifft NICHT den gleichnamigen
+  frvpMenu-Kopf. CSS `.om-drag-head` (cursor:move, Basisregel, analog `.om-titlebar`).
+- **D2 — Long/Short magnetisch:** `placePositionByClick.onDown` snappt `magnetSnapToOhlc(x,y)`
+  VOR `convertFromPixel`. Ursache: positionTool umgeht auf Desktop KLCs Zeichenpfad, daher greift
+  `mode:state.magnetMode` aus `buildOverlayConfig` nie.
+- **D3 — Freihand-Glättung:** 3-Punkt-Mittelwert jetzt SMOOTH_PASSES=3 statt 1 Durchlauf
+  (overlays.js). Endpunkte je Durchlauf fix, Rohpunkte unberührt → reversibel.
+
+### Mobil
+- **M1:** `#typeTrigger` von 38×38 auf Vergleich-Button-Box (padding 5px 8px, Icon 17px).
+- **M2:** Zahnrad/Sonnen-Icon → brennende Kerze (Outline-SVG, `type-gear-icon mobile-only`).
+- **M3:** cc-gear Glyph 14px (Tap-Ziel 30×30). Zahnrad-MENÜ-Bug: `compareStyleMenu` (z-index 601)
+  sass HINTER dem Abdunkler (665). Fix: `#compareStyleMenu.as-sheet` zentriert, z-index 671;
+  `compareStyleMenu`+`rangeMenu` in `TV_MENU_IDS`.
+- **M4:** `drawCompare`-Canvas mit devicePixelRatio (Puffer in Gerätepixeln, setTransform(dpr)).
+- **M6:** wl-icon/wl-add/wl-close-btn alle 30×30 umrandet, gap 6px, Gruppe rechts
+  (margin-left:auto am ersten), `.wl-select` 46% Breite.
+- **M8a:** `.ph-gear` 15px→13px.
+- **M8b:** Y-Zoom-Geste bestimmt Pane per `paneIdAtY(clientY)` (candle_pane + subPaneIds) statt
+  hartkodiert candle_pane. Compare-Skala nur bei isMain. Doppeltipp-Reset pro Pane.
+- **M8c:** Separator-Zug (nur Mobil). Long-Press 300ms auf Sub-Pane-Oberkante → gelbe
+  `.pane-resize-line` (var(--accent)) → Finger zieht Höhe via `setPaneOptions({id,height})`.
+  Persistenz `state.paneHeights` (Workspace + reapplyPaneCollapse). y-pan durch
+  `window.__tvPaneResizing` gesperrt, Chart via `__tvChartLock`.
+- **M5 — Anker-Dropdowns:** `placeDropdownPanel` → `placeMobileDropdown`. Richtung aus Bar +
+  Orientierung: Hochformat Top-Bar↓/Bottom-Bar↑; Querformat tbRow1→rechts, bottomBar→links,
+  tbRow2↓. Position via inline `setProperty(...,'important')` (schlägt Sheet-`!important`).
+  Klasse `.dd-anchored` (rundum Radius, keine Slide-up, ::before aus).
+- **M7 — Griff/Wisch:** einzelner `#ddGrip` an der zum Knopf ZEIGENDEN Kante (Öffnungsrichtung),
+  Wischen zum Knopf hin schliesst (>55px). Separates Element → KEIN Konflikt mit Panel-Scroll.
+  MutationObserver je `.dd-panel` räumt Griff/Anker bei JEDEM Schliessweg auf.
+
+### Lektionen / Fallstricke
+- Inline `!important` schlägt Stylesheet-`!important` (Cascade-Ebene 4, Inline-Spezifität).
+  Nur so lassen sich die mobilen Sheet-Basisregeln (`.dd-panel{left:0!important}`) pro Panel
+  überschreiben — CSS-Klassen allein reichen nicht.
+- Menü ohne eigene Mobile-Zentrierregel + `body.menu-open` = unsichtbar HINTER dem 665-Abdunkler.
+  Jedes Menü, das `menu-open` schaltet, braucht z-index > 665 UND eine Zentrierregel.
+- Y-Zoom/Y-Pan-Handler kannten nur candle_pane — Sub-Pane-Gesten müssen per Y-Bereich
+  (`getSize(paneId).top/height`) der richtigen Pane zugeordnet werden.
+- Swipe-to-close als SEPARATES Griff-Element statt Panel-Handler: vermeidet Scroll-Konflikt
+  mit den internen Listen zuverlässig.
+- Griff bei Item-Auswahl: 9 Schliesswege — statt alle zu patchen ein MutationObserver auf
+  die `open`-Klasse je Panel (deckt externe `remove("open")` mit ab).
+
+### Offen / am Gerät zu verifizieren
+- M5/M7/M8b/M8c nur simuliert geprüft (kein Gerätetest). Querformat-Anker und Separator-Zug
+  brauchen Bestätigung auf dem iPhone.
+- settings.js im Repo-Kontext wirkt hinter m60 (250 Z., ohne 3. onDelete-Parameter). app.js ruft
+  `Settings.open(key, apply, delete)` mit 3 Args — mit dieser settings.js ist das Löschen aus dem
+  Pane-Zahnrad tot. NICHT durch m61 verursacht; Repo-settings.js prüfen.
+- jsdom-Pflichtprüfungen 2–4 diesmal nur statisch (Prüfstand harness.js/t-*.js nicht im Kontext).

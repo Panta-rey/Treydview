@@ -1028,19 +1028,25 @@
     createPointFigures: ({ coordinates, overlay }) => {
       if (coordinates.length < 2) return [];
       const ed = overlay.extendData || {};
-      // Dezente einmalige Glättung (Punkt 2): 3-Punkt-Mittelwert entfernt das
-      // Zittern vom Handzeichnen, Endpunkte bleiben erhalten.
+      // Glättung (D3): 3-Punkt-Mittelwert, jetzt in DREI Durchläufen statt
+      // einem — spürbar stärker geglättet. Endpunkte bleiben in jedem Durchlauf
+      // fix, die gespeicherten Rohpunkte werden nie verändert (nur die
+      // gezeichneten Koordinaten), also jederzeit reversibel über die Checkbox.
       let coords = coordinates;
       if (ed.smooth && coordinates.length >= 3) {
-        const out = [coordinates[0]];
-        for (let i = 1; i < coordinates.length - 1; i++) {
-          out.push({
-            x: (coordinates[i - 1].x + coordinates[i].x + coordinates[i + 1].x) / 3,
-            y: (coordinates[i - 1].y + coordinates[i].y + coordinates[i + 1].y) / 3,
-          });
+        const SMOOTH_PASSES = 3;
+        for (let pass = 0; pass < SMOOTH_PASSES; pass++) {
+          const src = coords;
+          const out = [src[0]];
+          for (let i = 1; i < src.length - 1; i++) {
+            out.push({
+              x: (src[i - 1].x + src[i].x + src[i + 1].x) / 3,
+              y: (src[i - 1].y + src[i].y + src[i + 1].y) / 3,
+            });
+          }
+          out.push(src[src.length - 1]);
+          coords = out;
         }
-        out.push(coordinates[coordinates.length - 1]);
-        coords = out;
       }
       return [{
         type: "line",

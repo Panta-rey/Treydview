@@ -212,7 +212,15 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   body { touch-action: manipulation; }
   /* Indikator-Pane-Kopf: Collapse etwas grösser, Zahnrad kleiner (Punkt 4a) */
   .pane-header .ph-collapse { font-size: 21px; }
-  .pane-header .ph-gear     { font-size: 15px; }
+  /* M8a: Zahnrad etwas kleiner (Mobil-Wunsch) */
+  .pane-header .ph-gear     { font-size: 13px; }
+  /* M8c: gelbe Trennlinie waehrend des Separator-Zugs (Long-Press-Bestaetigung,
+     gleiche Farbe wie die Umsortier-Linie). z-index unter den Menues (670). */
+  .pane-resize-line {
+    position: fixed; height: 0; z-index: 669; display: none;
+    border-top: 2px solid var(--accent); pointer-events: none;
+    box-shadow: 0 0 6px rgba(232, 182, 76, .6);
+  }
   /* Der Kopf ist ein DOM-Overlay über dem oberen Pane-Rand und verdeckt sonst
      KLCs Separator (Pane-Grenze) und den oberen Teil der Werteskala. Auf Touch
      fing er alle Gesten ab → Umsortieren/Skalieren/Höhe-Ziehen trafen die
@@ -807,6 +815,10 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   padding:2px 22px 6px 4px; margin-bottom:4px; user-select:none;
   border-bottom:1px solid var(--border); }
 .om-titlebar:active{ cursor:grabbing; }
+/* D1: bestehender Menü-Kopf (Long/Short, Chart-Darstellung) als Ziehgriff.
+   Nur Desktop — auf Touch bleibt der Kopf statisch (Mobile-@media unten). */
+.om-drag-head{ cursor:move; user-select:none; }
+.om-drag-head:active{ cursor:grabbing; }
 .om-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:3px 4px;font-size:12px;color:var(--text-dim);}
 .om-row label{white-space:nowrap;}
 .om-numfield{flex:1;min-width:0;background:var(--bg-input,#0c0f13);border:1px solid var(--border,#242a33);border-radius:5px;color:var(--text);font-size:12px;padding:4px 6px;font-family:var(--font-mono);}
@@ -862,7 +874,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m60"; }
+:root { --tv-build: "m61"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -935,6 +947,21 @@ input, textarea, select, [contenteditable="true"] {
     width: min(280px, calc(100vw - 40px)) !important;
     height: auto !important; max-height: 80vh !important;
     border-radius: 12px !important; border: 1px solid var(--border) !important;
+  }
+  /* M3: Vergleichslinien-Menü. Es wird aus dem OFFENEN Vergleich-Dropdown
+     heraus geoeffnet und schaltet body.menu-open (Abdunkler z-index 665).
+     Ohne eigene Regel sass es als generisches .overlay-menu bei z-index 601
+     HINTER dem Abdunkler → unsichtbar ("Menue funktioniert nicht"). Jetzt
+     zentriert wie #overlayMenu und mit z-index 671 ueber Abdunkler (665) und
+     Aktionsbalken (668). */
+  #compareStyleMenu.as-sheet {
+    top: 50% !important; left: 50% !important;
+    right: auto !important; bottom: auto !important;
+    transform: translate(-50%, -50%) !important;
+    width: min(280px, calc(100vw - 40px)) !important;
+    height: auto !important; max-height: 80vh !important;
+    border-radius: 12px !important; border: 1px solid var(--border) !important;
+    z-index: 671 !important;
   }
   /* Fib-Menü ebenfalls zentriert statt bildschirmfüllend — bisher hatte
      es nur die generische max-width-Regel und blieb dadurch als as-sheet
@@ -1025,9 +1052,12 @@ input, textarea, select, [contenteditable="true"] {
   /* Chart-Typ-Dropdown auf Mobil als Zahnrad-Icon neben „+" (Vergleich).
      Text/Pfeil aus, Icon an; der Panel-Inhalt bleibt wie auf Desktop. */
   #typeDropdown { display: inline-flex !important; }
-  #typeTrigger  { padding: 0; width: 38px; height: 38px; justify-content: center; }
+  /* M1: gleiche Aussenmasse wie der Vergleich-Button (.dd-compare) — nicht mehr
+     das grosse 38x38-Quadrat. Padding wie .tb-row .dd-trigger (5px 10px), das
+     Kerzen-Icon auf 17px, damit die Box-Hoehe der schmalen "+"-Pille entspricht. */
+  #typeTrigger  { padding: 5px 8px; width: auto; height: auto; justify-content: center; }
   #typeTrigger .type-label-text { display: none; }
-  .type-gear-icon { width: 19px; height: 19px; }
+  .type-gear-icon { width: 17px; height: 17px; }
 
   /* Zyklus-Pills: gewünschte Reihenfolge F&G · Fund · OI.
      Im HTML steht F&G, OI, Fund — daher OI nach hinten sortieren.
@@ -1134,6 +1164,31 @@ input, textarea, select, [contenteditable="true"] {
     content: ""; display: block; width: 38px; height: 4px;
     border-radius: 2px; background: var(--border); margin: 9px auto 8px;
   }
+
+  /* ── M5/M7: anker-basierte Dropdowns statt vollbreiter Bottom-Sheets ──
+     Position setzt JS (placeMobileDropdown) per inline !important; hier nur
+     der Look: rundum abgerundet, keine Slide-up-Animation, der dekorative
+     ::before-Griff entfaellt (der interaktive Griff #ddGrip ersetzt ihn). */
+  .dd-panel.dd-anchored {
+    border-radius: 12px !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: 0 6px 28px rgba(0,0,0,.55) !important;
+    animation: none !important;
+    max-height: 62vh;
+  }
+  .dd-panel.dd-anchored.open::before { display: none !important; }
+
+  /* Griff: dickere Linie an der zum Knopf zeigenden Kante. Grosses,
+     unsichtbares Tap-Ziel per ::after, damit er leicht zu treffen ist. */
+  .dd-grip {
+    position: fixed; z-index: 645; display: none;
+    background: var(--text-dim); border-radius: 3px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.45);
+    touch-action: none;
+  }
+  .dd-grip::after { content: ""; position: absolute; inset: -14px; }
+  .dd-grip-h { width: 40px; height: 6px; }
+  .dd-grip-v { width: 6px; height: 40px; }
   .dd-search { position: sticky; top: 0; z-index: 2; background: var(--bg-raised);
                font-size: 15px; padding: 11px 13px; }
   .dd-item   { padding: 13px 15px; font-size: 13.5px; }
@@ -1301,13 +1356,24 @@ input, textarea, select, [contenteditable="true"] {
     border-radius: 16px 16px 0 0;
     box-shadow: 0 -8px 32px rgba(0,0,0,.55); z-index: 640;
   }
-  .wl-header { position: sticky; top: 0; z-index: 2; background: var(--bg-raised); }
-  .wl-close-btn {
+  /* M6: Kopfzeile mit kleinem Abstand zwischen den Knoepfen; das Auswahlfeld
+     schmaler, damit die drei Knoepfe (3-Punkte, Plus, Kreuz) mehr Platz haben
+     und mit dem Finger einzeln zu unterscheiden sind. Die Knopfgruppe steht
+     rechts (margin-left:auto am ersten Knopf), gap haelt sie tight. */
+  .wl-header { position: sticky; top: 0; z-index: 2; background: var(--bg-raised);
+    justify-content: flex-start; gap: 6px; }
+  .wl-select { flex: 0 1 auto; width: 46%; min-width: 0; font-size: 13px; padding: 6px 8px; }
+  /* Alle drei Kopf-Knoepfe gleich gross wie das Kreuz (30x30, umrandet). */
+  .wl-icon, .wl-add, .wl-close-btn {
     display: flex !important; align-items: center; justify-content: center;
-    width: 30px; height: 30px; flex-shrink: 0; margin-left: auto;
+    width: 30px; height: 30px; flex: 0 0 30px; padding: 0;
     background: transparent; border: 1px solid var(--border);
-    border-radius: 6px; color: var(--text-dim); font-size: 15px; cursor: pointer;
+    border-radius: 6px; color: var(--text-dim); cursor: pointer;
   }
+  .wl-icon { margin-left: auto; }   /* schiebt die Knopfgruppe nach rechts */
+  .wl-icon svg { width: 15px; height: 15px; }
+  .wl-add       { font-size: 17px; line-height: 1; }
+  .wl-close-btn { font-size: 15px; }
   .wl-item { padding: 12px; }
 
   /* Grid Bot */
@@ -1342,12 +1408,15 @@ input, textarea, select, [contenteditable="true"] {
 
   /* Löschen und Ein-/Ausblenden bei Vergleichs-Assets: grössere Touch-Ziele */
   .compare-chip { padding: 7px 10px; gap: 10px; }
-  .cc-eye, .cc-remove {
+  .cc-eye, .cc-remove, .cc-gear {
     width: 30px; height: 30px;
     display: flex; align-items: center; justify-content: center;
   }
   .cc-eye svg { width: 19px; height: 19px; }
   .cc-remove { font-size: 17px; }
+  /* M3: Zahnrad-Glyph leicht kleiner als Auge/Kreuz (Mobil-Wunsch),
+     Tap-Ziel bleibt 30x30 wie die Geschwister. */
+  .cc-gear { font-size: 14px; }
 
   .settings-panel, .frvp-menu, .fib-menu {
     max-width: calc(100vw - 16px) !important;

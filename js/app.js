@@ -50,6 +50,7 @@ const state = {
   tooltipsVisible: true,
   subPaneIds:  {},   // indKey -> paneId (von createIndicator zurückgegeben)
   paneCollapsed: {}, // indKey -> {collapsed, prevHeight} (Punkt 7)
+  paneHeights: _ws?.paneHeights || {},   // indKey -> Custom-Höhe aus Separator-Zug (M8c, Mobil)
   // Nur zwei Zustaende: "normal" (aus) und "strong_magnet" (ein). Die
   // frueheren drei Stufen (aus/schwach/stark) waren beim Zeichnen mit dem
   // Finger nicht unterscheidbar. Der Name "strong_magnet" bleibt, weil
@@ -634,6 +635,16 @@ function reapplyPaneCollapse() {
     if (!paneId) return;
     try { chart.setPaneOptions({ id: paneId, height: PANE_HEADER_H, minHeight: PANE_HEADER_H }); } catch (e) {}
   });
+  // M8c: per Separator-Zug gesetzte Custom-Höhen ueberleben Neuaufbau
+  // (Asset-Wechsel/Init). Nur auf NICHT eingeklappte Panes anwenden.
+  Object.keys(state.paneHeights || {}).forEach(key => {
+    const h = state.paneHeights[key];
+    const st = state.paneCollapsed[key];
+    if (!h || (st && st.collapsed)) return;
+    const paneId = state.subPaneIds[key];
+    if (!paneId) return;
+    try { chart.setPaneOptions({ id: paneId, height: h, minHeight: 30 }); } catch (e) {}
+  });
 }
 
 // Oberen Freiraum jeder Sub-Pane auf Header-Höhe setzen, damit der Indikator-
@@ -1141,8 +1152,9 @@ async function loadData() {
 // ---------- Dropdowns ----------
 function initDropdowns() {
   document.addEventListener("click", (e) => {
-    if (!e.target.closest(".dropdown")) {
-      document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
+    if (!e.target.closest(".dropdown") && !e.target.closest("#ddGrip")) {
+      document.querySelectorAll(".dd-panel").forEach(p => { p.classList.remove("open"); resetAnchor(p); });
+      hideDdGrip();
     }
   });
   ["assetDropdown", "compareDropdown", "tfDropdown", "typeDropdown", "indDropdown", "layoutDropdown", "patternDropdown", "smcDropdown", "ewtDropdown"].forEach(id => {
@@ -1158,11 +1170,13 @@ function initDropdowns() {
       // (Punkt 8). Ja öffnet den Vergleich, Nein das Layout-Dropdown.
       if (id === "compareDropdown" && !wasOpen
           && state.compareAssets.length === 0 && hasOverlays()) {
-        document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
+        document.querySelectorAll(".dd-panel").forEach(p => { p.classList.remove("open"); resetAnchor(p); });
+        hideDdGrip();
         document.getElementById("comparePrompt").classList.remove("hidden");
         return;
       }
-      document.querySelectorAll(".dd-panel").forEach(p => p.classList.remove("open"));
+      document.querySelectorAll(".dd-panel").forEach(p => { p.classList.remove("open"); resetAnchor(p); });
+      hideDdGrip();
       if (!wasOpen) { panel.classList.add("open"); placeDropdownPanel(dd, trigger, panel); }
       if (id === "assetDropdown" && !wasOpen) {
         setTimeout(() => document.getElementById("assetSearch").focus(), 30);
@@ -1177,6 +1191,21 @@ function initDropdowns() {
       if (id === "ewtDropdown" && !wasOpen) ewtUpdateDegreeLabels();
     });
   });
+  // M7: Griff + Anker-Stile aufraeumen, egal ueber welchen Weg ein Dropdown
+  // schliesst (Item-Auswahl, Aktion, externes remove("open")). Ein Observer
+  // je Panel deckt alle Pfade ab, ohne jede Schliessstelle einzeln zu patchen.
+  document.querySelectorAll(".dd-panel").forEach(panel => {
+    try {
+      const mo = new MutationObserver(() => {
+        if (!panel.classList.contains("open")) {
+          const g = document.getElementById("ddGrip");
+          if (g && g._panel === panel) hideDdGrip();
+          if (panel.classList.contains("dd-anchored")) resetAnchor(panel);
+        }
+      });
+      mo.observe(panel, { attributes: true, attributeFilter: ["class"] });
+    } catch (e) {}
+  });
 }
 
 // Panels von Knoepfen, die in der Seitenleiste sitzen, muessen fixiert
@@ -1186,23 +1215,171 @@ function initDropdowns() {
 // Dieselbe Loesung wie bei den Werkzeug-Fly-Outs: position:fixed und
 // Koordinaten aus dem Knopf rechnen.
 function placeDropdownPanel(dd, trigger, panel) {
-  if (!dd.closest("#drawbar")) {
-    // Ausserhalb der Leiste gilt unveraendert das Stylesheet.
-    panel.style.position = ""; panel.style.left = "";
-    panel.style.top = "";      panel.style.right = "";
+  // Desktop-Zeichenleiste: bestehende Sonderpositionierung.
+  if (dd.closest("#drawbar")) {
+    const r = trigger.getBoundingClientRect();
+    panel.style.position = "fixed";
+    panel.style.right = "auto";
+    panel.style.left  = (r.right + 8) + "px";
+    panel.style.top   = "8px";
+    // Erst messen, dann klemmen: die Breite deckelt das Stylesheet
+    // (#drawbar .dd-panel), hier wird nur verhindert, dass ein breites
+    // Panel unten oder rechts aus dem Bild laeuft.
+    const ph = panel.offsetHeight, pw = panel.offsetWidth;
+    panel.style.top  = Math.max(8, Math.min(r.top, window.innerHeight - ph - 12)) + "px";
+    panel.style.left = Math.max(8, Math.min(r.right + 8, window.innerWidth - pw - 12)) + "px";
     return;
   }
+  // Mobil (M5): anker-basierte Richtung + Griff/Wisch (M7).
+  if (tvIsMobile()) { placeMobileDropdown(dd, trigger, panel); return; }
+  // Desktop-Standard: Stylesheet uebernimmt (Panel absolut unter dem Knopf).
+  panel.style.position = ""; panel.style.left = "";
+  panel.style.top = "";      panel.style.right = "";
+}
+
+// ── M5/M7: Mobile Dropdown/Dropup anker-basiert ─────────────────────────
+// Statt vollbreiter Bottom-Sheets oeffnen die Dropdowns aus ihrem Knopf in
+// die natuerliche Richtung. Hochformat: Top-Bar nach unten, Bottom-Bar nach
+// oben. Querformat: linke Leiste nach rechts, rechte Leiste nach links.
+// Der Griff sitzt an der zum Knopf ZEIGENDEN Kante (Oeffnungsrichtung), das
+// Wischen dorthin zurueck schliesst (M7).
+function isLandscapeBar() {
+  return window.matchMedia("(max-height:500px) and (orientation:landscape) and (pointer:coarse)").matches;
+}
+function dropdownDir(dd) {
+  if (isLandscapeBar()) {
+    if (dd.closest("#tbRow1")) return "right";   // linke Leiste → nach rechts
+    if (dd.closest("#bottomBar")) return "left";  // rechte Leiste → nach links
+    return "down";                                // tbRow2 bleibt oben
+  }
+  return dd.closest("#bottomBar") ? "up" : "down";
+}
+function resetAnchor(panel) {
+  ["left", "right", "top", "bottom", "width", "max-width", "position"].forEach(p =>
+    panel.style.removeProperty(p));
+  panel.style.removeProperty("transform");
+  panel.classList.remove("dd-anchored", "dd-dir-down", "dd-dir-up", "dd-dir-right", "dd-dir-left");
+}
+function placeMobileDropdown(dd, trigger, panel) {
+  const GAP = 6, M = 6;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const dir = dropdownDir(dd);
+  resetAnchor(panel);
+  panel.classList.add("dd-anchored", "dd-dir-" + dir);
+  // Feste, fixe Positionierung — mit !important, weil die Sheet-Basisregeln
+  // (.dd-panel{left:0!important…}) sonst gewinnen.
+  const setP = (p, v) => panel.style.setProperty(p, v, "important");
+  setP("position", "fixed");
+  const wide = panel.classList.contains("dd-panel--wide");
+  const W = Math.min(wide ? 300 : 240, vw - 2 * M);
+  setP("width", W + "px");
+  setP("max-width", "none");
+  // Messbar: erst Groesse setzen, dann Hoehe lesen (durch max-height gedeckelt).
+  const H = Math.min(panel.offsetHeight, Math.floor(vh * 0.62));
   const r = trigger.getBoundingClientRect();
-  panel.style.position = "fixed";
-  panel.style.right = "auto";
-  panel.style.left  = (r.right + 8) + "px";
-  panel.style.top   = "8px";
-  // Erst messen, dann klemmen: die Breite deckelt das Stylesheet
-  // (#drawbar .dd-panel), hier wird nur verhindert, dass ein breites
-  // Panel unten oder rechts aus dem Bild laeuft.
-  const ph = panel.offsetHeight, pw = panel.offsetWidth;
-  panel.style.top  = Math.max(8, Math.min(r.top, window.innerHeight - ph - 12)) + "px";
-  panel.style.left = Math.max(8, Math.min(r.right + 8, window.innerWidth - pw - 12)) + "px";
+  // Standard: unbenutzte Kanten neutralisieren.
+  ["left", "right", "top", "bottom"].forEach(p => setP(p, "auto"));
+  if (dir === "down") {
+    setP("top", Math.min(r.bottom + GAP, vh - H - M) + "px");
+    setP("left", Math.max(M, Math.min(r.left, vw - W - M)) + "px");
+  } else if (dir === "up") {
+    setP("bottom", Math.max(M, vh - r.top + GAP) + "px");
+    setP("left", Math.max(M, Math.min(r.left, vw - W - M)) + "px");
+  } else if (dir === "right") {
+    setP("left", Math.min(r.right + GAP, vw - W - M) + "px");
+    setP("top", Math.max(M, Math.min(r.top, vh - H - M)) + "px");
+  } else { // left
+    setP("right", Math.max(M, vw - r.left + GAP) + "px");
+    setP("top", Math.max(M, Math.min(r.top, vh - H - M)) + "px");
+  }
+  // Griff positionieren + Wisch-Handler scharf schalten (M7).
+  positionDdGrip(panel, dir);
+}
+
+// Einzelner Griff, wird pro Oeffnung an die fuehrende Kante des offenen
+// Panels gesetzt (nur ein Dropdown ist gleichzeitig offen).
+let _ddGripBound = false;
+function ensureDdGrip() {
+  let g = document.getElementById("ddGrip");
+  if (!g) {
+    g = document.createElement("div");
+    g.id = "ddGrip";
+    document.body.appendChild(g);
+  }
+  if (!_ddGripBound) { bindDdGripSwipe(g); _ddGripBound = true; }
+  return g;
+}
+function hideDdGrip() {
+  const g = document.getElementById("ddGrip");
+  if (g) { g.style.display = "none"; g._panel = null; }
+}
+function positionDdGrip(panel, dir) {
+  const g = ensureDdGrip();
+  const pr = panel.getBoundingClientRect();
+  const horiz = (dir === "down" || dir === "up");
+  g.className = "dd-grip " + (horiz ? "dd-grip-h" : "dd-grip-v");
+  g._panel = panel; g._dir = dir;
+  const L = 40, T = 5;   // Griff-Laenge / -Dicke
+  if (dir === "down") {          // Griff an der UNTEREN Kante
+    g.style.left = (pr.left + pr.width / 2 - L / 2) + "px";
+    g.style.top  = (pr.bottom - T - 3) + "px";
+  } else if (dir === "up") {     // OBERE Kante
+    g.style.left = (pr.left + pr.width / 2 - L / 2) + "px";
+    g.style.top  = (pr.top + 3) + "px";
+  } else if (dir === "right") {  // RECHTE Kante
+    g.style.left = (pr.right - T - 3) + "px";
+    g.style.top  = (pr.top + pr.height / 2 - L / 2) + "px";
+  } else {                       // left → LINKE Kante
+    g.style.left = (pr.left + 3) + "px";
+    g.style.top  = (pr.top + pr.height / 2 - L / 2) + "px";
+  }
+  g.style.display = "block";
+}
+function bindDdGripSwipe(g) {
+  let s = null;
+  const CLOSE = 55;   // Wischweg zum Schliessen
+  g.addEventListener("touchstart", (e) => {
+    if (!g._panel) return;
+    const t = e.touches[0];
+    s = { x: t.clientX, y: t.clientY, dir: g._dir, panel: g._panel };
+    e.stopPropagation();
+  }, { passive: true });
+  g.addEventListener("touchmove", (e) => {
+    if (!s) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    const dx = t.clientX - s.x, dy = t.clientY - s.y;
+    // Nur Bewegung in Schliessrichtung (zum Knopf hin) zulassen.
+    let off = 0, axis = "Y";
+    if (s.dir === "down")  { off = Math.min(0, dy); axis = "Y"; }  // hoch
+    else if (s.dir === "up")    { off = Math.max(0, dy); axis = "Y"; }  // runter
+    else if (s.dir === "right") { off = Math.min(0, dx); axis = "X"; }  // links
+    else                        { off = Math.max(0, dx); axis = "X"; }  // rechts
+    const tr = axis === "Y" ? `translateY(${off}px)` : `translateX(${off}px)`;
+    s.panel.style.setProperty("transform", tr, "important");
+    g.style.transform = tr;
+  }, { passive: false });
+  const finish = (e) => {
+    if (!s) return;
+    const t = (e.changedTouches && e.changedTouches[0]) || null;
+    let dist = 0;
+    if (t) {
+      const dx = t.clientX - s.x, dy = t.clientY - s.y;
+      dist = (s.dir === "down" || s.dir === "up") ? Math.abs(dy) : Math.abs(dx);
+    }
+    const panel = s.panel;
+    // Zuruecksetzen (Transform loesen).
+    panel.style.removeProperty("transform");
+    g.style.transform = "";
+    if (dist >= CLOSE) {
+      panel.classList.remove("open");
+      resetAnchor(panel);
+      hideDdGrip();
+    }
+    s = null;
+  };
+  g.addEventListener("touchend", finish, { passive: true });
+  g.addEventListener("touchcancel", finish, { passive: true });
 }
 
 function renderAssetList(filter = "") {
@@ -1715,8 +1892,15 @@ function drawCompare() {
 
   const canvas = ensureCompareCanvas();
   const w = chartEl.clientWidth, h = chartEl.clientHeight;
-  canvas.width = w; canvas.height = h;
+  // M4: Auf HiDPI-Displays (iPhone DPR 3) muss der Puffer physisch groesser
+  // sein als die CSS-Flaeche, sonst wird 1x gerendert und hochskaliert →
+  // unscharfe %-Werte. Puffer in Geraetepixeln, Stil-Groesse in CSS-Pixeln,
+  // Kontext auf DPR skaliert — danach rechnet alles weiter in CSS-Pixeln (w/h).
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  canvas.style.width = w + "px"; canvas.style.height = h + "px";
   const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
   // Rechter Rand des Zeichenbereichs OHNE die (im Vergleich transparente, aber
@@ -3409,7 +3593,7 @@ function startTool(overlayName) {
 // Darum nie blind entfernen, sondern immer aus dem tatsaechlichen Zustand
 // ALLER Menues ableiten — sonst reisst das Schliessen eines Menues den
 // Abdunkler weg, waehrend ein anderes noch offen ist.
-const TV_MENU_IDS = ["overlayMenu", "frvpMenu", "fibMenu", "posMenu"];
+const TV_MENU_IDS = ["overlayMenu", "frvpMenu", "fibMenu", "posMenu", "compareStyleMenu", "rangeMenu"];
 function syncMenuOpen() {
   const anyOpen = TV_MENU_IDS.some((id) => {
     const el = document.getElementById(id);
@@ -3777,14 +3961,13 @@ document.addEventListener("click", (e) => {
 // Overlay-Menüs am Titel verschiebbar machen — nur Desktop (Punkt 1). Auf
 // Touch/Mobile bleibt alles wie gehabt (Titelleiste per CSS ausgeblendet, Drag
 // per tvIsMobile()-Guard deaktiviert).
-function makeMenuDraggable(menuId, title) {
-  const menu = document.getElementById(menuId);
-  if (!menu || menu.querySelector(".om-titlebar")) return;
-  const bar = document.createElement("div");
-  bar.className = "om-titlebar";
-  bar.textContent = title;
-  menu.insertBefore(bar, menu.firstChild);
-  bar.addEventListener("mousedown", (e) => {
+// Verschiebe-Logik einmal, egal ob der Griff eine injizierte Titelleiste
+// oder ein bereits vorhandener Menü-Kopf ist. Der Griff traegt die
+// mousedown-Geste, das Menue wird per left/top verschoben (Viewport-geklemmt).
+function bindMenuDrag(menu, handle) {
+  if (!menu || !handle || handle.dataset.tvDrag === "1") return;
+  handle.dataset.tvDrag = "1";
+  handle.addEventListener("mousedown", (e) => {
     if (tvIsMobile()) return;
     e.preventDefault();
     const rect = menu.getBoundingClientRect();
@@ -3805,6 +3988,28 @@ function makeMenuDraggable(menuId, title) {
     document.addEventListener("mouseup", up);
   });
 }
+
+// Menue mit injizierter Titelleiste als Griff (Menues ohne eigenen Kopf).
+function makeMenuDraggable(menuId, title) {
+  const menu = document.getElementById(menuId);
+  if (!menu || menu.querySelector(".om-titlebar")) return;
+  const bar = document.createElement("div");
+  bar.className = "om-titlebar";
+  bar.textContent = title;
+  menu.insertBefore(bar, menu.firstChild);
+  bindMenuDrag(menu, bar);
+}
+
+// Menue mit bereits vorhandenem Kopf als Griff (D1: kein Doppeltitel).
+// Der Kopf bekommt zusaetzlich die Klasse .om-drag-head fuer den Maus-Cursor.
+function makeMenuDraggableByHead(menuId, headSelector) {
+  const menu = document.getElementById(menuId);
+  if (!menu) return;
+  const head = menu.querySelector(headSelector);
+  if (!head) return;
+  head.classList.add("om-drag-head");
+  bindMenuDrag(menu, head);
+}
 [
   ["overlayMenu", "Linie"],
   ["fibMenu", "Fibonacci"],
@@ -3812,6 +4017,12 @@ function makeMenuDraggable(menuId, title) {
   ["frvpMenu", "Volumen-Profil"],
   ["compareStyleMenu", "Vergleichslinie"],
 ].forEach(([id, t]) => { try { makeMenuDraggable(id, t); } catch (e) {} });
+// D1: Long/Short und Chart-Darstellung haben einen eigenen Kopf — den als
+// Ziehgriff nutzen statt eine zweite Titelzeile zu injizieren.
+[
+  ["posMenu", ".frvp-menu-header"],
+  ["chartStyleMenu", ".csm-header"],
+].forEach(([id, sel]) => { try { makeMenuDraggableByHead(id, sel); } catch (e) {} });
 
 // Farbe (hex oder rgba) in {hex, alpha%} zerlegen — für die Menü-Regler.
 function parseColor(c) {
@@ -4376,6 +4587,24 @@ quiet(() => {
     return (touch.clientX - rect.left) > (rect.width - AXIS_W);
   };
 
+  // M8b: Welche Pane liegt unter dem Finger? Bisher zoomte die Achsengeste
+  // IMMER candle_pane — egal ob der Finger auf einer Sub-Pane-Skala lag. Hier
+  // wird die Pane per Y-Bereich bestimmt (Haupt-Pane + alle Sub-Panes), damit
+  // die richtige Werteskala skaliert wird.
+  const paneIdAtY = (clientY) => {
+    const rect = el.getBoundingClientRect();
+    const y = clientY - rect.top;
+    const ids = ["candle_pane", ...Object.values(state.subPaneIds || {})];
+    for (const id of ids) {
+      let b; try { b = chart.getSize(id); } catch (e) { continue; }
+      if (b && b.height != null) {
+        const top = b.top || 0;
+        if (y >= top && y <= top + b.height) return id;
+      }
+    }
+    return "candle_pane";
+  };
+
   // ---------- Long-Press → Rechtsklick-Menü ----------
   let lpTimer = null, lpStart = null;
   const LP_MS = 500, LP_MOVE = 12;
@@ -4396,22 +4625,34 @@ quiet(() => {
 
       // Doppeltipp auf die Skala = Auto-Fit (Y-Zoom zurücksetzen).
       // Gegenstück zum Drag: man kommt immer wieder in den Normalzustand.
+      // M8b: gilt jetzt für die Pane unter dem Finger.
+      const paneId = paneIdAtY(t.clientY);
+      const isMain = paneId === "candle_pane";
       const now = Date.now();
       if (now - lastAxisTap < 300) {
         lastAxisTap = 0;
         quiet(() => {
-          autoScaleY();
-          // Auch der Vergleichs-Zoom gehoert zurueckgesetzt.
-          state.compareScale = 1;
-          if (state.compareAssets.length > 0) { try { drawCompare(); } catch (e) {} }
-          setStatus("Preisachse zurückgesetzt");
+          if (isMain) {
+            autoScaleY();
+            // Auch der Vergleichs-Zoom gehoert zurueckgesetzt.
+            state.compareScale = 1;
+            if (state.compareAssets.length > 0) { try { drawCompare(); } catch (e) {} }
+            setStatus("Preisachse zurückgesetzt");
+          } else {
+            // Sub-Pane: manuelle Skalierung aufheben → automatische Anpassung.
+            const p = chart.getDrawPaneById(paneId);
+            const ax = p && p.getAxisComponent();
+            if (ax && typeof ax.setAutoCalcTickFlag === "function") ax.setAutoCalcTickFlag(true);
+            chart.adjustPaneViewport(false, true, true, true);
+            setStatus("Werteskala zurückgesetzt");
+          }
         }, "axis dbltap");
         return;
       }
       lastAxisTap = now;
 
       quiet(() => {
-        const pane = chart.getDrawPaneById("candle_pane");
+        const pane = chart.getDrawPaneById(paneId);
         if (!pane) return;
         const yAxis = pane.getAxisComponent();
         if (!yAxis) return;
@@ -4427,7 +4668,7 @@ quiet(() => {
         // sonst driftet er bei jedem Frame weiter.
         const b = Object.assign({}, r);
         b.__cmpScale = state.compareScale > 0 ? state.compareScale : 1;
-        yDrag = { startY: t.pageY, base: b, yAxis };
+        yDrag = { startY: t.pageY, base: b, yAxis, isMain };
       }, "yDrag start");
       return;
     }
@@ -4444,7 +4685,7 @@ quiet(() => {
     // --- Y-Achsen-Zoom aktiv ---
     if (yDrag) {
       quiet(() => {
-        const { startY, base, yAxis } = yDrag;
+        const { startY, base, yAxis, isMain } = yDrag;
         if (!startY) return;
         // Identische Formel wie KLineCharts Desktop:
         //   scale    = aktuelleY / startY
@@ -4477,7 +4718,9 @@ quiet(() => {
         // Im Vergleichsmodus haengen die Linien an einer EIGENEN
         // Prozent-Skala. Ohne diesen Schritt bewegte sich beim Ziehen nur
         // das Raster im Hintergrund, die Graphen blieben stehen.
-        if (state.compareAssets.length > 0) {
+        // M8b: nur wenn die HAUPT-Pane gezoomt wird — der Vergleich haengt an
+        // der Preisskala, nicht an einer Sub-Pane-Skala.
+        if (isMain && state.compareAssets.length > 0) {
           state.compareScale = (base.__cmpScale || 1) * scale;
           try { drawCompare(); } catch (e) {}
         }
@@ -4538,6 +4781,7 @@ function saveWorkspace() {
       patternSaved: state.patternSaved,
       smcSaved:     state.smcSaved,
       logScale:   state.logScale,
+      paneHeights: state.paneHeights,   // M8c: Custom-Pane-Höhen (Mobil)
     }));
   } catch (e) {
     // QuotaExceededError: localStorage voll (z.B. viele Zeichnungen).
@@ -7360,7 +7604,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m60";
+const TV_BUILD = "m61";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -7943,10 +8187,17 @@ quiet(() => {
     const onDown = (e) => {
       if (e.button !== 0) return;
       const rect = host.getBoundingClientRect();
-      const x = e.clientX - rect.left, y = e.clientY - rect.top;
+      let x = e.clientX - rect.left, y = e.clientY - rect.top;
       if (x > rect.width - 80) return;          // Preisskala nicht bemalen
       e.preventDefault(); e.stopPropagation();
       abbrechen();
+      // D2: Long/Short laeuft auf dem Desktop NICHT ueber KLCs Zeichenpfad,
+      // sondern setzt den Einstieg direkt aus der Pixel-Position — der
+      // mode:state.magnetMode aus buildOverlayConfig greift hier also nie.
+      // Deshalb den Magnet-Snap explizit anwenden (wie Fib-Dot/Polylinie),
+      // bevor der Punkt in einen Kurswert umgerechnet wird.
+      const snap = magnetSnapToOhlc(x, y);
+      if (snap) { x = snap.x; y = snap.y; }
       quiet(() => {
         const v = chart.convertFromPixel({ x, y }, { paneId: "candle_pane" });
         if (!v || v.timestamp == null || v.value == null) {
@@ -8429,7 +8680,7 @@ quiet(() => {
   let last = null;
 
   host.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1 || state.activeTool) { last = null; return; }
+    if (e.touches.length !== 1 || state.activeTool || window.__tvPaneResizing) { last = null; return; }
     const t = e.touches[0];
     const rect = host.getBoundingClientRect();
     if (t.clientX - rect.left > rect.width - AXIS) { last = null; return; }
@@ -8437,7 +8688,7 @@ quiet(() => {
   }, { passive: true });
 
   host.addEventListener("touchmove", (e) => {
-    if (e.touches.length !== 1 || last === null || state.activeTool) return;
+    if (e.touches.length !== 1 || last === null || state.activeTool || window.__tvPaneResizing) return;
     const y  = e.touches[0].clientY;
     const dy = y - last;
     last = y;
@@ -8468,6 +8719,122 @@ quiet(() => {
   host.addEventListener("touchend",    stop, { passive: true });
   host.addEventListener("touchcancel", stop, { passive: true });
 }, "y-pan init");
+
+// ── 6. Pane-Höhe per Separator-Zug (M8c, nur Mobil) ───────────────────
+// Lange auf die obere Trennlinie einer Sub-Pane druecken (LP_MS) → die Linie
+// wird gelb (var(--accent), wie beim Umsortieren) als Bestaetigung, danach
+// zieht der Finger die Pane hoeher/niedriger. Persistiert in state.paneHeights
+// (Workspace + reapplyPaneCollapse, ueberlebt Asset-Wechsel/Reload).
+quiet(() => {
+  const host = document.getElementById("mainChart");
+  if (!host || !tvIsMobile()) return;
+  const AXIS = 80;         // Preisskala rechts nicht als Separator werten
+  const SEP_TOL = 14;      // Trefferzone um die Trennlinie (px)
+  const LP_MS = 300;       // Long-Press-Schwelle
+  const LP_MOVE = 10;      // vorher Bewegung > 10px → abbrechen (ist Panning)
+  const MIN_H = 48;
+
+  let lpTimer = null, cand = null, active = null;
+
+  // Trennlinie = obere Kante jeder aktiven, nicht eingeklappten Sub-Pane.
+  function separatorAt(clientY, clientX) {
+    const rect = host.getBoundingClientRect();
+    if (clientX - rect.left > rect.width - AXIS) return null;   // Achsenzone
+    const y = clientY - rect.top;
+    let best = null, bestD = SEP_TOL;
+    Object.keys(state.subPaneIds || {}).forEach(key => {
+      if (!state.active.has(key)) return;
+      const st = state.paneCollapsed[key];
+      if (st && st.collapsed) return;   // eingeklappte Pane nicht ziehen
+      const paneId = state.subPaneIds[key];
+      let b; try { b = chart.getSize(paneId); } catch (e) { return; }
+      if (!b || b.height == null) return;
+      const sepY = b.top || 0;          // obere Kante = Trennlinie
+      const d = Math.abs(y - sepY);
+      if (d < bestD) { bestD = d; best = { key, paneId, sepY, height: b.height }; }
+    });
+    return best;
+  }
+
+  function showLine(y) {
+    let ln = document.getElementById("paneResizeLine");
+    if (!ln) {
+      ln = document.createElement("div");
+      ln.id = "paneResizeLine";
+      ln.className = "pane-resize-line";
+      document.body.appendChild(ln);
+    }
+    const rect = host.getBoundingClientRect();
+    ln.style.left  = rect.left + "px";
+    ln.style.width = rect.width + "px";
+    ln.style.top   = (rect.top + y) + "px";
+    ln.style.display = "block";
+  }
+  function hideLine() {
+    const ln = document.getElementById("paneResizeLine");
+    if (ln) ln.style.display = "none";
+  }
+
+  const cancelLP = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } cand = null; };
+
+  host.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1 || state.activeTool) return;
+    const t = e.touches[0];
+    const sep = separatorAt(t.clientY, t.clientX);
+    if (!sep) return;
+    cand = { sep, startX: t.clientX, startY: t.clientY };
+    lpTimer = setTimeout(() => {
+      lpTimer = null;
+      if (!cand) return;
+      active = { ...cand.sep, startY: cand.startY, startHeight: cand.sep.height };
+      window.__tvPaneResizing = true;
+      window.__tvChartLock && window.__tvChartLock(true);
+      showLine(active.sepY);
+      try { if (navigator.vibrate) navigator.vibrate(10); } catch (e) {}
+      setStatus("Pane-Höhe ziehen");
+    }, LP_MS);
+  }, { passive: true });
+
+  host.addEventListener("touchmove", (e) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    // Vor dem Long-Press: zu viel Bewegung → kein Resize (Panning gewinnt).
+    if (cand && !active) {
+      if (Math.abs(t.clientX - cand.startX) > LP_MOVE ||
+          Math.abs(t.clientY - cand.startY) > LP_MOVE) cancelLP();
+      return;
+    }
+    if (!active) return;
+    e.preventDefault();   // Chart/Seite nicht mitscrollen
+    // Separator nach OBEN ziehen (Finger hoch) = Sub-Pane hoeher.
+    const dy = t.clientY - active.startY;
+    let h = active.startHeight - dy;
+    const maxH = Math.min(host.clientHeight * 0.6, active.sepY + active.startHeight - 60);
+    h = Math.max(MIN_H, Math.min(h, Math.max(MIN_H, maxH)));
+    quiet(() => {
+      chart.setPaneOptions({ id: active.paneId, height: h, minHeight: 30 });
+      state.paneHeights[active.key] = h;
+      // Linie an die neue (tatsaechliche) Trennlinie setzen.
+      let b; try { b = chart.getSize(active.paneId); } catch (e) {}
+      showLine(b && b.top != null ? b.top : (active.sepY + dy));
+    }, "pane resize move");
+  }, { passive: false });
+
+  const end = () => {
+    cancelLP();
+    if (active) {
+      active = null;
+      window.__tvPaneResizing = false;
+      window.__tvChartLock && window.__tvChartLock(false);
+      hideLine();
+      try { saveWorkspace(); } catch (e) {}
+      try { applyPaneTopGap(); updatePaneHeaders(); } catch (e) {}
+      setStatus("Pane-Höhe gesetzt");
+    }
+  };
+  host.addEventListener("touchend",    end, { passive: true });
+  host.addEventListener("touchcancel", end, { passive: true });
+}, "pane resize init");
 
 // ── 6. Volumenprofil: zwei gestrichelte Grenzlinien ───────────────────
 // Aufziehen scheitert auf dem Handy, weil dieselbe Geste den Chart
