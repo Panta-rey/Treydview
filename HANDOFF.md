@@ -2530,3 +2530,67 @@ präzisiert (5a Hochformat / 5b Querformat).
   `Settings.open(key, apply, delete)` mit 3 Args — mit dieser settings.js ist das Löschen aus dem
   Pane-Zahnrad tot. NICHT durch m61 verursacht; Repo-settings.js prüfen.
 - jsdom-Pflichtprüfungen 2–4 diesmal nur statisch (Prüfstand harness.js/t-*.js nicht im Kontext).
+
+## Build m62 — Änderungen (20. August 2026)
+
+Aufbauend auf m61 (live). Runde nach dem Deploy: Magnet-Feinschliff + Querformat-
+Neubau + Layout/Watchlist-Modal.
+
+### Desktop
+- **D1 (404 data/btcusdt-binance.json):** bewusst belassen — App fällt sauber auf
+  Vollladen zurück, der 404 ist nur Browser-Konsolen-Rauschen (fetch auf fehlende
+  Datei, per JS nicht unterdrückbar). Fix wäre Snapshot-Datei via snapshot.sh
+  erzeugen+committen. Kein Code-Bug.
+- **D2 (Long/Short Magnet greift nicht):** m61-Fix (magnetSnapToOhlc, 40px-Cap)
+  griff in der Praxis nicht — das positionTool umgeht KLCs nativen Magnet und der
+  enge Fangbereich wurde selten getroffen (mobil zusätzlich durch CROSSHAIR_LIFT).
+  Neu: `snapPositionEntryPx(px,py)` rastet bei aktivem Magnet BEDINGUNGSLOS auf den
+  nächsten O/H/L/C-Punkt der zeitlich nächsten Kerze (kein Pixel-Deckel). Verwendet
+  in `placePositionByClick.onDown` (Desktop) UND `startMobilePointTool.onMove` nur
+  für `overlayName === "positionTool"`. Fib/Polylinie/AVWAP behalten das 40px-
+  `magnetSnap`/`magnetSnapToOhlc`.
+- **D3 (Freihand-Glättung):** läuft jetzt IMMER (nicht mehr an ed.smooth/Checkbox
+  gekoppelt) — `if (coordinates.length >= 3)` in overlays.js. Da _fhRedrawPreview
+  dieselbe createPointFigures nutzt, wird schon live beim Zeichnen geglättet. Die
+  Menü-Checkbox (omSmoothRow) ist ausgeblendet.
+
+### Mobil
+- **M1a (Layout & Watchlist wie FAQ):** beide öffnen als zentriertes Vollbild-Modal
+  statt Dropdown/Aside. `syncLLModal()` schaltet den klickbaren Dimmer `#llBackdrop`
+  (nur bei tvIsMobile) und die Body-Klasse `ll-modal-open`. Layout ist in
+  placeDropdownPanel aus der Anker-Logik ausgenommen (`dd.id==="layoutDropdown"`).
+  CSS: `#layoutPanel.open, .watchlist:not(.hidden)` → fixed, zentriert, z-index 900
+  über Backdrop 895; höhere Spezifität+!important schlägt die Sheet-Regeln.
+  Eingehängt in den dd-panel-MutationObserver (Layout) und renderWatchlist (WL).
+- **M1b (Pills grösser):** mobil sind nur F&G/Fund/OI sichtbar (#cycleMayer,#cycleEr
+  display:none). Portrait `.cycle-pill` 10→12px/5-9, Landscape `#tbRow1 .cycle-pill`
+  9→11px/5-6. Nur mobil.
+- **M2a (Querformat linke=rechte Icons):** `#tbRow1 .action-btn,.dd-trigger`
+  40×40 (wie .bottom-bar).
+- **M2b/c/d (Querformat-Dropouts neu):** Kernbug — die Landscape-Sheet-Regel zwang
+  allen .dd-panel `height:100%`+`max-height:100% !important` auf, meine
+  `.dd-anchored` (ohne !important) verlor → Panel bildschirmhoch, überlief. Fix:
+  verankerte Panels per `:not(.dd-anchored)` aus BEIDEN Sheet-Regeln (Portrait +
+  Landscape) genommen; `.dd-anchored` selbsttragend gemacht (eigener
+  overflow-y:auto, `max-height:62vh !important`, `height:auto !important` — schlägt
+  die Landscape-100%). placeMobileDropdown misst jetzt korrekt (offsetHeight ≤ 62vh)
+  und klemmt sauber. Richtung/Griff/Wisch unverändert (links→rechts/Griff rechts;
+  rechts→links/Griff links).
+
+### Lektionen
+- Inline `!important` schlägt Selektor-`!important`; aber eine geerbte Sheet-Regel
+  mit `max-height:100% !important` schlägt eine eigene Klassenregel OHNE !important —
+  bei `.dd-anchored` musste `max-height`/`overflow`/`height` explizit `!important`
+  bzw. via :not() aus der Sheet-Regel ausgenommen werden.
+- Der positionTool-Magnet war nie „kaputt", nur zu eng gefangen (40px). Für ein
+  Werkzeug, das KLCs nativen Magnet umgeht, ist bedingungsloses Snappen die
+  verlässlichere UX.
+- Ein fetch-404 auf eine fehlende statische Datei erscheint IMMER in der Konsole —
+  nicht per try/catch unterdrückbar; nur durch Bereitstellen der Datei oder
+  Weglassen des Requests vermeidbar.
+
+### Offen / am Gerät zu verifizieren
+- D2 am Gerät bestätigen (bedingungsloser Snap). Falls es DANN noch nicht rastet:
+  Laufzeit-Logging von state.magnetMode + snapPositionEntryPx auf dem Handy.
+- M1a/M2b Querformat am Gerät prüfen (Modal-Zentrierung, Dropout-Klemmung).
+- jsdom-Pflichtprüfungen weiterhin nur statisch (Prüfstand nicht im Kontext).
