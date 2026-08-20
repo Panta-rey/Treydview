@@ -274,6 +274,13 @@ window.__tvRemoveAnchorVwap = (overlayId) => {
   scheduleTagDraw();
 };
 
+// Assets, die IMMER als Linie (nicht Kerze) dargestellt werden — Indizes,
+// Fonds, Edelmetalle. Muss VOR baseStyles stehen: chart.setStyles(baseStyles())
+// läuft als Top-Level-Statement und ruft isLineSymbol → LINIEN_SYMBOLE, also
+// bevor eine weiter unten stehende const initialisiert wäre (sonst TDZ-Fehler
+// „Cannot access 'LINIEN_SYMBOLE' before initialization" bei aktiver Füllung).
+const LINIEN_SYMBOLE = new Set(["^SPX", "^NDQ", "^DJI", "QQQ", "VTSAX", "XAUUSD", "XAGUSD"]);
+
 function baseStyles() {
   const cs = state.chartStyle;
   // Magnet-Modus (Punkt 6): bei Linien-Darstellung nur auf die Linie (Close)
@@ -6660,7 +6667,8 @@ function whenChartReady(fn, minKerzen = 200) {
 // gesetzt (Linie fuer die 6, sonst Kerze). Innerhalb desselben Assets bleibt
 // eine manuelle Wahl erhalten — auch ueber Timeframe-Wechsel, weil dann das
 // Symbol gleich bleibt.
-const LINIEN_SYMBOLE = new Set(["^SPX", "^NDQ", "^DJI", "QQQ", "VTSAX", "XAUUSD", "XAGUSD"]);
+// LINIEN_SYMBOLE ist weiter oben (vor baseStyles) deklariert — baseStyles()
+// läuft als Top-Level-Statement, bevor diese Stelle erreicht wird, sonst TDZ.
 function isLineSymbol(sym) {
   return !!sym && LINIEN_SYMBOLE.has(sym.id);
 }
@@ -7663,7 +7671,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m62";
+const TV_BUILD = "m63";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
