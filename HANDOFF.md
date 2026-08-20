@@ -2594,3 +2594,21 @@ Neubau + Layout/Watchlist-Modal.
   Laufzeit-Logging von state.magnetMode + snapPositionEntryPx auf dem Handy.
 - M1a/M2b Querformat am Gerät prüfen (Modal-Zentrierung, Dropout-Klemmung).
 - jsdom-Pflichtprüfungen weiterhin nur statisch (Prüfstand nicht im Kontext).
+
+## Build m63 — Hotfix (20. August 2026)
+
+**Load-Blocker behoben (TDZ).** m62 lud weder Desktop noch Mobil:
+`Uncaught ReferenceError: Cannot access 'LINIEN_SYMBOLE' before initialization`
+(isLineSymbol → baseStyles → Top-Level `chart.setStyles(baseStyles())`).
+
+Ursache: `const LINIEN_SYMBOLE` stand bei ~Z.6663, aber `chart.setStyles(baseStyles())`
+läuft als Top-Level-Statement bei ~Z.380. baseStyles ruft isLineSymbol NUR wenn
+`cs.areaFill` wahr ist (Kurzschluss) — deshalb latent seit m61 und erst mit
+eingeschalteter Flächenfüllung ausgelöst. `node -c`/ESLint no-undef erkennen TDZ nicht.
+
+Fix: `const LINIEN_SYMBOLE` vor `function baseStyles()` (Z.282) gezogen, sodass es vor
+dem Top-Level-Aufruf (Z.380) initialisiert ist. Kein weiterer Codeeffekt.
+
+**Neue Prüfung im Werkzeugkasten:** vm-Ladetest mit universellen Proxy-Stubs
+(/tmp/loadtest.js) fährt die IIFE im Top-Level durch und fängt TDZ/ReferenceError,
+die node -c und ESLint übersehen. Bei künftigen Auslieferungen mitlaufen lassen.
