@@ -1028,12 +1028,14 @@
     createPointFigures: ({ coordinates, overlay }) => {
       if (coordinates.length < 2) return [];
       const ed = overlay.extendData || {};
-      // Glättung (D3): 3-Punkt-Mittelwert, jetzt in DREI Durchläufen statt
-      // einem — spürbar stärker geglättet. Endpunkte bleiben in jedem Durchlauf
-      // fix, die gespeicherten Rohpunkte werden nie verändert (nur die
-      // gezeichneten Koordinaten), also jederzeit reversibel über die Checkbox.
+      // Glättung (D3): 3-Punkt-Mittelwert in DREI Durchläufen, jetzt IMMER
+      // angewendet — nicht mehr an eine Menü-Checkbox gekoppelt. Da die
+      // Live-Vorschau (_fhRedrawPreview) dieselbe freehand-createPointFigures
+      // nutzt, wird schon WÄHREND des Zeichnens geglättet. Endpunkte bleiben je
+      // Durchlauf fix, die gespeicherten Rohpunkte unberührt (nur die
+      // gezeichneten Koordinaten) — also weiterhin verlustfrei.
       let coords = coordinates;
-      if (ed.smooth && coordinates.length >= 3) {
+      if (coordinates.length >= 3) {
         const SMOOTH_PASSES = 3;
         for (let pass = 0; pass < SMOOTH_PASSES; pass++) {
           const src = coords;

@@ -1202,6 +1202,8 @@ function initDropdowns() {
           if (g && g._panel === panel) hideDdGrip();
           if (panel.classList.contains("dd-anchored")) resetAnchor(panel);
         }
+        // M1a: Layout-Modal-Dimmer an den tatsaechlichen Offen-Zustand koppeln.
+        if (panel.id === "layoutPanel") syncLLModal();
       });
       mo.observe(panel, { attributes: true, attributeFilter: ["class"] });
     } catch (e) {}
@@ -1231,7 +1233,13 @@ function placeDropdownPanel(dd, trigger, panel) {
     return;
   }
   // Mobil (M5): anker-basierte Richtung + Griff/Wisch (M7).
-  if (tvIsMobile()) { placeMobileDropdown(dd, trigger, panel); return; }
+  if (tvIsMobile()) {
+    // M1a: Layout öffnet als Vollbild-Modal (wie FAQ) — nicht verankern.
+    // Das Panel-Styling kommt aus CSS (#layoutPanel.open), der Dimmer aus
+    // syncLLModal.
+    if (dd.id === "layoutDropdown") { resetAnchor(panel); syncLLModal(); return; }
+    placeMobileDropdown(dd, trigger, panel); return;
+  }
   // Desktop-Standard: Stylesheet uebernimmt (Panel absolut unter dem Knopf).
   panel.style.position = ""; panel.style.left = "";
   panel.style.top = "";      panel.style.right = "";
@@ -1312,6 +1320,34 @@ function ensureDdGrip() {
 function hideDdGrip() {
   const g = document.getElementById("ddGrip");
   if (g) { g.style.display = "none"; g._panel = null; }
+}
+
+// M1a: Layout & Watchlist öffnen auf Mobil als Vollbild-Modal (wie FAQ) statt
+// als Dropdown/Aside. Ein gemeinsamer, klickbarer Dimmer liegt darunter; das
+// zentrierte Panel-Styling steht im CSS (#layoutPanel.open / .watchlist).
+function syncLLModal() {
+  const lp = document.getElementById("layoutPanel");
+  const wl = document.getElementById("watchlist");
+  const lpOpen = !!(lp && lp.classList.contains("open"));
+  const wlOpen = !!(wl && !wl.classList.contains("hidden"));
+  const open = tvIsMobile() && (lpOpen || wlOpen);
+
+  let bd = document.getElementById("llBackdrop");
+  if (open && !bd) {
+    bd = document.createElement("div");
+    bd.id = "llBackdrop";
+    bd.className = "ll-backdrop";
+    // Tap auf den Dimmer schliesst das gerade offene Modal.
+    bd.addEventListener("click", () => {
+      const l = document.getElementById("layoutPanel");
+      if (l && l.classList.contains("open")) { l.classList.remove("open"); resetAnchor(l); }
+      if (state.watchlistOpen) { state.watchlistOpen = false; saveWorkspace(); renderWatchlist(); }
+      syncLLModal();
+    });
+    document.body.appendChild(bd);
+  }
+  if (bd) bd.style.display = open ? "block" : "none";
+  document.body.classList.toggle("ll-modal-open", open);
 }
 function positionDdGrip(panel, dir) {
   const g = ensureDdGrip();
@@ -1842,6 +1878,42 @@ function magnetSnapToOhlc(px, py) {
       : [closest.open, closest.high, closest.low, closest.close];
     const tol = 40;
     let best = null, bestPxDiff = tol;
+    for (const val of vals) {
+      if (val == null) continue;
+      const p = chart.convertToPixel({ timestamp: closest.timestamp, value: val }, { paneId: "candle_pane" });
+      const one = Array.isArray(p) ? p[0] : p;
+      if (!one || one.y == null) continue;
+      const d = Math.abs(one.y - py);
+      if (d < bestPxDiff) { bestPxDiff = d; best = { x: one.x != null ? one.x : px, y: one.y }; }
+    }
+    return best;
+  } catch (e) { return null; }
+}
+
+// D2: Long/Short-Einstieg. Anders als magnetSnapToOhlc (40px-Fangbereich)
+// rastet dieser bei aktivem Magnet IMMER auf den nächstgelegenen O/H/L/C-Punkt
+// der zeitlich nächsten Kerze — ohne Pixel-Deckel. Grund: das positionTool
+// umgeht KLCs nativen Magnet, und der enge Fangbereich liess den Magnet in der
+// Praxis fast nie greifen (besonders mobil, wo das Fadenkreuz angehoben über
+// dem Finger liegt). Fib/Polylinie/AVWAP behalten bewusst das 40px-Verhalten.
+function snapPositionEntryPx(px, py) {
+  if (state.magnetMode === "normal") return null;
+  try {
+    const v = chart.convertFromPixel({ x: px, y: py }, { paneId: "candle_pane" });
+    if (!v || v.timestamp == null) return null;
+    const data = chart.getDataList();
+    if (!data || !data.length) return null;
+    let closest = null, bestDiff = Infinity;
+    for (const d of data) {
+      const diff = Math.abs(d.timestamp - v.timestamp);
+      if (diff < bestDiff) { bestDiff = diff; closest = d; }
+    }
+    if (!closest) return null;
+    // Bei Linien-Assets nur auf den Close rasten, sonst auf alle vier.
+    const vals = window.__tvLineMagnet
+      ? [closest.close]
+      : [closest.open, closest.high, closest.low, closest.close];
+    let best = null, bestPxDiff = Infinity;   // KEIN Deckel — nächster gewinnt
     for (const val of vals) {
       if (val == null) continue;
       const p = chart.convertToPixel({ timestamp: closest.timestamp, value: val }, { paneId: "candle_pane" });
@@ -3786,25 +3858,11 @@ function openOverlayMenu(overlay, event) {
   if (priceRow) priceRow.style.display = isHoriz ? "" : "none";
   if (dateRow)  dateRow.style.display  = isVert  ? "" : "none";
 
-  // Glätten-Option nur bei Freihand (Punkt 2). Setzt extendData.smooth; die
-  // Freihand-createPointFigures glättet dann dezent (roh bleibt erhalten, also
-  // jederzeit an-/abwählbar).
+  // D3: Die Glättung läuft jetzt IMMER (siehe overlays.js freehand-
+  // createPointFigures), auch live beim Zeichnen. Die Menü-Checkbox ist damit
+  // überflüssig und würde nur verwirren — sie wird daher ausgeblendet.
   const smoothRow = document.getElementById("omSmoothRow");
-  const smoothEl  = document.getElementById("omSmooth");
-  if (smoothRow) smoothRow.style.display = overlay.name === "freehand" ? "" : "none";
-  if (overlay.name === "freehand" && smoothEl) {
-    smoothEl.checked = !!(overlay.extendData && overlay.extendData.smooth);
-    smoothEl.onchange = () => {
-      try {
-        const cur = chart.getOverlayById(overlay.id);
-        const curEd = (cur && typeof cur.extendData === "object" && cur.extendData) ? cur.extendData : {};
-        const nd = { ...curEd, smooth: smoothEl.checked };
-        chart.overrideOverlay({ id: overlay.id, extendData: nd });
-        const rec = state.drawings.find(d => d.id === overlay.id);
-        if (rec) { rec.extendData = nd; saveWorkspace(); }
-      } catch (e) {}
-    };
-  }
+  if (smoothRow) smoothRow.style.display = "none";
   if (isHoriz && priceEl && p0.value != null) {
     priceEl.value = p0.value;
     priceEl.onchange = () => {
@@ -4846,6 +4904,7 @@ function renderWatchlist() {
   const list  = document.getElementById("wlList");
   if (!panel || !list) return;
   panel.classList.toggle("hidden", !state.watchlistOpen);
+  syncLLModal();   // M1a: Watchlist-Modal-Dimmer aktualisieren
   renderWlSelect();
   list.innerHTML = "";
 
@@ -7604,7 +7663,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m61";
+const TV_BUILD = "m62";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -8048,7 +8107,12 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
     if (Math.hypot(x - touchStart.x, y - touchStart.y) > ENGAGE) {
       touchMoved = true;
       const rawY = Math.max(10, y - CROSSHAIR_LIFT);
-      const snap = magnetSnap(x, rawY);
+      // D2: Long/Short rastet bedingungslos auf den nächsten O/H/L/C-Punkt
+      // (snapPositionEntryPx), alle anderen Punkt-Werkzeuge behalten den
+      // dezenten 40px-Fangbereich (lokales magnetSnap).
+      const snap = overlayName === "positionTool"
+        ? snapPositionEntryPx(x, rawY)
+        : magnetSnap(x, rawY);
       crosshair = snap
         ? { x: snap.x, y: snap.y, snapped: true }
         : { x, y: rawY, snapped: false };
@@ -8191,12 +8255,10 @@ quiet(() => {
       if (x > rect.width - 80) return;          // Preisskala nicht bemalen
       e.preventDefault(); e.stopPropagation();
       abbrechen();
-      // D2: Long/Short laeuft auf dem Desktop NICHT ueber KLCs Zeichenpfad,
-      // sondern setzt den Einstieg direkt aus der Pixel-Position — der
-      // mode:state.magnetMode aus buildOverlayConfig greift hier also nie.
-      // Deshalb den Magnet-Snap explizit anwenden (wie Fib-Dot/Polylinie),
-      // bevor der Punkt in einen Kurswert umgerechnet wird.
-      const snap = magnetSnapToOhlc(x, y);
+      // D2: Long/Short umgeht KLCs Zeichenpfad — Snap explizit anwenden,
+      // und zwar bedingungslos auf den nächsten O/H/L/C-Punkt (kein 40px-
+      // Deckel), damit der Magnet zuverlässig greift.
+      const snap = snapPositionEntryPx(x, y);
       if (snap) { x = snap.x; y = snap.y; }
       quiet(() => {
         const v = chart.convertFromPixel({ x, y }, { paneId: "candle_pane" });
