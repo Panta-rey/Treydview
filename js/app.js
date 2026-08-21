@@ -598,7 +598,11 @@ function updatePaneHeaders() {
     el.querySelector(".ph-val").textContent  = paneHeaderValueText(ind, paneId, _lastCrosshairIndex);
     const st = state.paneCollapsed[key];
     const collapsed = !!(st && st.collapsed);
-    el.querySelector(".ph-collapse").textContent = collapsed ? "▴" : "▾";
+    const c = el.querySelector(".ph-collapse");
+    // P1: gleiche Glyphe für beide Zustände, eingeklappt nur gedreht — so ist
+    // die Form garantiert identisch (▴/▾ rendern in der Font leicht anders).
+    c.textContent = "▾";
+    c.classList.toggle("collapsed", collapsed);
     el.classList.toggle("collapsed", collapsed);
     el.style.top = (b.top || 0) + "px";
     // Nicht eingeklappt: Header nur über dem Zeichenbereich (Main), damit
@@ -1080,16 +1084,15 @@ async function loadData() {
   // Antwort gehört zu einem inzwischen überholten Wechsel → verwerfen.
   if (seq !== _loadSeq) return;
   chart.applyNewData(candles);
-  // Mobil: Preisskala kompakt halten — über 1000 keine Kommastellen, sonst
-  // sinnvoll gestaffelt. Desktop bleibt bei der Standard-Präzision (Mobil-
-  // Wunsch). Betrifft nur die Achsen-Beschriftung, nicht die eigenen Tags.
-  if (tvIsMobile()) {
-    try {
-      const last = (candles.at(-1) && candles.at(-1).close) || 0;
-      const p = last >= 1000 ? 0 : last >= 1 ? 2 : 4;
-      chart.setPriceVolumePrecision(p, 0);
-    } catch (e) {}
-  }
+  // P2: Preisskala ohne Kommastellen, sobald ein Vorteil besteht — Assets über
+  // 100 brauchen keine Nachkommastellen (72'720 statt 72'719.50). Jetzt auf
+  // Desktop UND Mobil (vorher nur mobil, Schwelle 1000). Betrifft nur die
+  // Achsen-Beschriftung, nicht die eigenen Tags.
+  try {
+    const last = (candles.at(-1) && candles.at(-1).close) || 0;
+    const p = last >= 100 ? 0 : last >= 1 ? 2 : 4;
+    chart.setPriceVolumePrecision(p, 0);
+  } catch (e) {}
   scheduleTagDraw();
   // 2.9: Nach einem Asset-Wechsel liegen die Preisniveaus ganz woanders
   // (BTC ~60'000, ETH ~2'500). Ohne Auto-Skalierung müsste man die
@@ -2662,8 +2665,14 @@ function scheduleTagDraw() {
 function formatTagValue(v, price) {
   if (v == null || !isFinite(v)) return null;
   if (price) {
-    const frac = Math.abs(v) >= 1000 ? 1 : Math.abs(v) >= 1 ? 2 : 4;
+    // P2: Preise über 100 ohne Nachkommastellen.
+    const frac = Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 1 ? 2 : 4;
     return v.toLocaleString("de-CH", { minimumFractionDigits: 0, maximumFractionDigits: frac });
+  }
+  // P2: Indikatorwerte über 10 ohne Nachkommastellen (mit Tausender-Trenner),
+  // kleinere Werte weiterhin zweistellig.
+  if (Math.abs(v) >= 10) {
+    return Math.round(v).toLocaleString("de-CH", { maximumFractionDigits: 0 });
   }
   return v.toFixed(2);
 }
@@ -5949,7 +5958,7 @@ function openFibMenu(event) {
   document.getElementById("fibShowPrices").checked  = ed.showPrices  !== false;
   document.getElementById("fibShowFill").checked    = ed.showFill    !== false;
   document.getElementById("fibExtendRight").checked = ed.extendRight === true;
-  document.getElementById("fibGoldenPocket").checked = ed.goldenPocket === true;
+  { const gp = document.getElementById("fibGoldenPocket"); if (gp) gp.checked = ed.goldenPocket === true; }
   const op = ed.fillOpacity != null ? ed.fillOpacity : 5;
   document.getElementById("fibFillOpacity").value = op;
   document.getElementById("fibFillVal").textContent = op + "%";
@@ -5991,7 +6000,7 @@ function _fibLiveApply() {
     showPrices:  document.getElementById("fibShowPrices").checked,
     showFill:    document.getElementById("fibShowFill").checked,
     extendRight: document.getElementById("fibExtendRight").checked,
-    goldenPocket: document.getElementById("fibGoldenPocket").checked,
+    goldenPocket: !!document.getElementById("fibGoldenPocket")?.checked,
     fillOpacity: parseInt(document.getElementById("fibFillOpacity").value, 10),
     hiddenLevels,
   };
@@ -7330,6 +7339,14 @@ document.getElementById("wlDeleteBtn").addEventListener("click", () => {
 // ---------- Grid-Bot-Handler ----------
 document.getElementById("posToolTopBtn").addEventListener("click", () => {
   const btn = document.getElementById("posToolTopBtn");
+  // QF5: Ist das Long/Short-Auswahlfenster bereits offen (Richtung noch nicht
+  // gewählt), schliesst ein erneuter Klick es wieder — statt es neu zu öffnen.
+  const lsc = document.getElementById("lsChoice");
+  if (lsc && !lsc.classList.contains("hidden")) {
+    lsc.classList.add("hidden");
+    btn.classList.remove("active");
+    return;
+  }
   // Zweiter Klick bricht ab — gleiche Logik wie der ESC-Handler
   if (state.activeTool === "positionTool") {
     if (state.drawingId != null) { try { chart.removeOverlay(state.drawingId); } catch (err) {} state.drawingId = null; }
@@ -7798,7 +7815,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m64";
+const TV_BUILD = "m65";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

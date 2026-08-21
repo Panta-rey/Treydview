@@ -869,12 +869,16 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
    sonst staendig Kurse und Beschriftungen in Leisten und Fenstern.
    Eingabefelder bleiben ausgenommen, sonst liesse sich dort nichts mehr
    markieren oder korrigieren. */
-html, body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+html, body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  /* HF2/QF2: verhindert das automatische Aufblähen langer Textblöcke (FAQ-
+     Absätze) auf Mobil (Brave/iOS „Font Boosting") — Text bleibt bei der im CSS
+     definierten Grösse. Auf dem Desktop wirkungslos. */
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m64"; }
+:root { --tv-build: "m65"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1034,7 +1038,10 @@ input, textarea, select, [contenteditable="true"] {
   .tb-row::-webkit-scrollbar { display: none; }
   .tb-row > * { flex-shrink: 0; }
   .tb-row::after {
-    content: ""; flex: 0 0 calc(8px + env(safe-area-inset-right)); align-self: stretch;
+    /* HF1: klar sichtbarer Abstand am Zeilenende (Sync-Button). Der
+       flex-basis-Wert ist ein echtes Element und wird — anders als margin/
+       padding am Ende eines scrollenden Flex-Containers — verlässlich gehalten. */
+    content: ""; flex: 0 0 calc(14px + env(safe-area-inset-right)); align-self: stretch;
   }
   #tbRow2 { border-top: 1px solid rgba(143,163,184,.12); }
   .tb-gap { flex: 1 1 auto; min-width: 8px; }
@@ -1188,6 +1195,11 @@ input, textarea, select, [contenteditable="true"] {
     max-height: 62vh !important;               /* schlägt Landscape max-height:100% */
     overflow-y: auto !important; overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
+    /* QF3: eigener z-index — beim Ausschluss aus der Sheet-Regel ging der
+       z-index:640 verloren, die Panels fielen auf Basis 200 und wurden im
+       Querformat verdeckt (nur der Griff bei 645 blieb sichtbar). 644 liegt
+       über den Leisten und knapp unter dem Griff. */
+    z-index: 644 !important;
   }
   .dd-panel.dd-anchored.open::before { display: none !important; }
 
@@ -1216,6 +1228,9 @@ input, textarea, select, [contenteditable="true"] {
     box-shadow: 0 12px 44px rgba(0, 0, 0, .6) !important;
     z-index: 900 !important;
   }
+  /* QF1: Watchlist eine Stufe heller als FAQ (--bg-hover), damit sie sich klar
+     vom abgedunkelten Hintergrund abhebt. Layout bleibt bei --bg-raised. */
+  .watchlist:not(.hidden) { background: var(--bg-hover) !important; }
   #layoutPanel.open::before { display: none !important; }
 
   /* Griff: dickere Linie an der zum Knopf zeigenden Kante. Grosses,
@@ -1589,7 +1604,7 @@ input, textarea, select, [contenteditable="true"] {
      Asset-Fenster-Breite (viel Information). */
   .draw-sheet, .gb-bar {
     transform: none !important;              /* Slide-Transform aus, Swipe steuert */
-    padding-left: 16px;                      /* Platz für den Griff links */
+    padding-left: 12px;                      /* QF4: knapp hinter dem Griff (5–10px), weniger Lücke als 16 */
     overflow-y: auto; -webkit-overflow-scrolling: touch;
   }
   .draw-sheet::before, .gb-bar::before {
@@ -1632,6 +1647,9 @@ input, textarea, select, [contenteditable="true"] {
   border-radius:4px; font-size:18px; line-height:1; padding:0;
 }
 .pane-header .ph-btn:hover{ background:var(--bg-hover); color:var(--text); }
+/* P1: eingeklappt = dieselbe Dreiecksform, nur nach oben gedreht. */
+.pane-header .ph-collapse{ transition: transform .12s; }
+.pane-header .ph-collapse.collapsed{ transform: rotate(180deg); }
 .pane-header .ph-drag{ cursor:grab; }
 .pane-header .ph-drag:active{ cursor:grabbing; }
 /* Ziehen zum Umsortieren: Ghost-Label folgt dem Cursor, Linie zeigt das Ziel (Punkt 3a) */

@@ -531,7 +531,7 @@ klinecharts.registerIndicator({
 klinecharts.registerIndicator({
   name: "GLOBALM2",
   shortName: "Global M2",
-  precision: 2,
+  precision: 0,
   calcParams: [],
   figures: [
     { key: "m2", title: "M2: ", type: "line", styles: (d, ind) => plotStyle(ind, "m2", "#e8b64c", 2) },
@@ -561,7 +561,7 @@ klinecharts.registerIndicator({
 klinecharts.registerIndicator({
   name: "STOCHRSI",
   shortName: "StochRSI",
-  precision: 2,
+  precision: 0,
   calcParams: [3, 3, 14, 14],
   // 20/50/80-Bänder als horizontale Referenzlinien (gestrichelt)
   figures: [
@@ -734,7 +734,7 @@ klinecharts.registerIndicator({
 klinecharts.registerIndicator({
   name: "MYRSI",
   shortName: "RSI",
-  precision: 2,
+  precision: 0,
   calcParams: [14, "None", 14, 2.0],
   figures: [
     { key: "band70", title: "", type: "line", styles: (d, ind) => plotStyle(ind, "band70", "rgba(120,123,134,0.7)", 1) },
