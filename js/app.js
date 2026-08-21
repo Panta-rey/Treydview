@@ -598,7 +598,7 @@ function updatePaneHeaders() {
     el.querySelector(".ph-val").textContent  = paneHeaderValueText(ind, paneId, _lastCrosshairIndex);
     const st = state.paneCollapsed[key];
     const collapsed = !!(st && st.collapsed);
-    el.querySelector(".ph-collapse").textContent = collapsed ? "▸" : "▾";
+    el.querySelector(".ph-collapse").textContent = collapsed ? "▴" : "▾";
     el.classList.toggle("collapsed", collapsed);
     el.style.top = (b.top || 0) + "px";
     // Nicht eingeklappt: Header nur über dem Zeichenbereich (Main), damit
@@ -1210,7 +1210,15 @@ function initDropdowns() {
           if (panel.classList.contains("dd-anchored")) resetAnchor(panel);
         }
         // M1a: Layout-Modal-Dimmer an den tatsaechlichen Offen-Zustand koppeln.
-        if (panel.id === "layoutPanel") syncLLModal();
+        if (panel.id === "layoutPanel") {
+          syncLLModal();
+          // QF1: geschlossen → zurück ins Dropdown, damit Desktop-Layout und
+          // die nächste Öffnung wieder stimmen.
+          if (!panel.classList.contains("open") && panel.__ddHome
+              && panel.parentElement === document.body) {
+            panel.__ddHome.appendChild(panel);
+          }
+        }
       });
       mo.observe(panel, { attributes: true, attributeFilter: ["class"] });
     } catch (e) {}
@@ -1244,7 +1252,17 @@ function placeDropdownPanel(dd, trigger, panel) {
     // M1a: Layout öffnet als Vollbild-Modal (wie FAQ) — nicht verankern.
     // Das Panel-Styling kommt aus CSS (#layoutPanel.open), der Dimmer aus
     // syncLLModal.
-    if (dd.id === "layoutDropdown") { resetAnchor(panel); syncLLModal(); return; }
+    if (dd.id === "layoutDropdown") {
+      // QF1: als echtes Body-Modal öffnen. In der (linken) Leiste bzw. im
+      // Dropdown-Kontext wurde das fixed-Modal im Querformat eingesperrt und
+      // blieb unsichtbar. Auf Body-Ebene zentriert es zuverlässig — genau wie
+      // das FAQ-Fenster. Beim Schliessen wandert es zurück (MutationObserver).
+      if (panel.parentElement && panel.parentElement !== document.body) {
+        panel.__ddHome = panel.parentElement;
+        document.body.appendChild(panel);
+      }
+      resetAnchor(panel); syncLLModal(); return;
+    }
     placeMobileDropdown(dd, trigger, panel); return;
   }
   // Desktop-Standard: Stylesheet uebernimmt (Panel absolut unter dem Knopf).
@@ -1327,6 +1345,43 @@ function ensureDdGrip() {
 function hideDdGrip() {
   const g = document.getElementById("ddGrip");
   if (g) { g.style.display = "none"; g._panel = null; }
+}
+
+// QF3/QF4: Zeichenwerkzeuge & Grid Bot öffnen im Querformat als Dropout von
+// der rechten Leiste nach links. Am Griff an der LINKEN Kante nach RECHTS
+// wischen schliesst. Nur im Querformat aktiv; das Panel folgt dem Finger und
+// schnappt bei genügend Weg zu (sonst zurück).
+function bindSheetSwipeClose(sheet, closeFn) {
+  if (!sheet || sheet.__swipeBound) return;
+  sheet.__swipeBound = true;
+  let s = null;
+  sheet.addEventListener("touchstart", (e) => {
+    if (!isLandscapeBar()) { s = null; return; }
+    const t = e.touches[0];
+    const rect = sheet.getBoundingClientRect();
+    if (t.clientX - rect.left > 30) { s = null; return; }   // nur linke Griffkante
+    s = { x: t.clientX, y: t.clientY };
+  }, { passive: true });
+  sheet.addEventListener("touchmove", (e) => {
+    if (!s) return;
+    const t = e.touches[0];
+    const dx = t.clientX - s.x;
+    if (dx > 0) {
+      e.preventDefault();
+      // CSS setzt transform:none !important — nur inline !important schlägt das.
+      sheet.style.setProperty("transform", "translateX(" + dx + "px)", "important");
+    }
+  }, { passive: false });
+  const end = (e) => {
+    if (!s) return;
+    const t = e.changedTouches && e.changedTouches[0];
+    const dx = t ? t.clientX - s.x : 0;
+    sheet.style.removeProperty("transform");
+    if (dx > 60) { try { closeFn(); } catch (err) {} }
+    s = null;
+  };
+  sheet.addEventListener("touchend", end, { passive: true });
+  sheet.addEventListener("touchcancel", end, { passive: true });
 }
 
 // M1a: Layout & Watchlist öffnen auf Mobil als Vollbild-Modal (wie FAQ) statt
@@ -1903,6 +1958,39 @@ function magnetSnapToOhlc(px, py) {
 // umgeht KLCs nativen Magnet, und der enge Fangbereich liess den Magnet in der
 // Praxis fast nie greifen (besonders mobil, wo das Fadenkreuz angehoben über
 // dem Finger liegt). Fib/Polylinie/AVWAP behalten bewusst das 40px-Verhalten.
+// Desktop1: Wert-basierter Einstieg-Snap — koordinaten-unabhängig. Nimmt den
+// bereits aus dem Pixel umgerechneten {timestamp, value} und rastet den VALUE
+// im Datenraum auf den nächsten O/H/L/C der zeitlich nächsten Kerze. Anders als
+// snapPositionEntryPx braucht das keinen convertToPixel-Rückweg und ist damit
+// immun gegen Pixel-Eigenheiten von KLC. Gibt {timestamp, value} zurück (bei
+// Magnet aus oder ohne Kerze unverändert).
+function snapEntryValue(v) {
+  if (!v || v.timestamp == null || v.value == null) return v;
+  if (state.magnetMode === "normal") return v;
+  try {
+    const data = chart.getDataList();
+    if (!data || !data.length) return v;
+    let closest = null, bestDiff = Infinity;
+    for (const d of data) {
+      const diff = Math.abs(d.timestamp - v.timestamp);
+      if (diff < bestDiff) { bestDiff = diff; closest = d; }
+    }
+    if (!closest) return v;
+    const vals = window.__tvLineMagnet
+      ? [closest.close]
+      : [closest.open, closest.high, closest.low, closest.close];
+    let best = null, bestVd = Infinity;
+    for (const val of vals) {
+      if (val == null) continue;
+      const d = Math.abs(val - v.value);
+      if (d < bestVd) { bestVd = d; best = val; }
+    }
+    if (best == null) return v;
+    return { timestamp: closest.timestamp, value: best };
+  } catch (e) { return v; }
+}
+
+// Beibehalten für die mobile Fadenkreuz-Vorschau (Pixel-Feedback beim Ziehen).
 function snapPositionEntryPx(px, py) {
   if (state.magnetMode === "normal") return null;
   try {
@@ -2297,6 +2385,10 @@ function renderTfList() {
   const krakenMode   = state.symbol.type === "kraken";
   const coinbaseMode = state.symbol.type === "coinbase";
   const bybitMode    = state.symbol.type === "bybit";
+  // Bitstamp aggregiert aus 1h/4h/1d (stepMap) — 2h ist dort nicht abbildbar,
+  // deshalb (wie besprochen) 2h nur bei Binance/Bybit.
+  const bitstampMode = state.symbol.type === "bitstamp";
+  const bitstampTf   = new Set(["15m", "1h", "4h", "1d", "1w", "1M"]);
   CONFIG.TIMEFRAMES.forEach(tf => {
     const item = document.createElement("div");
     // Gold: nur Daily. Kraken: kein Monthly. Coinbase: nur bis Daily. Bybit: alle.
@@ -2307,7 +2399,8 @@ function renderTfList() {
     const disabled = (goldMode && !goldTf.has(tf.id))
                   || (krakenMode && !tf.krakenInterval)
                   || (coinbaseMode && !tf.coinbaseInterval)
-                  || (bybitMode && !tf.bybitInterval);
+                  || (bybitMode && !tf.bybitInterval)
+                  || (bitstampMode && !bitstampTf.has(tf.id));
     item.className = "dd-item" + (tf.id === state.timeframe.id ? " active" : "") + (disabled ? " disabled" : "");
     item.textContent = tf.label;
     if (!disabled) item.addEventListener("click", () => {
@@ -2578,8 +2671,18 @@ function formatTagValue(v, price) {
 function drawIndicatorTags() {
   const c = ensureTagCanvas();
   const W = chartEl.clientWidth, H = chartEl.clientHeight;
-  if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+  // Neu5: HiDPI-scharf. Der Puffer muss physisch dpr-mal grösser sein als die
+  // CSS-Fläche, sonst werden die farblich hinterlegten Werte hochskaliert und
+  // wirken verpixelt. Style-Grösse bleibt in CSS-Pixeln (Canvas hat sonst kein
+  // width/height im CSS → würde sonst in Gerätepixeln dargestellt).
+  const dpr = window.devicePixelRatio || 1;
+  const bw = Math.round(W * dpr), bh = Math.round(H * dpr);
+  if (c.width !== bw || c.height !== bh) {
+    c.width = bw; c.height = bh;
+    c.style.width = W + "px"; c.style.height = H + "px";
+  }
   const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
 
   // Im Vergleichsmodus keine Tags (weder Indikator- noch Preis-Tags) —
@@ -4615,6 +4718,7 @@ quiet(() => {
   const closeSheet = () => { sheet.classList.add("hidden");    backdrop.classList.add("hidden");    };
   btn.addEventListener("click", () => sheet.classList.contains("hidden") ? openSheet() : closeSheet());
   backdrop.addEventListener("click", closeSheet);
+  bindSheetSwipeClose(sheet, closeSheet);   // QF3: Querformat nach rechts wischen schliesst
 })();
 
 // Mobile Info-Bar
@@ -5845,6 +5949,7 @@ function openFibMenu(event) {
   document.getElementById("fibShowPrices").checked  = ed.showPrices  !== false;
   document.getElementById("fibShowFill").checked    = ed.showFill    !== false;
   document.getElementById("fibExtendRight").checked = ed.extendRight === true;
+  document.getElementById("fibGoldenPocket").checked = ed.goldenPocket === true;
   const op = ed.fillOpacity != null ? ed.fillOpacity : 5;
   document.getElementById("fibFillOpacity").value = op;
   document.getElementById("fibFillVal").textContent = op + "%";
@@ -5886,6 +5991,7 @@ function _fibLiveApply() {
     showPrices:  document.getElementById("fibShowPrices").checked,
     showFill:    document.getElementById("fibShowFill").checked,
     extendRight: document.getElementById("fibExtendRight").checked,
+    goldenPocket: document.getElementById("fibGoldenPocket").checked,
     fillOpacity: parseInt(document.getElementById("fibFillOpacity").value, 10),
     hiddenLevels,
   };
@@ -7244,13 +7350,31 @@ document.getElementById("posToolTopBtn").addEventListener("click", () => {
   const menu = document.getElementById("lsChoice");
   if (menu) {
     const r = btn.getBoundingClientRect();
-    const w = 152, h = 48;
-    const left = Math.max(6, Math.min(window.innerWidth - w - 6, r.left + r.width / 2 - w / 2));
-    menu.style.left = left + "px";
-    menu.style.top = tvIsMobile()
-      ? Math.max(6, r.top - h - 10) + "px"          // Handy: darueber
-      : (r.bottom + 6) + "px";                       // Desktop: darunter
+    // Erst sichtbar machen, dann die ECHTE Grösse messen (die mobile CSS ist
+    // breiter/höher als die alte Schätzung 152×48).
     menu.classList.remove("hidden");
+    const w = menu.offsetWidth || 152, h = menu.offsetHeight || 48, M = 6;
+    let left, top;
+    if (tvIsMobile() && isLandscapeBar()) {
+      // QF5: Querformat — der Knopf sitzt in der rechten Leiste. Menü LINKS
+      // daneben (nicht darüber), vertikal am Knopf zentriert; sonst landete es
+      // links aus dem Bild.
+      left = r.left - w - 8;
+      if (left < M) left = r.right + 8;
+      top = r.top + r.height / 2 - h / 2;
+    } else if (tvIsMobile()) {
+      // Hochformat: Knopf unten → Menü darüber, waagrecht am Knopf zentriert.
+      left = r.left + r.width / 2 - w / 2;
+      top = r.top - h - 10;
+    } else {
+      left = r.left + r.width / 2 - w / 2;   // Desktop: darunter
+      top = r.bottom + 6;
+    }
+    // Immer vollständig im sichtbaren Bereich halten.
+    left = Math.max(M, Math.min(left, window.innerWidth - w - M));
+    top  = Math.max(M, Math.min(top,  window.innerHeight - h - M));
+    menu.style.left = left + "px";
+    menu.style.top  = top + "px";
     btn.classList.add("active");
     return;
   }
@@ -7260,6 +7384,9 @@ document.getElementById("posToolTopBtn").addEventListener("click", () => {
   setStatus("Long/Short: 1. Einstieg klicken  →  2. Stop  →  3. Ziel");
 });
 document.getElementById("gridBotBtn").addEventListener("click", () => gbToggleBar());
+// QF4: Grid Bot im Querformat als Links-Dropout — am linken Griff nach rechts
+// wischen schliesst.
+bindSheetSwipeClose(document.getElementById("gridBotBar"), () => gbToggleBar(false));
 
   // Magnetknopf in der Bottom Bar
   quiet(() => {
@@ -7422,7 +7549,7 @@ document.getElementById("fibFillOpacity").addEventListener("input", (e) => {
   _fibLiveApply();   // Deckkraft sofort sichtbar (Punkt 1)
 });
 // Übrige Fib-Optionen ebenfalls live anwenden (Level-Auswahl, Erweitern, Flags)
-["fibShowLabels", "fibShowLevels", "fibShowPrices", "fibShowFill", "fibExtendRight"].forEach(id => {
+["fibShowLabels", "fibShowLevels", "fibShowPrices", "fibShowFill", "fibExtendRight", "fibGoldenPocket"].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener("change", () => _fibLiveApply());
 });
@@ -7671,7 +7798,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m63";
+const TV_BUILD = "m64";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -8017,8 +8144,12 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
   }
 
   function commitPoint() {
-    const pt = toDataPoint(crosshair.x, crosshair.y);
+    let pt = toDataPoint(crosshair.x, crosshair.y);
     if (!pt) { setStatus("Kein gültiger Punkt an dieser Stelle"); return; }
+    // Desktop1: Long/Short-Einstieg zusätzlich WERT-basiert auf O/H/L/C rasten
+    // (koordinaten-unabhängig), damit der gesetzte Punkt garantiert auf einem
+    // Kerzenpunkt sitzt — unabhängig davon, ob die Pixel-Vorschau exakt traf.
+    if (overlayName === "positionTool") pt = snapEntryValue(pt);
     points.push(pt);
 
     // Sichtbare Bestätigung: Marker an der tatsächlich gespeicherten
@@ -8259,21 +8390,20 @@ quiet(() => {
     const onDown = (e) => {
       if (e.button !== 0) return;
       const rect = host.getBoundingClientRect();
-      let x = e.clientX - rect.left, y = e.clientY - rect.top;
+      const x = e.clientX - rect.left, y = e.clientY - rect.top;
       if (x > rect.width - 80) return;          // Preisskala nicht bemalen
       e.preventDefault(); e.stopPropagation();
       abbrechen();
-      // D2: Long/Short umgeht KLCs Zeichenpfad — Snap explizit anwenden,
-      // und zwar bedingungslos auf den nächsten O/H/L/C-Punkt (kein 40px-
-      // Deckel), damit der Magnet zuverlässig greift.
-      const snap = snapPositionEntryPx(x, y);
-      if (snap) { x = snap.x; y = snap.y; }
       quiet(() => {
-        const v = chart.convertFromPixel({ x, y }, { paneId: "candle_pane" });
+        // Desktop1: erst Pixel→Wert, dann WERT-basiert auf O/H/L/C rasten
+        // (koordinaten-unabhängig, greift zuverlässig). Kein Pixel-Snap-
+        // Rückweg mehr — der war die Ursache für "Magnet greift nicht".
+        let v = chart.convertFromPixel({ x, y }, { paneId: "candle_pane" });
         if (!v || v.timestamp == null || v.value == null) {
           setStatus("Einstieg konnte nicht bestimmt werden");
           return;
         }
+        v = snapEntryValue(v);
         const entry = { timestamp: v.timestamp, value: v.value };
         const id = chart.createOverlay({ ...cfg, points: expandPositionPoints(dir, entry) });
         const oid = Array.isArray(id) ? id[0] : id;

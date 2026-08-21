@@ -874,7 +874,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m63"; }
+:root { --tv-build: "m64"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1058,6 +1058,9 @@ input, textarea, select, [contenteditable="true"] {
   #typeTrigger  { padding: 5px 8px; width: auto; height: auto; justify-content: center; }
   #typeTrigger .type-label-text { display: none; }
   .type-gear-icon { width: 17px; height: 17px; }
+  /* HF1: kleiner Abstand zwischen Sync-Button und rechtem Bildschirmrand
+     (der ::after-Spacer allein wirkt zu bündig). */
+  #syncBtn { margin-right: 8px; }
 
   /* Zyklus-Pills: gewünschte Reihenfolge F&G · Fund · OI.
      Im HTML steht F&G, OI, Fund — daher OI nach hinten sortieren.
@@ -1206,6 +1209,9 @@ input, textarea, select, [contenteditable="true"] {
     height: auto !important; max-height: 82vh !important;
     overflow-y: auto !important; overflow-x: hidden; -webkit-overflow-scrolling: touch;
     border-radius: 14px !important;
+    /* HF2/QF2: gleiche Helligkeit wie das FAQ-Fenster (--bg-raised) — vorher
+       zu wenig Kontrast zum abgedunkelten Hintergrund. */
+    background: var(--bg-raised) !important;
     border: 1px solid var(--border) !important;
     box-shadow: 0 12px 44px rgba(0, 0, 0, .6) !important;
     z-index: 900 !important;
@@ -1514,6 +1520,7 @@ input, textarea, select, [contenteditable="true"] {
     z-index: 630;
   }
   #tbRow1 .tb-gap { display: none; }
+  #tbRow1 #syncBtn { margin-right: 0; }   /* HF1 nur Portrait, Landscape ist Spalte */
   #tbRow1 .cycle-bar { flex-direction: column; gap: 6px; }
   /* M1b: linke Leiste, Pills leicht grösser */
   #tbRow1 .cycle-pill { font-size: 11px; padding: 5px 6px; }
@@ -1567,7 +1574,7 @@ input, textarea, select, [contenteditable="true"] {
   .dd-panel:not(.dd-anchored),
   .dd-panel--wide:not(.dd-anchored),
   .dd-panel--right:not(.dd-anchored),
-  .watchlist, .gb-bar, .draw-sheet {
+  .watchlist, .draw-sheet {
     top: 0 !important; bottom: 0 !important;
     left: auto !important; right: var(--tv-rbar) !important;
     width: min(58vw, 400px) !important; max-width: none !important;
@@ -1575,6 +1582,34 @@ input, textarea, select, [contenteditable="true"] {
     padding-bottom: 8px;
   }
   .draw-sheet-grid { grid-template-columns: repeat(3, 1fr); }
+
+  /* QF3/QF4: Zeichenwerkzeuge & Grid Bot öffnen als Dropout von der rechten
+     Leiste nach links, mit Griff an der LINKEN Kante (nach rechts wischen
+     schliesst — JS bindSheetSwipeClose). Grid Bot nutzt die volle
+     Asset-Fenster-Breite (viel Information). */
+  .draw-sheet, .gb-bar {
+    transform: none !important;              /* Slide-Transform aus, Swipe steuert */
+    padding-left: 16px;                      /* Platz für den Griff links */
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  .draw-sheet::before, .gb-bar::before {
+    content: ""; position: absolute; left: 5px; top: 50%;
+    width: 5px; height: 46px; margin-top: -23px;
+    border-radius: 3px; background: var(--text-dim);
+    box-shadow: 0 1px 4px rgba(0,0,0,.45);
+  }
+  .draw-sheet:not(.hidden), .gb-bar:not(.hidden) { display: flex !important; }
+  .gb-bar {
+    top: 0 !important; bottom: 0 !important;
+    left: var(--tv-lbar) !important; right: var(--tv-rbar) !important;
+    width: auto !important; max-width: none !important;
+    height: 100% !important; max-height: 100% !important; border-radius: 0;
+  }
+  /* Grid-Bot-Inhalt scrollt innerhalb der vollen Höhe (vorher oben verquetscht,
+     unten überlaufend). Kopf/Tabs bleiben oben, der Rest scrollt. */
+  .gb-bar .gb-body { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  /* Der Griff oben im Zeichenblatt entfällt im Querformat (linker Griff ersetzt ihn). */
+  .draw-sheet-handle { display: none; }
 }
 
 /* ── Lower-Pane-Header (Punkt 7) ─────────────────────────────────────

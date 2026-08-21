@@ -2612,3 +2612,78 @@ dem Top-Level-Aufruf (Z.380) initialisiert ist. Kein weiterer Codeeffekt.
 **Neue Prüfung im Werkzeugkasten:** vm-Ladetest mit universellen Proxy-Stubs
 (/tmp/loadtest.js) fährt die IIFE im Top-Level durch und fängt TDZ/ReferenceError,
 die node -c und ESLint übersehen. Bei künftigen Auslieferungen mitlaufen lassen.
+
+## Build m64 — Änderungen (20. August 2026)
+
+Grosse Runde: Magnet-Wertumbau, Fib Golden Pocket, 2h-Intervall, Volumen-Achse,
+Querformat-Dropouts (Layout/Zeichnen/Grid Bot/Long-Short), diverse Feinschliffe.
+Vorher m63-Hotfix (LINIEN_SYMBOLE TDZ).
+
+### Desktop & Mobile (neu)
+- **Neu1 — 2h-Intervall:** `{ id:"2h", binanceInterval:"2h", bybitInterval:"120" }` in
+  CONFIG.TIMEFRAMES. Kraken/Coinbase kennen 2h nicht → per bestehender Ausblendlogik
+  (renderTfList, !tf.krakenInterval/!tf.coinbaseInterval) automatisch weg. NEU:
+  `bitstampMode` + `bitstampTf`-Set in renderTfList, damit 2h auch bei Bitstamp
+  ausgeblendet ist. „2 Stunden" in beide MA-Intervall-Listen (config.js). → 2h nur
+  Binance/Bybit.
+- **Neu2 — Volumen ab 0:** MYVOL bekam `minValue:0` (Achse startet bei 0) + die
+  vol-Balken-Figur `baseValue:0` (Balken ab 0 statt an der Unterkante). indicators.js.
+- **Neu3 — Fib 0.65 + Golden Pocket:** Level `{v:0.65, color:"#e8b64c"}` in
+  fibRetracement & fibExtension (config.js). buildFibFigures (overlays.js): goldene
+  Fläche zwischen 0.618 und 0.65 bei `ed.goldenPocket`, Deckkraft = fillAlpha+0.10
+  (max 1). Checkbox `#fibGoldenPocket` im Fib-Menü (index.html), in openFibMenu
+  gelesen, in _fibLiveApply geschrieben, live-Wiring ergänzt. FIB_MENU_LEVELS =
+  FIB_LEVEL_SETS → 0.65 erscheint automatisch in der Level-Liste.
+- **Neu4 — Ausklapp-Dreieck:** ph-collapse eingeklappt `▸`→`▴` (Spitze oben),
+  ausgeklappt `▾` bleibt.
+- **Neu5 — Hinterfüllte Werte scharf:** drawIndicatorTags-Canvas jetzt mit
+  devicePixelRatio (Puffer in Gerätepixeln, style in CSS-px, setTransform(dpr)).
+
+### Desktop
+- **Desktop1 — Magnet WERT-basiert (endgültig):** Der Pixel-Snap (m62/m63) war
+  algorithmisch korrekt (Unit-Test bestand), griff am Gerät aber nicht — vermutlich
+  KLC-Pixel-Eigenheit. Neu `snapEntryValue({timestamp,value})`: rastet den value im
+  DATENRAUM auf den nächsten O/H/L/C der zeitlich nächsten Kerze (kein convertToPixel).
+  Desktop placePositionByClick.onDown: convertFromPixel → snapEntryValue. Mobil:
+  commitPoint wendet snapEntryValue für positionTool an. snapPositionEntryPx bleibt nur
+  noch für die mobile Fadenkreuz-Vorschau.
+
+### Mobil
+- **HF1 — Sync-Abstand:** `#syncBtn{margin-right:8px}` Portrait, im Querformat 0.
+- **HF2/QF2 — Layout & Watchlist heller:** Modal-Regel bekam
+  `background: var(--bg-raised) !important` (= FAQ-Helligkeit). Falls noch zu dunkel:
+  --bg-hover.
+- **QF1 — Layout öffnet im Querformat:** layoutPanel wird beim Öffnen an document.body
+  gehängt (placeDropdownPanel layout-Zweig, panel.__ddHome merkt Herkunft), beim
+  Schliessen (MutationObserver) zurück. Grund: im Leisten/Dropdown-Kontext wurde das
+  fixed-Modal im Querformat eingesperrt. `panel` ist im initDropdowns-Closure gehalten
+  → Body-Verschiebung bricht Öffnen/Schliessen nicht.
+- **QF5 — Long/Short-Menü ins Bild:** lsChoice misst jetzt die echte Grösse; Querformat
+  → links neben den Knopf (rechte Leiste), voll in den Viewport geklemmt.
+- **QF3/QF4 — Zeichnen & Grid Bot als Links-Dropout:** Landscape-Sheet-Regel: gb-bar
+  aus der geteilten Regel gelöst → volle Asset-Breite (left:--tv-lbar bis
+  right:--tv-rbar). Beide bekommen `transform:none !important`, `padding-left:16px`,
+  einen linken Griff (::before), internen Scroll; gb-body scrollt (flex:1;overflow-y:auto),
+  draw-sheet-handle oben ausgeblendet. Neu `bindSheetSwipeClose(sheet, closeFn)`: am
+  linken Griff (≤30px) nach rechts wischen (>60px) schliesst; Transform per inline
+  !important (schlägt CSS transform:none). Verdrahtet: draw-sheet→closeSheet,
+  gridBotBar→gbToggleBar(false).
+
+### Lektionen
+- Der positionTool-Magnet scheiterte zweimal an Pixel-Koordinaten (nativer Magnet
+  umgangen, dann Pixel-Snap ohne Wirkung). WERT-basiertes Snappen im Datenraum ist die
+  robuste Lösung — kein convertToPixel-Rückweg, immun gegen Pane-Offsets/DPR.
+- Ein `position:fixed`-Modal, das in einer Leiste/einem Dropdown steckt, kann durch
+  Vorfahren-Kontext eingesperrt werden — für echte Modals (wie FAQ) auf Body-Ebene
+  hängen.
+- CSS `transform:none !important` schlägt inline transform OHNE important — für
+  Swipe-Follow `style.setProperty("transform", …, "important")` nutzen.
+- 2h wird nur nativ von Binance/Bybit unterstützt; die bestehende renderTfList-
+  Ausblendung deckt Kraken/Coinbase ab, Bitstamp brauchte einen eigenen Mode.
+
+### Offen / am Gerät zu verifizieren
+- Desktop1 (Magnet rastet jetzt zuverlässig — WERT-basiert), QF1 (Layout-Modal
+  zentriert im Querformat), QF3/QF4 (Links-Dropouts, linker Griff, Wisch nach rechts,
+  Grid-Bot-Breite/Scroll), Golden-Pocket-Färbung, 2h-Daten von Binance/Bybit.
+- jsdom-Pflichtprüfungen weiterhin nur statisch + vm-Ladetest (Prüfstand nicht im
+  Kontext).

@@ -468,6 +468,21 @@
       }
     }
 
+    // 1b. Golden Pocket (Neu3): goldene Fläche zwischen 0.618 und 0.65,
+    //     Deckkraft = Regler + 10 % (max 100 %), damit sie sich abhebt.
+    //     Unabhängig vom Flächen-Schalter und den ausgeblendeten Levels —
+    //     die beiden Niveaus lassen sich immer per yAt berechnen.
+    if (ed.goldenPocket) {
+      const gy1 = yAt(0.618), gy2 = yAt(0.65);
+      if (gy1 != null && gy2 != null) {
+        figs.push({
+          type: "rect",
+          attrs: { x: xLeft, y: Math.min(gy1, gy2), width: xRight - xLeft, height: Math.abs(gy2 - gy1) },
+          styles: { style: "fill", color: hexA("#e8b64c", Math.min(1, fillAlpha + 0.10)) },
+        });
+      }
+    }
+
     // 2. Level-Linien
     visible.forEach(lv => {
       const y = yAt(lv.v);

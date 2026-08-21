@@ -867,9 +867,12 @@ klinecharts.registerIndicator({
   shortName: "VOL",
   precision: 0,
   shouldOhlc: false,
+  // Neu2: Achse startet bei 0 (nicht ins Negative), Balken sitzen ab 0 statt
+  // an der Pane-Unterkante zu kleben.
+  minValue: 0,
   calcParams: [5, 10, 20],
   figures: [
-    { key: "vol",  title: "VOL: ", type: "bar",
+    { key: "vol",  title: "VOL: ", type: "bar", baseValue: 0,
       styles: (d, ind) => {
         const isUp = d.current?.indicatorData?.isUp;
         const key  = isUp ? "up" : "dn";
