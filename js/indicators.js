@@ -518,12 +518,50 @@ klinecharts.registerIndicator({
   },
 });
 
+// ---------- GLOBALE M2-GELDMENGE ----------
+// Eigenes Fenster unterhalb des Charts, wie StochRSI — nur als einfache
+// Linie. Die Werte kommen NICHT aus den Kerzen, sondern aus einer eigenen
+// Zeitreihe (DataLayer.fetchGlobalM2), die app.js einmal laedt und unter
+// window.__tvM2Series ablegt. calc() ordnet sie den Kerzen zu.
+//
+// M2 wird monatlich veroeffentlicht, der Chart laeuft aber taeglich oder
+// feiner. Deshalb wird der zuletzt bekannte Wert fortgeschrieben (Treppe)
+// statt interpoliert — eine gerade Linie zwischen zwei Monatswerten waere
+// eine Erfindung, die es so nie gab.
+klinecharts.registerIndicator({
+  name: "GLOBALM2",
+  shortName: "Global M2",
+  precision: 0,
+  calcParams: [],
+  figures: [
+    { key: "m2", title: "M2: ", type: "line", styles: (d, ind) => plotStyle(ind, "m2", "#e8b64c", 2) },
+  ],
+  calc: (dataList) => {
+    const serie = window.__tvM2Series;
+    if (!Array.isArray(serie) || !serie.length) {
+      return dataList.map(() => ({ m2: null }));
+    }
+    const out = new Array(dataList.length);
+    let i = 0, letzter = null;
+    for (let k = 0; k < dataList.length; k++) {
+      const ts = dataList[k].timestamp;
+      // Alle M2-Werte bis zu dieser Kerze abarbeiten — die Serie ist
+      // sortiert, ein Zeiger genuegt.
+      while (i < serie.length && serie[i].timestamp <= ts) {
+        letzter = serie[i].value; i++;
+      }
+      out[k] = { m2: letzter };
+    }
+    return out;
+  },
+});
+
 // ---------- STOCHASTIC RSI ----------
 // Pine-Referenz: rsi -> stoch(rsi) -> SMA(K) -> SMA(D)
 klinecharts.registerIndicator({
   name: "STOCHRSI",
   shortName: "StochRSI",
-  precision: 2,
+  precision: 0,
   calcParams: [3, 3, 14, 14],
   // 20/50/80-Bänder als horizontale Referenzlinien (gestrichelt)
   figures: [
@@ -614,88 +652,6 @@ klinecharts.registerIndicator({
   },
 });
 
-// ---------- COMPARE (Relative-Performance-Modus) ----------
-// Alle Assets (Hauptasset + Vergleiche) als Linien, normalisiert auf den
-// linken sichtbaren Rand = 0%. Reaktiv: window.__tvVisibleFrom hält den
-// Index des ersten sichtbaren Bars, gesetzt von app.js bei jedem
-// onVisibleRangeChange. Referenzpreis = Kurs an diesem Index.
-klinecharts.registerIndicator({
-  name: "COMPARE",
-  shortName: "",
-  precision: 2,
-  calcParams: [],
-  figures: [
-    { key: "cMain", title: "", type: "line", styles: (d, ind) => cmpMainStyle(ind) },
-    { key: "c0", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 0) },
-    { key: "c1", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 1) },
-    { key: "c2", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 2) },
-    { key: "c3", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 3) },
-    { key: "c4", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 4) },
-    { key: "c5", title: "", type: "line", styles: (d, ind) => cmpStyle(ind, 5) },
-  ],
-  calc: (dataList, indicator) => {
-    const assets = (typeof window !== "undefined" && window.__tvCompareAssets) ? window.__tvCompareAssets : [];
-    if (dataList.length === 0) return dataList.map(() => ({}));
-
-    // fromIdx: KLC übergibt calcParams[0] bei overrideIndicator (gesetzt via
-    // onVisibleRangeChange). Fallback auf window.__tvVisibleFrom oder 0.
-    const paramFrom = indicator && indicator.calcParams && indicator.calcParams[0];
-    let fromIdx = Number.isInteger(paramFrom) ? paramFrom
-      : (typeof window !== "undefined" && Number.isInteger(window.__tvVisibleFrom)
-          ? window.__tvVisibleFrom : 0);
-    fromIdx = Math.max(0, Math.min(fromIdx, dataList.length - 1));
-
-    // Referenzpreis Hauptasset = Close am linken sichtbaren Rand.
-    // Falls dort null, nächsten gültigen Wert nach rechts suchen.
-    let mainRef = null;
-    for (let i = fromIdx; i < dataList.length; i++) {
-      if (dataList[i].close != null) { mainRef = dataList[i].close; break; }
-    }
-
-    // Vergleichs-Assets: Timestamp->close Maps + Referenzpreis am linken Rand
-    const refTs = dataList[fromIdx]?.timestamp;
-    const maps = assets.map(a => {
-      const m = new Map();
-      (a.data || []).forEach(p => m.set(p.timestamp, p.close));
-      // Referenz = Kurs am (oder nächstgelegen nach) refTs
-      let ref = null;
-      for (let i = fromIdx; i < dataList.length; i++) {
-        const v = m.get(dataList[i].timestamp);
-        if (v != null) { ref = v; break; }
-      }
-      return { m, ref };
-    });
-
-    return dataList.map(d => {
-      const out = {};
-      // Hauptasset in %
-      if (mainRef != null && d.close != null) {
-        out.cMain = ((d.close - mainRef) / mainRef) * 100;
-      }
-      // Vergleiche in %
-      maps.forEach((asset, idx) => {
-        if (asset.ref == null) return;
-        const close = asset.m.get(d.timestamp);
-        if (close != null) out["c" + idx] = ((close - asset.ref) / asset.ref) * 100;
-      });
-      return out;
-    });
-  },
-});
-
-function cmpMainStyle(indicator) {
-  // Hauptasset-Linie: weiss, etwas dicker
-  return { style: "solid", smooth: false, dashedValue: [2, 2], size: 2, color: "#ffffff" };
-}
-
-function cmpStyle(indicator, idx) {
-  const assets = (typeof window !== "undefined" && window.__tvCompareAssets) ? window.__tvCompareAssets : [];
-  const a = assets[idx];
-  const base = { style: "solid", smooth: false, dashedValue: [2, 2], size: 2 };
-  if (!a) return { ...base, color: "rgba(0,0,0,0)" };
-  return { ...base, color: a.color };
-}
-
 // ---------- MYEMA (EMA mit 4 Levels statt 3 — built-in EMA überschrieben) ----------
 klinecharts.registerIndicator({
   name: "EMA",
@@ -778,7 +734,7 @@ klinecharts.registerIndicator({
 klinecharts.registerIndicator({
   name: "MYRSI",
   shortName: "RSI",
-  precision: 2,
+  precision: 0,
   calcParams: [14, "None", 14, 2.0],
   figures: [
     { key: "band70", title: "", type: "line", styles: (d, ind) => plotStyle(ind, "band70", "rgba(120,123,134,0.7)", 1) },
@@ -911,9 +867,12 @@ klinecharts.registerIndicator({
   shortName: "VOL",
   precision: 0,
   shouldOhlc: false,
+  // Neu2: Achse startet bei 0 (nicht ins Negative), Balken sitzen ab 0 statt
+  // an der Pane-Unterkante zu kleben.
+  minValue: 0,
   calcParams: [5, 10, 20],
   figures: [
-    { key: "vol",  title: "VOL: ", type: "bar",
+    { key: "vol",  title: "VOL: ", type: "bar", baseValue: 0,
       styles: (d, ind) => {
         const isUp = d.current?.indicatorData?.isUp;
         const key  = isUp ? "up" : "dn";
@@ -1006,6 +965,72 @@ klinecharts.registerIndicator({
     const tr = trSeries(dataList);
     const atr = maByType(tr, period, smoothing || "RMA");
     return dataList.map((_, i) => ({ atr: atr[i] ?? undefined }));
+  },
+});
+
+// ---------- BOLLINGER BAND WIDTH (mit Squeeze) ----------
+// Pine-Referenz (vom Nutzer geliefert), Formel Standard und verlaesslich:
+//   basis = SMA(close, length)
+//   dev   = mult * stdev(close, length)         (Populations-StdDev, /n)
+//   bbw   = (upper - lower) / basis = 2*dev / basis
+// Squeeze = bbw ist das Minimum ueber die letzten compLen Werte
+//   (Pine: squeeze = bbw == lowest(bbw, comp_len)). Das markiert
+//   Volatilitaets-Kompression — oft ein Vorlauf groesserer Bewegungen.
+// Die Squeeze-Balken uebernehmen Pines Hintergrund-Idee in eine Sub-Pane-
+// taugliche Form: eine eingefaerbte Saeule bis zur Bandbreite an genau
+// den Bars, an denen die Kompression greift.
+klinecharts.registerIndicator({
+  name: "BBW",
+  shortName: "BBW",
+  // Bandbreite ist ein Verhaeltnis (BTC-Tageskerzen ~0.02–0.5),
+  // deshalb mehr Nachkommastellen als bei Preis-Indikatoren.
+  precision: 4,
+  calcParams: [20, 2.0, 125],
+  figures: [
+    { key: "sq", title: "", type: "bar", baseValue: 0,
+      styles: (d, ind) => {
+        const v = d.current?.indicatorData?.sq;
+        if (v == null) return { style: "fill", color: "rgba(0,0,0,0)" };
+        const plots = ind?.extendData?.plots || {};
+        return { style: "fill", color: (plots.sq && plots.sq.color) || "rgba(192,38,211,0.4)" };
+      }
+    },
+    { key: "bbw", title: "BBW: ", type: "line", styles: (d, ind) => plotStyle(ind, "bbw", "#138484", 2) },
+  ],
+  calc: (dataList, indicator) => {
+    const [length, mult, compLen] = indicator.calcParams;
+    const plots = indicator?.extendData?.plots || {};
+    const visSq = !plots.sq || plots.sq.visible !== false;
+    const closes = dataList.map(d => d.close);
+    const n = closes.length;
+    const bbw = new Array(n).fill(null);
+
+    // Praefixsummen fuer O(1)-SMA je Fenster.
+    const pre = new Array(n + 1).fill(0);
+    for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + closes[i];
+
+    for (let i = length - 1; i < n; i++) {
+      const basis = (pre[i + 1] - pre[i - length + 1]) / length;
+      if (!isFinite(basis) || basis === 0) continue;
+      let variance = 0;
+      for (let j = i - length + 1; j <= i; j++) variance += (closes[j] - basis) * (closes[j] - basis);
+      const dev = Math.sqrt(variance / length) * mult;   // Populations-StdDev wie Pine ta.stdev
+      bbw[i] = (2 * dev) / basis;
+    }
+
+    return dataList.map((_, i) => {
+      const out = { bbw: bbw[i] ?? undefined };
+      // Squeeze: aktueller Wert ist das Minimum ueber das Vergleichsfenster.
+      if (bbw[i] != null && visSq && compLen >= 1) {
+        let lo = Infinity;
+        const start = Math.max(0, i - compLen + 1);
+        for (let j = start; j <= i; j++) {
+          if (bbw[j] != null && bbw[j] < lo) lo = bbw[j];
+        }
+        if (isFinite(lo) && bbw[i] <= lo) out.sq = bbw[i];
+      }
+      return out;
+    });
   },
 });
 

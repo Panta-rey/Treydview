@@ -48,6 +48,10 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 .dd-search{width:100%;padding:8px 10px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;}
 .dd-search::placeholder{color:var(--text-dim);}
 .dd-list{max-height:280px;overflow-y:auto;}
+/* Asset-Dropdown (Punkt 6): hoch genug, dass die 12 kuratierten Vorschläge
+   ohne Scrollen sichtbar sind; der Rest (nach Volumen sortiert) folgt
+   darunter und wird durch Scrollen erreicht. ~12 Zeilen à ~30px. */
+#assetList{max-height:384px;}
 .dd-item{padding:7px 12px;cursor:pointer;font-size:12px;color:var(--text-dim);transition:background .1s,color .1s;}
 .dd-item:hover{background:var(--bg-hover);color:var(--text);}
 .dd-item.active{color:var(--accent);background:rgba(232,182,76,.08);}
@@ -59,7 +63,7 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 .dd-ind-row input[type=checkbox]{accent-color:var(--accent);cursor:pointer;}
 .dd-ind-row label{flex:1;font-size:12px;color:var(--text-dim);cursor:pointer;}
 .dd-ind-row label:hover{color:var(--text);}
-.ind-gear{background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:2px 4px;border-radius:3px;}
+.ind-gear{background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:17px;line-height:1;padding:2px 5px;border-radius:3px;}
 .ind-gear:hover{color:var(--accent);background:var(--bg-hover);}
 
 /* ---- Live-Badge ---- */
@@ -86,9 +90,40 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 .draw-cat-btn.small svg{width:16px;height:16px;}
 .draw-cat-btn.danger:hover{color:var(--down);border-color:var(--down);}
 .draw-sep{width:22px;height:1px;background:var(--border);margin:5px 0;}
+/* ---- Seitenleiste: Panel-Knoepfe ueber den Zeichenwerkzeugen (m33) ----
+   Die Knoepfe fuer Grid Bot, Long/Short, Muster, SMC und Elliott sind aus
+   der Topbar hierher gewandert. .drawbar-panels wird von renderDrawbar()
+   nur EINMAL befuellt und danach nie neu gebaut — die Knoepfe behalten so
+   ihre Ereignis-Handler. Alle Selektoren sind entweder neu oder auf
+   #drawbar eingegrenzt. */
+.drawbar-panels,.drawbar-tools{display:flex;flex-direction:column;align-items:center;gap:3px;width:100%;}
+/* In der Leiste sollen die Panel-Knoepfe wie die Werkzeug-Knoepfe wirken:
+   ohne Dauerrahmen, gleiche Groesse. */
+#drawbar .action-btn{width:36px;height:36px;border-color:transparent;}
+#drawbar .action-btn:hover{border-color:var(--border);background:var(--bg-hover);color:var(--text);}
+#drawbar .action-btn.active{color:var(--accent);border-color:rgba(232,182,76,.4);}
+#drawbar .dropdown{width:36px;display:flex;justify-content:center;}
+/* Panels werden von placeDropdownPanel() fixiert positioniert — .drawbar
+   traegt overflow-y:auto und wuerde ein absolutes Panel abschneiden.
+
+   BREITE: mit position:fixed ist der umgebende Block das Sichtfenster,
+   nicht mehr die 36px schmale .dropdown. Ohne Deckel zieht sich das Panel
+   deshalb auf die gesamte Restbreite des Bildschirms auf — genau das war
+   bei SMC und Elliott zu sehen, waehrend die Muster-Erkennung mit ihrer
+   reinen Kastenliste zufaellig schmal blieb. Der Deckel gilt fuer alle
+   Panels der Leiste gleichermassen. */
+#drawbar .dd-panel{max-height:78vh;overflow-y:auto;width:max-content;max-width:min(320px,33vw);}
+#drawbar .dd-panel .pat-info{white-space:normal;}
 .draw-popup{display:none;position:fixed;background:var(--bg-raised);border:1px solid var(--border);border-radius:8px;padding:6px;min-width:240px;max-width:280px;z-index:500;box-shadow:0 8px 32px rgba(0,0,0,.6);}
 .draw-popup.open{display:flex;flex-direction:column;gap:2px;}
-.draw-popup-item{display:flex;flex-direction:column;gap:1px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background .1s;}
+/* Symbol links, Text rechts — Garnitur aus der Handy-Fassung uebernommen.
+   Dies ist eine BEABSICHTIGTE Desktop-Aenderung (ausdruecklich beauftragt),
+   deshalb steht sie hier in der Basis und nicht in einem @media-Block. */
+.draw-popup-item{display:flex;flex-direction:row;align-items:flex-start;gap:9px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background .1s;}
+.dpi-icon{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:22px;height:22px;color:var(--text-dim);margin-top:1px;}
+.dpi-icon svg.ds-icon{width:20px;height:20px;}
+.draw-popup-item:hover .dpi-icon,.draw-popup-item.active .dpi-icon{color:var(--accent);}
+.dpi-text{display:flex;flex-direction:column;gap:1px;min-width:0;}
 .draw-popup-item:hover{background:var(--bg-hover);}
 .draw-popup-item.active{background:rgba(232,182,76,.1);}
 .dpi-name{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;}
@@ -104,6 +139,16 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 
 /* ---- Chart (RSI/VOL als Panes darin) ---- */
 .main-chart{flex:1 1 auto;min-height:300px;}
+/* ---- Preisskala linear/logarithmisch (m33) ----
+   Neues Element, trifft kein bestehendes. Absolut in .chart-col
+   (position:relative); top setzt placeLogScaleBtn() im JS. */
+.log-scale-btn{position:absolute;right:6px;z-index:25;width:22px;height:22px;display:flex;align-items:center;justify-content:center;padding:0;background:var(--bg-raised);color:var(--text-dim);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-family:var(--font-mono);font-size:11px;font-weight:600;line-height:1;opacity:.75;transition:color .12s,border-color .12s,opacity .12s;}
+.log-scale-btn:hover{color:var(--text);border-color:rgba(232,182,76,.5);opacity:1;}
+.log-scale-btn.active{color:var(--accent);border-color:rgba(232,182,76,.6);opacity:1;}
+/* Vergleichs-Knopf: die Kurzform hatte nur eine Mobile-Regel, aber keine
+   Desktop-Vorgabe — dadurch waren "+ Vergleich" UND "+" gleichzeitig zu
+   sehen. Neuer Selektor, trifft kein bestehendes Element. */
+.compare-label-short{display:none;}
 
 /* Tooltip-Toggle-Row im Indikator-Dropdown */
 
@@ -123,7 +168,9 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 .settings-input{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--font-mono);font-size:12px;padding:4px 8px;width:110px;outline:none;}
 .settings-input:focus{border-color:var(--accent);}
 input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
-.settings-footer{padding:12px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;}
+.settings-footer{padding:12px 16px;border-top:1px solid var(--border);display:flex;justify-content:space-between;gap:10px;}
+.btn-delete-ind{background:transparent;color:#d05e5e;border:1px solid rgba(208,94,94,.4);border-radius:var(--radius);padding:7px 16px;font-family:var(--font-mono);font-size:12px;font-weight:600;cursor:pointer;}
+.btn-delete-ind:hover{background:rgba(208,94,94,.12);border-color:#d05e5e;}
 .btn-apply{background:var(--accent);color:#0d1117;border:none;border-radius:var(--radius);padding:7px 20px;font-family:var(--font-mono);font-size:12px;font-weight:600;cursor:pointer;}
 .btn-apply:hover{filter:brightness(1.1);}
 
@@ -151,16 +198,36 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .plot-opacity span{font-size:11px;color:var(--text-dim);width:36px;text-align:right;}
 .plot-width{width:48px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:4px 6px;outline:none;}
 
-/* ---- v0.4.1: Grössere Draw-Buttons ---- */
-
-@media(max-width:720px){.draw-btn{width:34px;height:34px;font-size:15px;}}
-
 /* ---- Mobile / Touch: grössere Ziele, passende Panels ---- */
 /* Greift auf schmalen Screens UND generell bei Touch-Geräten (coarse pointer),
    damit auch Tablets mit breitem Screen bedienbare Tap-Ziele bekommen. */
 @media (max-width: 720px), (pointer: coarse) {
   /* Grössere Tap-Ziele in der Topbar */
   .action-btn { width: 42px; height: 42px; }
+  /* Topbar-Reihe 1: kompakt wie das Vergleich-Icon — schafft Platz (Mobil-Wunsch) */
+  .tb-row .action-btn { width: 34px; height: 30px; }
+  .tb-row .action-btn .ab-icon { width: 19px; height: 19px; }
+  /* Doppeltipp-Zoom des Browsers unterbinden (Punkt 3); der Chart selbst hat
+     bereits touch-action:none. manipulation lässt normale Taps unberührt. */
+  body { touch-action: manipulation; }
+  /* Indikator-Pane-Kopf: Collapse etwas grösser, Zahnrad kleiner (Punkt 4a) */
+  .pane-header .ph-collapse { font-size: 21px; }
+  /* M8a: Zahnrad etwas kleiner (Mobil-Wunsch) */
+  .pane-header .ph-gear     { font-size: 13px; }
+  /* M8c: gelbe Trennlinie waehrend des Separator-Zugs (Long-Press-Bestaetigung,
+     gleiche Farbe wie die Umsortier-Linie). z-index unter den Menues (670). */
+  .pane-resize-line {
+    position: fixed; height: 0; z-index: 669; display: none;
+    border-top: 2px solid var(--accent); pointer-events: none;
+    box-shadow: 0 0 6px rgba(232, 182, 76, .6);
+  }
+  /* Der Kopf ist ein DOM-Overlay über dem oberen Pane-Rand und verdeckt sonst
+     KLCs Separator (Pane-Grenze) und den oberen Teil der Werteskala. Auf Touch
+     fing er alle Gesten ab → Umsortieren/Skalieren/Höhe-Ziehen trafen die
+     Haupt-Pane statt der Sub-Pane (Punkt 4b/4c). Jetzt sind nur die Icons
+     interaktiv, der übrige Kopf lässt Touches an den Chart durch. */
+  .pane-header { pointer-events: none; }
+  .pane-header .ph-btn { pointer-events: auto; }
   /* Dropdown-Einträge: mehr Höhe zum Tippen */
   .dd-item { padding: 12px 14px; font-size: 13px; }
   /* Panels dürfen nie höher als der Screen werden -> scrollbar */
@@ -175,10 +242,8 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
   .pat-types label { padding: 9px 6px; font-size: 13px; }
   .pat-types input[type=checkbox] { width: 18px; height: 18px; }
   /* Drawbar: breitere Buttons, damit man nicht danebentippt */
-  .draw-btn { width: 40px; height: 40px; font-size: 16px; }
   .drawbar { padding: 8px 6px; gap: 5px; }
   /* Overlay-Kontextmenü & FRVP-Menü grösser antippbar */
-  .overlay-menu-item { padding: 12px 16px; font-size: 14px; }
   .frvp-row { padding: 8px 0; }
   .frvp-row input[type=checkbox] { width: 18px; height: 18px; }
   /* Einstellungen-Farbfelder etwas grösser */
@@ -205,7 +270,8 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 /* Popover */
 .cycle-popover {
   position: fixed; z-index: 9000;
-  background: var(--bg-panel); border: 1px solid var(--border);
+  background: var(--bg-raised); border: 1px solid var(--border);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
   border-radius: 8px; padding: 10px 14px; min-width: 180px; max-width: 260px;
   box-shadow: 0 6px 24px rgba(0,0,0,.5);
   animation: cpFadeIn .12s ease;
@@ -234,102 +300,6 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 /* Hilfklasse: nur auf Mobile sichtbar */
 .mobile-only { display: none !important; }
 
-@media (max-width: 720px), (pointer: coarse) {
-
-  .mobile-only { display: flex !important; }
-
-  /* ---- 1f: Screenshot-Button ausblenden ---- */
-  #screenshotBtn { display: none !important; }
-
-  /* ---- 1g: Kerzen-Dropdown ausblenden ---- */
-  #typeDropdown { display: none !important; }
-
-  /* ---- 1c: + statt + Vergleich ---- */
-  .compare-label-full { display: none; }
-  .compare-label-short { display: inline; }
-
-  /* ---- 1e: Indikatoren als Lupe (Text ausblenden) ---- */
-  .ind-label-text { display: none; }
-  .ind-mobile-icon { display: block !important; }
-  #indTrigger { padding: 5px 8px; }
-
-  /* ---- 1b: Preis-Header ausblenden, Mobile-Info-Bar zeigen ---- */
-  .price-header { display: none; }
-
-  /* ---- 1d: SMC-Dropdown auf Desktop, im Ind-Panel auf Mobile ---- */
-  #smcDropdown { display: none !important; }
-  .smc-in-ind { display: block !important; }
-
-  /* ---- Zeichenstift-Button zeigen, Desktop-Drawbar ausblenden ---- */
-  .drawbar { display: none !important; }
-  #drawSheetBtn { display: flex !important; }
-
-  /* ---- Mobile Info-Bar ---- */
-  .mobile-info-bar {
-    display: flex !important; align-items: center; gap: 6px;
-    padding: 4px 8px; background: var(--bg-raised);
-    border-bottom: 1px solid var(--border); flex-shrink: 0;
-  }
-  .mib-asset {
-    background: none; border: 1px solid var(--border); border-radius: 6px;
-    color: var(--text); font-family: var(--font-mono); font-size: 11px;
-    padding: 2px 7px; cursor: pointer; white-space: nowrap;
-    overflow: hidden; text-overflow: ellipsis; max-width: 44vw;
-  }
-  .mib-tf {
-    background: none; border: 1px solid var(--accent); border-radius: 6px;
-    color: var(--accent); font-family: var(--font-mono); font-size: 11px;
-    padding: 2px 7px; cursor: pointer; white-space: nowrap;
-  }
-  .mib-price {
-    font-family: var(--font-mono); font-size: 13px; font-weight: 700;
-    color: var(--text); margin-left: auto;
-  }
-  .mib-change {
-    font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
-    white-space: nowrap;
-  }
-
-  /* ---- Topbar komprimieren ---- */
-  header { padding: 0 6px; gap: 4px; min-height: 46px; }
-  .dd-trigger { padding: 4px 7px; font-size: 11px; }
-  #assetTrigger { max-width: 38vw; overflow: hidden; }
-  #assetLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30vw; }
-
-  /* Zyklus-Ampel auf Mobile ausblenden (zu wenig Platz in der Topbar) */
-  .cycle-bar { display: none !important; }
-
-  /* ---- 2: Grid Bot Panel — kompakt, kein Overflow ---- */
-  #gbBar {
-    max-height: 75vh !important;
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch;
-    width: 100vw !important;
-    left: 0 !important; right: 0 !important;
-    border-radius: 14px 14px 0 0;
-    max-width: none !important;
-  }
-  .gb-topbar { flex-wrap: wrap; gap: 4px; }
-  .gb-stat { font-size: 10px; }
-
-  /* ---- 3: Alle Dropdowns auf Screenbreite begrenzen ---- */
-  .dd-panel, .dd-panel--wide, .dd-panel--right {
-    max-width: calc(100vw - 16px) !important;
-    max-height: 60vh !important;
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  /* ---- 4: Watchlist als Bottom-Overlay, volle Breite ---- */
-  .watchlist {
-    width: 100% !important;
-    border-radius: 14px 14px 0 0;
-  }
-
-  /* ---- Chart-Legende komprimieren ---- */
-  .chart-legend { font-size: 10px; }
-  .lg-sym { font-size: 11px; }
-}
 
 /* ---- Draw Bottom Sheet ---- */
 .draw-sheet {
@@ -412,7 +382,6 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
     flex-shrink: 0;
   }
   /* Einträge im Sheet grösser antippbar */
-  .as-sheet .overlay-menu-item { padding: 14px 18px; font-size: 14px; }
   .as-sheet .frvp-row { padding: 10px 0; }
 }
 @keyframes tvSheetUp {
@@ -484,7 +453,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
 /* ---- Einklappbare Legende ---- */
 .chart-legend{position:absolute;top:42px;left:10px;z-index:20;display:flex;align-items:flex-start;gap:6px;max-width:70%;pointer-events:none;}
-.legend-toggle{pointer-events:auto;background:transparent;border:none;color:var(--text-dim);width:18px;height:18px;border-radius:3px;cursor:pointer;font-size:11px;line-height:1;flex-shrink:0;}
+.legend-toggle{pointer-events:auto;background:transparent;border:none;color:var(--text-dim);width:20px;height:20px;border-radius:3px;cursor:pointer;font-size:14px;line-height:1;flex-shrink:0;}
 .legend-toggle:hover{background:var(--bg-hover);}
 .legend-toggle:hover{color:var(--accent);}
 .legend-body{display:flex;flex-direction:column;gap:2px;padding:2px 4px;}
@@ -580,9 +549,12 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .layout-save input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:11px;padding:5px 7px;outline:none;}
 .layout-save input:focus{border-color:var(--accent);}
 .layout-save button{background:var(--accent);border:none;border-radius:4px;color:#0d1117;font-family:var(--font-mono);font-size:11px;font-weight:600;padding:5px 9px;cursor:pointer;white-space:nowrap;}
+.layout-io{display:flex;gap:5px;padding:8px;border-top:1px solid var(--border);}
+.layout-io button{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:11px;font-weight:600;padding:5px 9px;cursor:pointer;white-space:nowrap;}
+.layout-io button:hover{border-color:var(--accent);color:var(--accent);}
 .layout-item{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:7px 10px;cursor:pointer;border-radius:4px;}
 .layout-item:hover{background:var(--bg-hover);}
-.li-name{font-size:12px;color:var(--text);}
+.li-name{font-size:12px;color:var(--text);flex:1 1 auto;}
 .li-del{background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:10px;padding:2px 4px;opacity:0;}
 .layout-item:hover .li-del{opacity:1;}
 .li-del:hover{color:var(--down);}
@@ -612,6 +584,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .pat-header{font-size:12px;font-weight:600;color:var(--text);padding:8px 10px;border-bottom:1px solid var(--border);}
 .pat-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;}
 .pat-row label{font-size:12px;color:var(--text-dim);}
+.ewt-deg-n{color:var(--text-dim);opacity:0.75;font-size:11px;font-family:var(--font-mono);}
 .pat-row select{background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:11px;padding:4px 6px;outline:none;cursor:pointer;}
 .pat-warn{margin:0 10px 8px;padding:6px 8px;background:rgba(208,94,94,.1);border:1px solid rgba(208,94,94,.25);border-radius:4px;font-size:10px;color:var(--down);line-height:1.4;}
 .pat-warn.hidden{display:none;}
@@ -636,8 +609,8 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .fib-row input[type=checkbox]{accent-color:var(--accent);cursor:pointer;}
 .fib-row input[type=range]{width:88px;accent-color:var(--accent);}
 .fib-row input[type=number]{width:48px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;outline:none;}
-.fib-levels{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;}
-.fib-lv{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-dim);cursor:pointer;}
+.fib-levels{column-count:2;column-gap:10px;}
+.fib-lv{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-dim);cursor:pointer;break-inside:avoid;margin-bottom:3px;}
 .fib-lv input{accent-color:var(--accent);cursor:pointer;}
 .fib-lv-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0;}
 .fib-actions{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--border);}
@@ -731,6 +704,8 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 /* Compare-Chips: Auge zum Ein-/Ausblenden */
 .cc-eye{background:transparent;border:none;color:var(--text-dim);cursor:pointer;padding:1px 3px;display:flex;align-items:center;border-radius:2px;}
 .cc-eye:hover{color:var(--accent);background:var(--bg-hover);}
+.cc-gear{background:transparent;border:none;color:var(--text-dim);cursor:pointer;padding:1px 3px;font-size:16px;line-height:1;border-radius:2px;}
+.cc-gear:hover{color:var(--accent);background:var(--bg-hover);}
 .compare-chip.hidden-asset{opacity:.45;}
 .compare-chip.hidden-asset .cc-label{text-decoration:line-through;}
 
@@ -835,8 +810,19 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
 /* Erweitertes Overlay-Kontextmenü (Punkt 3): Farbe/Deckkraft/Dicke/gestrichelt */
 .overlay-menu{min-width:180px;padding:8px;}
+/* Verschiebbare Menüs: Titelleiste als Ziehgriff (Punkt 1, nur Desktop) */
+.om-titlebar{ cursor:move; font-size:11px; font-weight:600; color:var(--text-dim);
+  padding:2px 22px 6px 4px; margin-bottom:4px; user-select:none;
+  border-bottom:1px solid var(--border); }
+.om-titlebar:active{ cursor:grabbing; }
+/* D1: bestehender Menü-Kopf (Long/Short, Chart-Darstellung) als Ziehgriff.
+   Nur Desktop — auf Touch bleibt der Kopf statisch (Mobile-@media unten). */
+.om-drag-head{ cursor:move; user-select:none; }
+.om-drag-head:active{ cursor:grabbing; }
 .om-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:3px 4px;font-size:12px;color:var(--text-dim);}
 .om-row label{white-space:nowrap;}
+.om-numfield{flex:1;min-width:0;background:var(--bg-input,#0c0f13);border:1px solid var(--border,#242a33);border-radius:5px;color:var(--text);font-size:12px;padding:4px 6px;font-family:var(--font-mono);}
+.om-numfield:focus{outline:none;border-color:var(--accent);}
 .om-row input[type=color]{width:36px;height:22px;padding:0;border:1px solid var(--border);border-radius:3px;background:none;cursor:pointer;}
 .om-row input[type=number]{width:52px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:2px 5px;}
 .om-opacity{display:flex;align-items:center;gap:7px;flex:1;justify-content:flex-end;}
@@ -857,3 +843,888 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .pat-b { overflow: hidden; }
 .pat-fig { float: right; width: 140px; height: 76px; margin: 0 0 4px 12px;
   background: rgba(143,163,184,0.05); border: 1px solid var(--border); border-radius: 4px; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MOBILE-SCHICHT  ·  Build m7
+   ───────────────────────────────────────────────────────────────────────
+   REGEL: Ab hier steht Code innerhalb von @media-Blöcken — mit einer
+   Ausnahme (Gebot 2): Basisregeln der Form "#neuesElement{display:none}"
+   für NEUE Elemente, deren Selektor nachweislich kein bestehendes Element
+   trifft. Die Handvoll display:none-Zeilen direkt unter diesem Kommentar
+   sind genau das, kein Verstoss. Alles andere (Layout, Farben, Grössen)
+   gehört in ein @media. Der Desktop wird dadurch nicht berührt. Neue
+   Elemente tragen die Klasse .mobile-only und sind ausserhalb dieser
+   Blöcke unsichtbar.
+
+   Aufbau:
+     Topbar Zeile 1   F&G Fund OI  ·  Layout WL Nacht Vollbild FAQ
+     Topbar Zeile 2   Asset Intervall Vergleich  ·  Preis  Änderung
+     Bottom Bar       Indikatoren Zeichnen GridBot Muster FVG/OB L/S
+   Die Knöpfe werden von app.js zur Laufzeit dorthin verschoben — auf dem
+   Desktop läuft dieser Code nie, das DOM bleibt dort unverändert.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Textauswahl unterbinden. Beim Zeichnen und Ziehen markierte der Finger
+   sonst staendig Kurse und Beschriftungen in Leisten und Fenstern.
+   Eingabefelder bleiben ausgenommen, sonst liesse sich dort nichts mehr
+   markieren oder korrigieren. */
+html, body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  /* HF2/QF2: verhindert das automatische Aufblähen langer Textblöcke (FAQ-
+     Absätze) auf Mobil (Brave/iOS „Font Boosting") — Text bleibt bei der im CSS
+     definierten Grösse. Auf dem Desktop wirkungslos. */
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+input, textarea, select, [contenteditable="true"] {
+  -webkit-user-select: text; user-select: text;
+}
+
+:root { --tv-build: "m66"; }
+
+/* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
+   unten blendet sie bei Bedarf ein. */
+.om-close          { display: none; }
+.frvp-guide        { display: none; }
+.crosshair-canvas  { display: none; }
+.draw-action-bar   { display: none; }
+#drawConfirmBar    { display: none; }
+/* Richtungswahl fuer Long/Short. Ab m26 auch auf dem Desktop in Gebrauch
+   (dort als Dropdown unter dem Knopf) — vorher stand hier hart display:none
+   und der Knopf tat auf dem Desktop scheinbar nichts. */
+.ls-choice {
+  position: fixed; z-index: 680;
+  display: flex; gap: 6px; padding: 6px;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: 0 6px 20px rgba(0,0,0,.45);
+}
+.ls-choice.hidden { display: none; }
+.ls-choice button {
+  min-width: 66px; padding: 7px 10px; font-size: 12px; font-weight: 600;
+  border-radius: 6px; cursor: pointer; border: 1px solid var(--border);
+  background: transparent; color: var(--text);
+}
+.ls-choice button:hover { background: var(--bg-hover); border-color: var(--accent); }
+
+@media (max-width: 720px), (pointer: coarse) {
+
+  /* Verschiebbare Menü-Titelleiste ist ein Desktop-Feature (Punkt 1) */
+  .om-titlebar { display: none; }
+
+  /* Sichere Ränder als Variablen — so bleiben Leisten, Chartfläche und
+     Blätter zwangsläufig deckungsgleich.
+     Der Streifen unten war zuvor der volle Apple-Wert (~34px). Der
+     Home-Anzeiger ist aber nur ein dünner Strich; 16px weniger reichen
+     völlig und verschenken deutlich weniger Fläche. */
+  :root {
+    --tv-safe-b: max(5px, calc(env(safe-area-inset-bottom) - 16px));
+    --tv-botbar: calc(50px + var(--tv-safe-b));
+    --tv-topbar: calc(97px + env(safe-area-inset-top));
+  }
+
+  /* Damit im Randbereich niemals Schwarz durchscheint */
+  html { background: var(--bg-raised); }
+
+  /* FRVP-Einstellungsmenü: nicht bildschirmfüllend, sondern zentriert
+     wie das FAQ-Panel — gleichmässiger Innenabstand rundum. */
+  .frvp-menu {
+    position: fixed !important;
+    top: 50% !important; left: 50% !important;
+    transform: translate(-50%, -50%);
+    width: min(320px, calc(100vw - 40px)) !important;
+    max-height: 80vh; overflow-y: auto;
+    border-radius: 12px;
+    z-index: 670;   /* ueber dem Schwebebalken (660) */
+  }
+  /* as-sheet-Klasse ignorieren wenn es das FRVP-Menü ist */
+  .frvp-menu.as-sheet {
+    top: 50% !important; left: 50% !important;
+    right: auto !important; bottom: auto !important;
+    transform: translate(-50%, -50%) !important;
+    width: min(320px, calc(100vw - 40px)) !important;
+    height: auto !important; max-height: 80vh !important;
+    border-radius: 12px !important; border: 1px solid var(--border) !important;
+  }
+  /* Gleicher Effekt für das Stil-Menü: kompaktes Popup, nicht fullscreen */
+  #overlayMenu.as-sheet {
+    top: 50% !important; left: 50% !important;
+    right: auto !important; bottom: auto !important;
+    transform: translate(-50%, -50%) !important;
+    width: min(280px, calc(100vw - 40px)) !important;
+    height: auto !important; max-height: 80vh !important;
+    border-radius: 12px !important; border: 1px solid var(--border) !important;
+  }
+  /* M3: Vergleichslinien-Menü. Es wird aus dem OFFENEN Vergleich-Dropdown
+     heraus geoeffnet und schaltet body.menu-open (Abdunkler z-index 665).
+     Ohne eigene Regel sass es als generisches .overlay-menu bei z-index 601
+     HINTER dem Abdunkler → unsichtbar ("Menue funktioniert nicht"). Jetzt
+     zentriert wie #overlayMenu und mit z-index 671 ueber Abdunkler (665) und
+     Aktionsbalken (668). */
+  #compareStyleMenu.as-sheet {
+    top: 50% !important; left: 50% !important;
+    right: auto !important; bottom: auto !important;
+    transform: translate(-50%, -50%) !important;
+    width: min(280px, calc(100vw - 40px)) !important;
+    height: auto !important; max-height: 80vh !important;
+    border-radius: 12px !important; border: 1px solid var(--border) !important;
+    z-index: 671 !important;
+  }
+  /* Fib-Menü ebenfalls zentriert statt bildschirmfüllend — bisher hatte
+     es nur die generische max-width-Regel und blieb dadurch als as-sheet
+     an den unteren Rand geheftet. */
+  .fib-menu {
+    position: fixed !important;
+    top: 50% !important; left: 50% !important;
+    transform: translate(-50%, -50%);
+    width: min(300px, calc(100vw - 40px)) !important;
+    max-height: 80vh; overflow-y: auto;
+    border-radius: 12px;
+    z-index: 670;   /* ueber dem Schwebebalken (660) */
+  }
+  .fib-menu.as-sheet {
+    top: 50% !important; left: 50% !important;
+    right: auto !important; bottom: auto !important;
+    transform: translate(-50%, -50%) !important;
+    width: min(300px, calc(100vw - 40px)) !important;
+    height: auto !important; max-height: 80vh !important;
+    border-radius: 12px !important; border: 1px solid var(--border) !important;
+  }
+  .fib-row { padding: 6px 0; }
+  .fib-del, .fib-ok { padding: 10px 14px; font-size: 14px; }
+  /* Grössere Berührziele in beiden Menüs */
+  .frvp-row { padding: 6px 0; }
+  .frvp-row input[type=number] { font-size: 15px; padding: 6px 8px; width: 80px; }
+  .frvp-row input[type=range]  { width: 130px; }
+  .om-row { padding: 10px 14px; font-size: 14px; }
+  .om-row label { font-size: 14px; }
+  .overlay-menu-del { padding: 12px 14px; font-size: 14px; }
+
+  /* Abdunkler hinter den zentrierten Menüs */
+  body::after {
+    content: "";
+    /* 665: ueber dem Schwebebalken (660), damit der bei offenem Menue
+       verdeckt und unantastbar ist statt davorzuliegen. */
+    position: fixed; inset: 0; z-index: 665;
+    background: rgba(0,0,0,.5);
+    display: none;
+    pointer-events: all;
+  }
+  body.menu-open::after { display: block; }
+
+  .mobile-only { display: flex !important; }
+
+  .mobile-only { display: flex !important; }
+
+  /* ── Topbar ──────────────────────────────────────────────────────────
+     z-index MUSS über dem Abdunkler (615) liegen: .topbar hat in der Basis
+     z-index:50 + position:relative und bildet damit einen Stapelkontext.
+     Panels darin werden sonst auf Ebene 50 gedeckelt und vom Abdunkler
+     verdeckt — der Bildschirm wird dunkel, ohne dass etwas erscheint. */
+  .topbar {
+    flex-direction: column; align-items: stretch;
+    gap: 0; z-index: 630;
+    /* Ohne diesen Abstand liegen die Zyklus-Pills hinter dem
+       Dynamic Island und sind weder les- noch antippbar. */
+    padding: env(safe-area-inset-top) 0 0 0;
+  }
+  .tb-row {
+    display: flex !important; align-items: center; gap: 5px;
+    /* Rechts denselben Abstand wie links — inklusive Notch-Bereich. Der
+       Innenabstand rechts geht in einem waagrecht scrollenden Flex-Container
+       am Ende verloren; ::after haelt ihn als echtes Element offen. */
+    padding: 5px calc(8px + env(safe-area-inset-right)) 5px calc(8px + env(safe-area-inset-left));
+    min-height: 38px;
+    overflow-x: auto; overflow-y: visible;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .tb-row::-webkit-scrollbar { display: none; }
+  .tb-row > * { flex-shrink: 0; }
+  .tb-row::after {
+    /* HF1: klar sichtbarer Abstand am Zeilenende (Sync-Button). Der
+       flex-basis-Wert ist ein echtes Element und wird — anders als margin/
+       padding am Ende eines scrollenden Flex-Containers — verlässlich gehalten. */
+    content: ""; flex: 0 0 calc(14px + env(safe-area-inset-right)); align-self: stretch;
+  }
+  /* HF1: zusätzlicher echter DOM-Abstandhalter (applyMobileLayout) — im
+     Zweifel zuverlässiger als das ::after-Pseudo im Scroll-Container. */
+  .tb-end-spacer { flex: 0 0 calc(8px + env(safe-area-inset-right)); align-self: stretch; }
+  #tbRow2 { border-top: 1px solid rgba(143,163,184,.12); }
+  .tb-gap { flex: 1 1 auto; min-width: 8px; }
+
+  /* Auf dem Handy überflüssig oder anderswo vertreten */
+  .brand,
+  #screenshotBtn,
+  #autoZoomBtn,
+  #liveBadge,
+  .topbar-actions,
+  .price-header,
+  .mobile-info-bar,
+  .drawbar            { display: none !important; }
+
+  /* Chart-Typ-Dropdown auf Mobil als Zahnrad-Icon neben „+" (Vergleich).
+     Text/Pfeil aus, Icon an; der Panel-Inhalt bleibt wie auf Desktop. */
+  #typeDropdown { display: inline-flex !important; }
+  /* M1: gleiche Aussenmasse wie der Vergleich-Button (.dd-compare) — nicht mehr
+     das grosse 38x38-Quadrat. Padding wie .tb-row .dd-trigger (5px 10px), das
+     Kerzen-Icon auf 17px, damit die Box-Hoehe der schmalen "+"-Pille entspricht. */
+  #typeTrigger  { padding: 5px 8px; width: auto; height: auto; justify-content: center; }
+  #typeTrigger .type-label-text { display: none; }
+  .type-gear-icon { width: 17px; height: 17px; }
+  /* HF1: kleiner Abstand zwischen Sync-Button und rechtem Bildschirmrand
+     (der ::after-Spacer allein wirkt zu bündig). */
+  #syncBtn { margin-right: 8px; }
+
+  /* Zyklus-Pills: gewünschte Reihenfolge F&G · Fund · OI.
+     Im HTML steht F&G, OI, Fund — daher OI nach hinten sortieren.
+     Mayer und ER bleiben dem Bot-Panel vorbehalten (kein Platz). */
+  .cycle-bar { display: flex !important; gap: 7px; }
+  #cycleFng  { order: 1; }
+  #cycleFund { order: 2; }
+  #cycleOi   { order: 3; }
+  #cycleMayer, #cycleEr { display: none !important; }
+  /* M1b: die drei mobil sichtbaren Pills (F&G, Fund, OI) leicht grösser. */
+  .cycle-pill { font-size: 12px; padding: 5px 9px; }
+
+  .action-btn { width: 38px; height: 38px; }
+  .ab-icon    { width: 19px; height: 19px; }
+
+  /* Zeile 2: Asset · Intervall · Vergleich · Preis · Änderung */
+  .tb-row .dd-trigger { padding: 5px 10px; font-size: 13px; font-weight: 500; }
+  #assetLabel {
+    display: inline-block; max-width: 30vw;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    vertical-align: bottom;
+  }
+  .compare-label-full  { display: none; }
+  .compare-label-short { display: inline; }
+  .tb2-price {
+    font-family: var(--font-mono); font-size: 15px; font-weight: 700;
+    color: var(--text); white-space: nowrap;
+  }
+  .tb2-change {
+    font-family: var(--font-mono); font-size: 13px;
+    color: var(--text-dim); white-space: nowrap;
+  }
+  .tb2-change.up   { color: var(--up); }
+  .tb2-change.down { color: var(--down); }
+
+  /* ── Bottom Bar ──────────────────────────────────────────────────── */
+  .bottom-bar {
+    display: flex !important;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 620;
+    background: var(--bg-raised); border-top: 1px solid var(--border);
+    padding: 5px 6px var(--tv-safe-b);
+    justify-content: space-around; align-items: center; gap: 0;
+  }
+  /* Nicht mehr strecken: die Knoepfe sollen wie in der Topbar als einzeln
+     umrandete Quadrate stehen, nicht als randlose Kacheln ueber die volle
+     Zellenbreite. space-around auf .bottom-bar verteilt sie gleichmaessig. */
+  .bottom-bar > * { flex: 0 0 auto; min-width: 0; }
+  .bottom-bar .dropdown { display: flex; }
+
+  /* Gleiche Optik wie die Topbar-Knoepfe: 1px Rahmen in --border,
+     --radius, transparenter Grund. Ohne Beschriftung (font-size:0),
+     dafuer Symbole in Topbar-Groesse. */
+  .bottom-bar .action-btn,
+  .bottom-bar .dd-trigger {
+    width: 38px; height: 38px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); background: transparent;
+    border-radius: var(--radius);
+    padding: 0; font-size: 0;
+    transition: color .12s, border-color .12s, background .12s;
+  }
+
+  .bottom-bar .ab-icon,
+  .bottom-bar .ab-icon,
+  .bottom-bar .ind-i-icon { width: 19px; height: 19px; }
+  .bottom-bar .action-btn.active,
+  .bottom-bar .dd-trigger.active {
+    color: var(--accent); background: var(--bg-hover);
+    border-color: rgba(232,182,76,.5);
+  }
+
+  /* Ohne Beschriftungen bleibt Platz für Symbole in Topbar-Grösse. */
+
+  /* «i» statt Lupe auf dem Indikator-Knopf */
+  .ind-i-icon      { display: block !important; }
+  .ind-mobile-icon { display: none !important; }
+  .ind-label-text  { display: none !important; }
+  .bottom-bar .dd-arrow { display: none; }
+
+  /* ── Chartfläche zwischen den beiden Leisten ─────────────────────── */
+  .workspace {
+    height: calc(100% - var(--tv-topbar) - var(--tv-botbar));
+  }
+
+  /* Statusleiste: darf über mehrere Zeilen wachsen. Der Chart darüber
+     schrumpft entsprechend (flex), damit die Zeitachse nicht verdeckt
+     wird. Ohne das kleinere min-height könnte .main-chart nicht
+     nachgeben und die Statusleiste würde sich darüberlegen. */
+  .statusline { white-space: normal; line-height: 1.35; }
+  .main-chart { min-height: 160px; }
+
+  /* ── Nicht verankerte Panels öffnen als Blatt über der Bottom Bar ──── */
+  .dd-panel:not(.dd-anchored),
+  .dd-panel--wide:not(.dd-anchored),
+  .dd-panel--right:not(.dd-anchored) {
+    position: fixed !important;
+    top: auto !important; bottom: var(--tv-botbar) !important;
+    left: 0 !important; right: 0 !important;
+    width: 100% !important; min-width: 0 !important; max-width: none !important;
+    max-height: 62vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    border-radius: 16px 16px 0 0;
+    border-left: none; border-right: none; border-bottom: none;
+    box-shadow: 0 -8px 32px rgba(0,0,0,.55);
+    z-index: 640;
+  }
+  .dd-panel:not(.dd-anchored).open::before {
+    content: ""; display: block; width: 38px; height: 4px;
+    border-radius: 2px; background: var(--border); margin: 9px auto 8px;
+  }
+
+  /* ── M5/M7: anker-basierte Dropdowns statt vollbreiter Bottom-Sheets ──
+     Position setzt JS (placeMobileDropdown) per inline !important; hier nur
+     der Look: rundum abgerundet, keine Slide-up-Animation, der dekorative
+     ::before-Griff entfaellt (der interaktive Griff #ddGrip ersetzt ihn). */
+  .dd-panel.dd-anchored {
+    /* Verankerte Panels werden komplett von placeMobileDropdown (Position/
+       Breite, inline !important) und dieser Regel bestimmt — sie sind aus den
+       Sheet-Regeln (Portrait UND Landscape) per :not(.dd-anchored) ausgenommen.
+       Deshalb hier alles Nötige selbst mitbringen: Scroll, Höhe, Ecken. */
+    border-radius: 12px !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: 0 6px 28px rgba(0,0,0,.55) !important;
+    animation: none !important;
+    height: auto !important;
+    max-height: 62vh !important;               /* schlägt Landscape max-height:100% */
+    overflow-y: auto !important; overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    /* QF3: eigener z-index — beim Ausschluss aus der Sheet-Regel ging der
+       z-index:640 verloren, die Panels fielen auf Basis 200 und wurden im
+       Querformat verdeckt (nur der Griff bei 645 blieb sichtbar). 644 liegt
+       über den Leisten und knapp unter dem Griff. */
+    z-index: 644 !important;
+  }
+  .dd-panel.dd-anchored.open::before { display: none !important; }
+
+  /* ── M1a: Layout & Watchlist als zentriertes Vollbild-Modal (wie FAQ) ──
+     Der Dimmer #llBackdrop (JS, klickbar = schliessen) liegt darunter; das
+     Panel wird zentriert. Höhere Spezifität + !important schlagen die
+     Sheet-Regeln in beiden Orientierungen. */
+  .ll-backdrop {
+    position: fixed; inset: 0; z-index: 895;
+    background: rgba(0, 0, 0, .5); display: none;   /* QF1: Standard-Abdunkelung wie das Menü */
+  }
+  #layoutPanel.open,
+  .watchlist:not(.hidden) {
+    position: fixed !important;
+    top: 50% !important; left: 50% !important;
+    right: auto !important; bottom: auto !important;
+    transform: translate(-50%, -50%) !important;
+    width: min(360px, 92vw) !important; min-width: 0 !important; max-width: none !important;
+    height: auto !important; max-height: 82vh !important;
+    overflow-y: auto !important; overflow-x: hidden; -webkit-overflow-scrolling: touch;
+    border-radius: 14px !important;
+    /* HF2/QF2: gleiche Helligkeit wie das FAQ-Fenster (--bg-raised) — vorher
+       zu wenig Kontrast zum abgedunkelten Hintergrund. */
+    background: var(--bg-raised) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: 0 12px 44px rgba(0, 0, 0, .6) !important;
+    z-index: 900 !important;
+  }
+  /* QF1: Watchlist exakt gleiche Farbe wie das Layout-Fenster (--bg-raised).
+     (Vorher --bg-hover — das wirkte im Kontrast zum Abdunkler unpassend.) */
+  .watchlist:not(.hidden) { background: var(--bg-raised) !important; }
+  #layoutPanel.open::before { display: none !important; }
+
+  /* Griff: dickere Linie an der zum Knopf zeigenden Kante. Grosses,
+     unsichtbares Tap-Ziel per ::after, damit er leicht zu treffen ist. */
+  .dd-grip {
+    position: fixed; z-index: 645; display: none;
+    background: var(--text-dim); border-radius: 3px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.45);
+    touch-action: none;
+  }
+  .dd-grip::after { content: ""; position: absolute; inset: -14px; }
+  .dd-grip-h { width: 40px; height: 6px; }
+  .dd-grip-v { width: 6px; height: 40px; }
+  .dd-search { position: sticky; top: 0; z-index: 2; background: var(--bg-raised);
+               font-size: 15px; padding: 11px 13px; }
+  .dd-item   { padding: 13px 15px; font-size: 13.5px; }
+
+  /* Führungslinien für das Volumenprofil: senkrecht, gestrichelt.
+     Sie folgen dem Finger und markieren nach dem Anheben die Grenze. */
+  .frvp-guide {
+    position: absolute; top: 0; bottom: 0; width: 0;
+    border-left: 2px dashed var(--accent);
+    pointer-events: none; z-index: 30; display: none;
+  }
+  .frvp-guide.active { display: block; }
+  .frvp-guide.set    { border-left-style: solid; opacity: .75; }
+
+  /* Fadenkreuz-Canvas: liegt fest über dem Chart, wird nur bei aktivem
+     Zeichenwerkzeug eingeblendet. display muss hier explizit gesetzt
+     werden — sonst gewinnt die äussere Desktop-Sperrregel weiter oben. */
+  .crosshair-canvas {
+    display: block;
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 25;
+  }
+  .crosshair-canvas.hidden { display: none; }
+
+  /* Schwebender Aktionsbalken über einer ausgewählten Zeichnung */
+  .draw-action-bar {
+    display: flex;
+    /* 668: UEBER dem Abdunkler (665), damit der Muelleimer auch bei offenem
+       Stilmenue erreichbar bleibt — genau darauf stuetzt sich das Entfernen
+       der doppelten Loeschknoepfe aus den Menues. Weiterhin UNTER den Menues
+       (670), die duerfen den Balken ueberdecken. Kehrt die Entscheidung aus
+       m21 um, wo der Balken bewusst unter dem Abdunkler lag. */
+    position: fixed; z-index: 668; gap: 2px;
+    background: var(--bg-raised); border: 1px solid var(--border);
+    border-radius: 10px; padding: 4px; box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  }
+  .draw-action-bar.hidden { display: none; }
+  .draw-action-bar button {
+    width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
+    background: transparent; border: none; border-radius: 7px;
+    color: var(--text-dim); cursor: pointer;
+  }
+  .draw-action-bar button:active { background: var(--bg-hover); color: var(--accent); }
+  #dabDelete:active { color: var(--down); }
+  /* ID-Spezifität muss die Basisregel #drawConfirmBar{display:none} schlagen */
+  #drawConfirmBar        { display: flex; }
+  #drawConfirmBar.hidden { display: none; }
+  #dcbAccept { color: var(--up); }
+  #dcbCancel:active { color: var(--down); }
+
+  /* Auswahl Long / Short vor dem Platzieren einer Position */
+  .ls-choice {
+    display: flex; gap: 6px;
+    position: fixed; z-index: 660;
+    background: var(--bg-raised); border: 1px solid var(--border);
+    border-radius: 10px; padding: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  }
+  .ls-choice.hidden { display: none; }
+  .ls-choice button {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+    padding: 9px 16px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--bg);
+  }
+  .ls-long  { color: var(--up); }
+  .ls-short { color: var(--down); }
+  .ls-long:active  { background: var(--up);   color: #fff; }
+  .ls-short:active { background: var(--down); color: #fff; }
+
+  /* Schliessen-Kreuz im Stil-Menü */
+  /* Alle Schliessknoepfe in Menues und Aufklappfenstern einheitlich.
+     Vorher reichten sie von 11px (.fib-close — kaum zu treffen) ueber
+     13px (.faq-close) bis 17px (.om-close). Jetzt durchgehend 20px mit
+     einem Tippziel von mindestens 34px. */
+  .om-close, .fib-close, .settings-close, .faq-close, .wl-close-btn,
+  .frvp-menu .fib-close, .chartstyle-menu .fib-close {
+    font-size: 20px; line-height: 1; padding: 5px 9px;
+    min-width: 34px; min-height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    background: none; border: none; color: var(--text-dim);
+    cursor: pointer; border-radius: 6px;
+  }
+  .om-close:active, .fib-close:active, .settings-close:active,
+  .faq-close:active, .wl-close-btn:active { background: var(--bg-hover); }
+  .om-close {
+    display: flex; position: absolute; top: 6px; right: 8px;
+  }
+  /* NICHT position:relative — .overlay-menu ist fixed, und ein ID-Selektor
+     schlaegt den Klassen-Selektor. Mit relative landet das Menue im
+     Textfluss: unsichtbar, waehrend body.menu-open::after den Bildschirm
+     abdunkelt und alle Eingaben abfaengt. fixed ist ebenfalls ein
+     positionierter Vorfahre, .om-close bleibt also korrekt platziert. */
+  #overlayMenu { position: fixed; }
+
+  /* Gruppen-Zwischentitel im Zeichnungs-Blatt. Spannt sich ueber alle vier
+     Spalten des Rasters, sonst nimmt der Titel eine Werkzeug-Zelle ein.
+     Erster Titel ohne Abstand oben, damit das Blatt nicht mit einer Luecke
+     beginnt. (Die frueheren .ds-glyph-Regeln sind entfallen: der neue
+     Katalog liefert fuer jedes Werkzeug ein SVG, der Notnagel griff
+     nirgends mehr.) */
+  .draw-sheet-group {
+    grid-column: 1 / -1;
+    font-family: var(--font-mono); font-size: 10px;
+    text-transform: uppercase; letter-spacing: .07em;
+    color: var(--text-dim); opacity: .75;
+    padding: 10px 2px 2px; margin: 0;
+  }
+  .draw-sheet-group:first-child { padding-top: 0; }
+
+  /* Symbole der neuen Garnitur duerfen nicht von .ab-icon-Regeln erfasst
+     werden — eigene Klasse, eigene Groesse. */
+  .draw-sheet-item svg.ds-icon { width: 18px; height: 18px; }
+  .draw-sheet-item { color: var(--text); }
+  .draw-sheet-item span { color: var(--text-dim); }
+  .draw-sheet-item:hover span, .draw-sheet-item.active span { color: var(--accent); }
+
+  /* Kompakter und mit gefuelltem Grund wie die uebrigen Menues. Fuenf
+     Spalten statt vier, damit die Liste bei 18 Werkzeugen nicht so weit
+     nach unten laeuft.
+
+     ACHTUNG: --bg-panel ist NICHT definiert. Der Token steht seit jeher in
+     der Desktop-Basis (.draw-sheet, Zeile ~242), existiert aber nirgends —
+     var(--bg-panel) loest zu nichts auf und laesst den Grund durchsichtig.
+     Genau deshalb schien der Chart durch das Blatt. Es gibt nur
+     --bg-raised und --bg-hover. Die Basisregel bleibt unangetastet
+     (Regel 1), hier wird sie fuer das Handy ueberschrieben. */
+  /* Ohne touch-action reklamiert der Browser die Geste selbst (Seite
+     schieben, Zuruecknavigieren per Wischen) und feuert touchcancel — der
+     laufende Zug bricht ab und man muss nachfassen. Waagrechte Zuege wie
+     der Breiten-Griff wurden sofort geschluckt, senkrechte stotterten.
+     KLineCharts scrollt und zoomt per JavaScript, das bleibt unberuehrt. */
+  .main-chart, .main-chart canvas { touch-action: none; }
+
+  .draw-sheet { background: var(--bg-raised); }
+  .draw-sheet-grid { grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .draw-sheet-item {
+    padding: 7px 2px; gap: 3px; font-size: 9px; border-radius: 7px;
+    background: var(--bg-hover);
+    border-color: var(--border);
+  }
+  .draw-sheet-item:hover, .draw-sheet-item.active {
+    background: var(--bg-raised); border-color: var(--accent);
+  }
+  /* Der Abdunkler dahinter darf nicht durchscheinen lassen. */
+  .draw-sheet-backdrop { background: rgba(0, 0, 0, .55); }
+
+  /* Legende: Einklapp-Knopf groesser und UNTER den Text statt daneben. */
+  .chart-legend { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .legend-toggle {
+    order: 2;                     /* .legend-body steht im HTML danach */
+    width: 30px; height: 26px; font-size: 15px;
+    border: 1px solid var(--border); background: var(--bg-raised);
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Zeichenblatt */
+  .draw-sheet { bottom: var(--tv-botbar); z-index: 640; }
+  .draw-sheet-backdrop { z-index: 615; }
+
+  /* Watchlist */
+  .watchlist {
+    position: fixed; left: 0; right: 0; bottom: var(--tv-botbar); top: auto;
+    width: 100% !important; max-width: none;
+    max-height: 62vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    border-left: none; border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 32px rgba(0,0,0,.55); z-index: 640;
+  }
+  /* M6: Kopfzeile mit kleinem Abstand zwischen den Knoepfen; das Auswahlfeld
+     schmaler, damit die drei Knoepfe (3-Punkte, Plus, Kreuz) mehr Platz haben
+     und mit dem Finger einzeln zu unterscheiden sind. Die Knopfgruppe steht
+     rechts (margin-left:auto am ersten Knopf), gap haelt sie tight. */
+  .wl-header { position: sticky; top: 0; z-index: 2; background: var(--bg-raised);
+    justify-content: flex-start; gap: 6px; }
+  .wl-select { flex: 0 1 auto; width: 46%; min-width: 0; font-size: 13px; padding: 6px 8px; }
+  /* Alle drei Kopf-Knoepfe gleich gross wie das Kreuz (30x30, umrandet). */
+  .wl-icon, .wl-add, .wl-close-btn {
+    display: flex !important; align-items: center; justify-content: center;
+    width: 30px; height: 30px; flex: 0 0 30px; padding: 0;
+    background: transparent; border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text-dim); cursor: pointer;
+  }
+  .wl-icon { margin-left: auto; }   /* schiebt die Knopfgruppe nach rechts */
+  .wl-icon svg { width: 15px; height: 15px; }
+  .wl-add       { font-size: 17px; line-height: 1; }
+  .wl-close-btn { font-size: 15px; }
+  .wl-item { padding: 12px; }
+
+  /* Grid Bot */
+  .gb-bar {
+    position: fixed; left: 0; right: 0; bottom: var(--tv-botbar); top: auto;
+    width: 100% !important; max-width: none !important;
+    height: auto !important; max-height: 70vh !important;
+    overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
+    border-radius: 16px 16px 0 0; border-top: 1px solid var(--border);
+    box-shadow: 0 -8px 32px rgba(0,0,0,.55); z-index: 640;
+  }
+  .gb-status {
+    position: sticky; top: 0; z-index: 2; background: var(--bg-raised);
+    flex-wrap: wrap; gap: 5px 10px; padding: 8px 10px; font-size: 11px;
+  }
+  .gb-stat  { font-size: 10px; }
+  .gb-sep-v { display: none; }
+  .gb-tab   { font-size: 11px; padding: 6px 9px; }
+  .gb-pane, .gb-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .gb-strat-row { flex-direction: column; }
+  .gb-resize { display: none; }
+
+  /* Kontextmenü als Blatt */
+  .as-sheet, #overlayMenu.as-sheet { bottom: var(--tv-botbar) !important; }
+
+  /* Legende: Symbol und Intervall stehen bereits in Zeile 2 */
+  .chart-legend { top: 6px; left: 6px; max-width: calc(100% - 92px); }
+  .legend-ohlc .lg-sym, .legend-ohlc .lg-tf { display: none; }
+  .legend-line { white-space: normal; flex-wrap: wrap; gap: 0 4px;
+                 font-size: 9.5px; line-height: 1.35; }
+  .legend-body { gap: 1px; padding: 1px 3px; }
+
+  /* Löschen und Ein-/Ausblenden bei Vergleichs-Assets: grössere Touch-Ziele */
+  .compare-chip { padding: 7px 10px; gap: 10px; }
+  .cc-eye, .cc-remove, .cc-gear {
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cc-eye svg { width: 19px; height: 19px; }
+  .cc-remove { font-size: 17px; }
+  /* M3: Zahnrad-Glyph leicht kleiner als Auge/Kreuz (Mobil-Wunsch),
+     Tap-Ziel bleibt 30x30 wie die Geschwister. */
+  .cc-gear { font-size: 14px; }
+
+  .settings-panel, .frvp-menu, .fib-menu {
+    max-width: calc(100vw - 16px) !important;
+    max-height: 80vh; overflow-y: auto;
+  }
+}
+
+/* ── Sehr schmale Geräte ─────────────────────────────────────────────── */
+@media (max-width: 380px) {
+  .action-btn { width: 34px; height: 34px; }
+  .ab-icon    { width: 17px; height: 17px; }
+  .tb-row     { gap: 3px; padding: 4px 6px; }
+  .bottom-bar .action-btn::after,
+  .bottom-bar .dd-trigger::after { font-size: 8px; }
+  .bottom-bar .action-btn,
+  .bottom-bar .dd-trigger { width: 34px; height: 34px; }
+  .bottom-bar { padding-left: 3px; padding-right: 3px; }
+}
+
+/* ── Querformat ────────────────────────────────────────────────────────
+   Nur Zeile 1 wandert an den linken Rand. Zeile 2 mit Asset, Intervall
+   und Preis bleibt oben — dort ist sie breit genug lesbar.
+
+     ┌────┬──────────────────────────┬────┐
+     │    │ Asset · Intervall · Preis│    │
+     │ Z1 ├──────────────────────────┤ BB │
+     │    │          Chart           │    │
+     └────┴──────────────────────────┴────┘
+
+   Die seitlichen Leisten halten Abstand zu Dynamic Island und
+   abgerundeten Ecken (env(safe-area-inset-*)). Dafür steht
+   viewport-fit=cover in der Kopfzeile von index.html.
+   ──────────────────────────────────────────────────────────────────── */
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  :root {
+    --tv-lbar: calc(54px + env(safe-area-inset-left));
+    --tv-rbar: calc(60px + env(safe-area-inset-right));
+    --tv-row2: 38px;
+  }
+
+  /* Die Kopfzeile selbst beansprucht keinen Platz mehr — ihre beiden
+     Reihen sind fest am Bildschirm verankert. */
+  .topbar {
+    height: 0; min-height: 0; padding: 0 !important;
+    border: none; overflow: visible;
+  }
+
+  /* Hintergrund bis an die physische Kante, damit im Bereich von
+     Dynamic Island und abgerundeten Ecken kein Schwarz stehen bleibt */
+  html, body { background: var(--bg-raised); }
+
+  /* Zeile 1 → linke Leiste */
+  #tbRow1 {
+    position: fixed; left: 0; top: 0; bottom: 0;
+    width: var(--tv-lbar);
+    padding: 6px 4px calc(6px + var(--tv-safe-b)) calc(4px + env(safe-area-inset-left));
+    flex-direction: column; align-items: center; gap: 5px;
+    overflow-y: auto; overflow-x: hidden;
+    background: var(--bg-raised);
+    border-right: 1px solid var(--border);
+    z-index: 630;
+  }
+  #tbRow1 .tb-gap { display: none; }
+  #tbRow1 .tb-end-spacer { display: none; }   /* HF1 nur Portrait */
+  #tbRow1 #syncBtn { margin-right: 0; }   /* HF1 nur Portrait, Landscape ist Spalte */
+  #tbRow1 .cycle-bar { flex-direction: column; gap: 6px; }
+  /* M1b: linke Leiste, Pills leicht grösser */
+  #tbRow1 .cycle-pill { font-size: 11px; padding: 5px 6px; }
+  /* M2a: linke Bar-Icons auf dasselbe Aussenmass wie die rechte Leiste
+     (.bottom-bar .action-btn/.dd-trigger = 40×40). Die linke Leiste ist mit
+     54px breit genug (40 + Innenabstand). */
+  #tbRow1 .action-btn,
+  #tbRow1 .dd-trigger { width: 40px; height: 40px; min-height: 40px; }
+
+  /* Zeile 2 bleibt oben, zwischen den Leisten */
+  #tbRow2 {
+    position: fixed; top: 0;
+    left: var(--tv-lbar); right: var(--tv-rbar);
+    height: var(--tv-row2);
+    /* Rechts denselben Abstand wie links. Die kurze Schreibweise 0 8px
+       hatte zwar beidseitig 8px, aber .tb-row scrollt waagrecht und
+       verliert den rechten Innenabstand am Ende — deshalb zusaetzlich
+       der ::after-Abstandhalter weiter oben. */
+    padding: 0 calc(8px + env(safe-area-inset-right)) 0 8px;
+    border-top: none;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-raised);
+    z-index: 630;
+  }
+
+  /* Bottom Bar → rechte Leiste */
+  .bottom-bar {
+    top: 0; bottom: 0; right: 0; left: auto;
+    width: var(--tv-rbar); height: 100%;
+    flex-direction: column; justify-content: flex-start; gap: 3px;
+    padding: 6px 4px calc(6px + var(--tv-safe-b)) 4px;
+    padding-right: calc(4px + env(safe-area-inset-right));
+    overflow-y: auto;
+    border-top: none; border-left: 1px solid var(--border);
+  }
+  .bottom-bar > * { flex: 0 0 auto; }
+  .bottom-bar .action-btn,
+  .bottom-bar .dd-trigger { width: 40px; height: 40px; min-height: 40px; }
+
+  /* Chart füllt den Rest */
+  .workspace {
+    position: fixed;
+    left: var(--tv-lbar); right: var(--tv-rbar);
+    top: var(--tv-row2); bottom: 0;
+    width: auto; height: auto;
+  }
+
+  /* Nicht verankerte Blätter öffnen von der rechten Leiste zur Mitte hin.
+     Verankerte Dropdowns (dd-anchored) sind ausgenommen — sie positioniert
+     placeMobileDropdown selbst (links→rechts / rechts→links). */
+  .dd-panel:not(.dd-anchored),
+  .dd-panel--wide:not(.dd-anchored),
+  .dd-panel--right:not(.dd-anchored),
+  .watchlist, .draw-sheet {
+    top: 0 !important; bottom: 0 !important;
+    left: auto !important; right: var(--tv-rbar) !important;
+    width: min(58vw, 400px) !important; max-width: none !important;
+    height: 100%; max-height: 100% !important; border-radius: 0;
+    padding-bottom: 8px;
+  }
+  .draw-sheet-grid { grid-template-columns: repeat(3, 1fr); }
+
+  /* QF3/QF4: Zeichenwerkzeuge & Grid Bot öffnen als Dropout von der rechten
+     Leiste nach links, mit Griff an der LINKEN Kante (nach rechts wischen
+     schliesst — JS bindSheetSwipeClose). Grid Bot nutzt die volle
+     Asset-Fenster-Breite (viel Information). */
+  .draw-sheet, .gb-bar {
+    transform: none !important;              /* Slide-Transform aus, Swipe steuert */
+    padding-left: 12px;                      /* QF4: knapp hinter dem Griff (5–10px), weniger Lücke als 16 */
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  .draw-sheet::before, .gb-bar::before {
+    content: ""; position: absolute; left: 5px; top: 50%;
+    width: 5px; height: 46px; margin-top: -23px;
+    border-radius: 3px; background: var(--text-dim);
+    box-shadow: 0 1px 4px rgba(0,0,0,.45);
+  }
+  .draw-sheet:not(.hidden), .gb-bar:not(.hidden) { display: flex !important; flex-direction: column; }
+  .gb-bar {
+    top: 0 !important; bottom: 0 !important;
+    left: var(--tv-lbar) !important; right: var(--tv-rbar) !important;
+    width: auto !important; max-width: none !important;
+    height: 100% !important; max-height: 100% !important; border-radius: 0;
+  }
+  /* Grid-Bot-Inhalt scrollt innerhalb der vollen Höhe (vorher oben verquetscht,
+     unten überlaufend). Kopf/Tabs bleiben oben, der Rest scrollt. */
+  .gb-bar .gb-body { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  /* Der Griff oben im Zeichenblatt entfällt im Querformat (linker Griff ersetzt ihn). */
+  .draw-sheet-handle { display: none; }
+
+  /* QF2: FAQ-Fenster zwischen die Leisten klemmen — links bündig mit der linken
+     Leiste, rechts bündig mit der rechten. Der Abdunkler bleibt vollflächig. */
+  .faq-modal {
+    align-items: stretch; justify-content: stretch;
+    padding: 8px var(--tv-rbar) 8px var(--tv-lbar) !important;
+  }
+  .faq-box {
+    max-width: none !important; max-height: none !important;
+    width: 100% !important; height: 100% !important;
+  }
+}
+
+/* ── Lower-Pane-Header (Punkt 7) ─────────────────────────────────────
+   Kleiner Kopf pro Sub-Pane (RSI/VOL/MACD …): links Name + aktueller
+   Wert, rechts Collapse + Zahnrad. Als DOM-Overlay über dem Chart
+   positioniert (JS setzt top/left/width aus chart.getSize(paneId)). */
+.pane-header{
+  position:absolute; display:flex; align-items:center; gap:8px;
+  height:28px; padding:0 8px 0 10px; box-sizing:border-box;
+  font-size:11px; line-height:28px; color:var(--text-dim);
+  pointer-events:none; z-index:8; user-select:none;
+}
+.pane-header .ph-name{ font-weight:600; color:var(--text); white-space:nowrap; }
+.pane-header .ph-val{ color:var(--text-dim); white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis; flex:1 1 auto; }
+.pane-header .ph-actions{ display:flex; gap:3px; margin-left:auto; pointer-events:auto; }
+.pane-header .ph-btn{
+  width:24px; height:24px; display:flex; align-items:center; justify-content:center;
+  border:none; background:transparent; color:var(--text-dim); cursor:pointer;
+  border-radius:4px; font-size:18px; line-height:1; padding:0;
+}
+.pane-header .ph-btn:hover{ background:var(--bg-hover); color:var(--text); }
+/* P1: eingeklappt = dieselbe Dreiecksform, nur nach oben gedreht. */
+.pane-header .ph-collapse{ transition: transform .12s; }
+.pane-header .ph-collapse.collapsed{ transform: rotate(180deg); }
+.pane-header .ph-drag{ cursor:grab; }
+.pane-header .ph-drag:active{ cursor:grabbing; }
+/* Ziehen zum Umsortieren: Ghost-Label folgt dem Cursor, Linie zeigt das Ziel (Punkt 3a) */
+.pane-drag-ghost{ position:fixed; z-index:2000; pointer-events:none;
+  background:var(--accent,#e8b64c); color:#0d1117; font-size:11px; font-weight:600;
+  padding:3px 8px; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,.4);
+  font-family:var(--font-mono,monospace); white-space:nowrap; }
+.pane-drop-marker{ position:absolute; left:0; right:0; height:2px; z-index:9;
+  background:var(--accent,#e8b64c); box-shadow:0 0 6px var(--accent,#e8b64c);
+  pointer-events:none; display:none; }
+/* Eingeklappt: opaker Hintergrund verdeckt den zusammengequetschten
+   Indikator vollständig — nur Header + Icons bleiben sichtbar (Punkt 7c). */
+.pane-header.collapsed{ background:var(--bg); }
+
+/* ── Sync / Login-Modal (Punkt 8) ──────────────────────────────────── */
+.sync-modal{ position:fixed; inset:0; z-index:1000; display:flex;
+  align-items:center; justify-content:center; background:rgba(0,0,0,.55); }
+.sync-modal.hidden{ display:none; }
+.sync-box{ width:min(440px,92vw); background:var(--bg-panel,#12161c);
+  border:1px solid var(--border,#242a33); border-radius:10px; overflow:hidden;
+  box-shadow:0 12px 40px rgba(0,0,0,.5); }
+.sync-head{ display:flex; align-items:center; justify-content:space-between;
+  padding:12px 16px; border-bottom:1px solid var(--border,#242a33);
+  font-weight:600; color:var(--text,#e8ecf1); }
+.sync-close{ border:none; background:transparent; color:var(--text-dim,#9aa5b1);
+  font-size:16px; cursor:pointer; }
+.sync-close:hover{ color:var(--text,#e8ecf1); }
+.sync-body{ padding:16px; }
+.sync-info{ font-size:12.5px; line-height:1.5; color:var(--text-dim,#9aa5b1);
+  margin:0 0 14px; }
+.sync-label{ display:block; font-size:12px; color:var(--text-dim,#9aa5b1);
+  margin-bottom:6px; }
+.sync-input{ width:100%; box-sizing:border-box; padding:9px 11px;
+  background:var(--bg-input,#0c0f13); border:1px solid var(--border,#242a33);
+  border-radius:7px; color:var(--text,#e8ecf1); font-size:13px; }
+.sync-input:focus{ outline:none; border-color:var(--accent,#e8b64c); }
+.sync-actions{ display:flex; gap:10px; margin-top:14px; }
+.sync-act{ flex:1; padding:9px 0; border:1px solid var(--border,#242a33);
+  border-radius:7px; background:var(--bg-input,#0c0f13); color:var(--text,#e8ecf1);
+  font-size:13px; font-weight:600; cursor:pointer; }
+.sync-act:hover{ border-color:var(--accent,#e8b64c); color:var(--accent,#e8b64c); }
+.sync-act:disabled{ opacity:.5; cursor:not-allowed; }
+.sync-status{ margin-top:12px; font-size:12px; min-height:16px;
+  color:var(--text-dim,#9aa5b1); }
+.sync-status.ok{ color:#3fb68b; }
+.sync-status.err{ color:#d05e5e; }
+
+/* ── Vergleich-starten-Hinweis (Punkt 8) ──────────────────────────── */
+.confirm-modal{ position:fixed; inset:0; z-index:1100; display:flex;
+  align-items:center; justify-content:center; background:rgba(0,0,0,.55); }
+.confirm-modal.hidden{ display:none; }
+.confirm-box{ width:min(380px,92vw); background:var(--bg-panel,#12161c);
+  border:1px solid var(--border,#242a33); border-radius:10px; padding:20px;
+  box-shadow:0 12px 40px rgba(0,0,0,.5); }
+.confirm-title{ font-size:15px; font-weight:600; color:var(--text,#e8ecf1); margin-bottom:8px; }
+.confirm-sub{ font-size:12.5px; line-height:1.5; color:var(--text-dim,#9aa5b1); margin-bottom:18px; }
+.confirm-actions{ display:flex; gap:10px; }
+.confirm-btn{ flex:1; padding:10px 8px; border:1px solid var(--accent,#e8b64c);
+  border-radius:7px; background:var(--accent,#e8b64c); color:#0d1117;
+  font-size:12.5px; font-weight:600; cursor:pointer; }
+.confirm-btn:hover{ filter:brightness(1.08); }
+.confirm-btn-alt{ background:transparent; color:var(--text,#e8ecf1); border-color:var(--border,#242a33); }
+.confirm-btn-alt:hover{ border-color:var(--accent,#e8b64c); color:var(--accent,#e8b64c); filter:none; }

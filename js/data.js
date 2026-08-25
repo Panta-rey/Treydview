@@ -35,6 +35,51 @@ const DataLayer = {
     return this._dedupe(all);
   },
 
+  // Kerzen AB einem Zeitstempel nachladen — der Zuwachs zur gespeicherten
+  // Momentaufnahme.
+  //
+  // Gegenrichtung zu fetchBinanceKlines(): das paginiert rueckwaerts ueber
+  // endTime, weil es "die letzten N Kerzen" will. Hier ist die Untergrenze
+  // bekannt und die Obergrenze offen, also vorwaerts ueber startTime.
+  //
+  // Die Kerze AM Stichtag wird mitgeholt (nicht +1ms): die letzte
+  // gespeicherte war moeglicherweise noch unvollstaendig und wird vom
+  // Zuwachs ueberschrieben.
+  async fetchBinanceKlinesSince(symbol, interval, startTime) {
+    // OHNE startTime liefert Binance die JUENGSTEN 1000 Kerzen, nicht die
+    // aeltesten. Wer hier ohne Stichtag hereinkommt, will die volle
+    // Historie — dafuer gibt es fetchBinanceKlines(), das rueckwaerts
+    // ueber endTime blaettert. Ohne diese Weiche kam genau eine Seite
+    // zurueck und die Momentaufnahme blieb bei 1000 Kerzen stehen.
+    if (!startTime) {
+      const rows = await this.fetchBinanceKlines(symbol, interval, CONFIG.CANDLE_LIMIT);
+      return rows.map(r => [r.timestamp, r.open, r.high, r.low, r.close, r.volume]);
+    }
+    const MAX_PER_REQ = 1000;
+    const out = [];
+    let from = startTime;
+    // Bei Tageskerzen deckt eine Seite knapp drei Jahre ab. Zehn Seiten
+    // sind reichlich; laeuft es dagegen, stimmt etwas anderes nicht.
+    let guard = 10;
+    while (guard-- > 0) {
+      let url = `${CONFIG.BINANCE_REST}/klines?symbol=${symbol}&interval=${interval}&limit=${MAX_PER_REQ}`;
+      if (from) url += `&startTime=${from}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Binance HTTP ${res.status}`);
+      const raw = await res.json();
+      if (!Array.isArray(raw) || raw.length === 0) break;
+      for (const k of raw) {
+        out.push([k[0], parseFloat(k[1]), parseFloat(k[2]),
+                        parseFloat(k[3]), parseFloat(k[4]), parseFloat(k[5])]);
+      }
+      if (raw.length < MAX_PER_REQ) break;
+      const letzte = raw[raw.length - 1][0];
+      if (letzte <= from) break;          // kein Fortschritt, Schleife stoppen
+      from = letzte + 1;
+    }
+    return out;
+  },
+
   // Ältere Kerzen VOR einem Timestamp nachladen (Lazy Loading beim Zurückscrollen)
   async fetchBinanceKlinesBefore(symbol, interval, beforeTimestamp, limit = 1000) {
     const chunk = await this._fetchKlineChunk(symbol, interval, Math.min(1000, limit), beforeTimestamp - 1);
@@ -304,12 +349,106 @@ const DataLayer = {
     })).sort((a, b) => a.timestamp - b.timestamp);
   },
 
+  // ---------- Historie aus Momentaufnahme + Zuwachs ----------
+  //
+  // Laedt die statische Altdatenhistorie aus dem Repo und holt beim
+  // Worker nur, was seither dazugekommen ist.
+  //
+  // Robustheit ist hier wichtiger als Eleganz, deshalb drei Ebenen:
+  //   1. Momentaufnahme + Zuwachs  → der Normalfall
+  //   2. nur Momentaufnahme        → Worker/Quelle nicht erreichbar,
+  //                                  Historie steht trotzdem
+  //   3. nur Worker                → Datei fehlt (noch nicht erzeugt)
+  // Erst wenn beides scheitert, gibt es einen Fehler.
+  async fetchHistoryCached(snapshotPath, deltaFetch) {
+    let snapshot = null;
+    if (snapshotPath) {
+      try {
+        const res = await fetch(snapshotPath, { cache: "default" });
+        if (res.ok) {
+          const j = await res.json();
+          if (j && Array.isArray(j.candles) && j.candles.length) snapshot = j.candles;
+        }
+      } catch (_) { /* Datei fehlt oder ist defekt — Ebene 3 */ }
+    }
+
+    // Der Zuwachs kann als Rohfelder [[ms,o,h,l,c,v]] oder als fertige
+    // Kerzenobjekte kommen — fetchGoldHistory hat einen eigenen,
+    // toleranten Parser fuer aeltere Worker-Formate. Beides wird hier auf
+    // Rohfelder gebracht, damit das Zusammenfuehren einheitlich laeuft.
+    const toRaw = (arr) => (arr || []).map(k => Array.isArray(k)
+      ? k
+      : [k.timestamp, k.open, k.high, k.low, k.close, k.volume || 0]);
+
+    const toRows = (arr) => arr
+      .map(([ts, o, h, l, cl, v]) => (isFinite(ts) && isFinite(cl))
+        ? { timestamp: ts,
+            open:  isFinite(o) ? o : cl,
+            high:  isFinite(h) ? h : cl,
+            low:   isFinite(l) ? l : cl,
+            close: cl,
+            volume: isFinite(v) ? v : 0 }
+        : null)
+      .filter(Boolean);
+
+    if (!snapshot) return toRows(toRaw(await deltaFetch(null)));   // Ebene 3
+
+    const lastTs = snapshot[snapshot.length - 1][0];
+    let delta = [];
+    try {
+      delta = toRaw(await deltaFetch(lastTs));
+    } catch (e) {
+      console.warn("[TreydView] Zuwachs nicht abrufbar, zeige gespeicherte Historie:", e);
+      return toRows(snapshot);                              // Ebene 2
+    }
+
+    // Zusammenfuehren ueber den Zeitstempel. Der Zuwachs gewinnt: die
+    // letzte gespeicherte Kerze war moeglicherweise noch unvollstaendig.
+    const map = new Map();
+    for (const k of snapshot) map.set(k[0], k);
+    for (const k of delta)    map.set(k[0], k);
+    const merged = [...map.values()].sort((a, b) => a[0] - b[0]);
+    return toRows(merged);
+  },
+
+  // ---------- Bitstamp via Worker (BTC ab 2011) ----------
+  // Der Worker blaettert die Historie serverseitig durch und liefert sie
+  // in EINER Antwort im gleichen candles-Format wie die Gold-Route.
+  async fetchBitstampHistory(pair, step, from) {
+    const base = CONFIG.WORKER_BASE_URL.replace(/\/$/, "") + CONFIG.BITSTAMP_ENDPOINT;
+    const url  = `${base}?pair=${encodeURIComponent(pair)}&step=${step}`
+               + (from ? `&from=${from}` : "");
+    const res  = await fetch(url);
+    if (!res.ok) throw new Error(`Worker HTTP ${res.status}`);
+    const json = await res.json();
+    if (json && json.error) throw new Error(String(json.error));
+    if (!json || !Array.isArray(json.candles)) throw new Error("Worker: kein candles-Array");
+    // Rohformat [[ms,o,h,l,c,v],...] — die Umwandlung in Kerzenobjekte
+    // uebernimmt fetchHistoryCached(), damit Momentaufnahme und Zuwachs
+    // denselben Weg nehmen.
+    return json.candles;
+  },
+
   // ---------- Gold via Worker ----------
   // Toleranter Parser — Details siehe README. Bei abweichendem
   // Worker-Format NUR normalizeGoldRow() anpassen.
 
-  async fetchGoldHistory() {
-    const url = CONFIG.WORKER_BASE_URL.replace(/\/$/, "") + CONFIG.GOLD_ENDPOINT;
+  async fetchGoldHistory(from) {
+    return this._fetchWorkerHistory(CONFIG.GOLD_ENDPOINT, from, "Gold");
+  },
+
+  // Silber (Punkt 5): gleiche Worker-Struktur wie Gold, anderer Endpunkt.
+  // LBMA liefert ein Fixing je Tag -> flache Kerzen (o=h=l=c), als Linie.
+  async fetchSilverHistory(from) {
+    return this._fetchWorkerHistory(CONFIG.SILVER_ENDPOINT, from, "Silber");
+  },
+
+  // Gemeinsamer Abruf fuer die LBMA-Edelmetall-Endpunkte des Workers.
+  // Akzeptiert {candles:[[ms,o,h,l,c,v]]} (bevorzugt), {series:[[ms,close]]}
+  // (Rueckfall) oder rohe Zeilen; faellt auf Stooq-CSV-Parsing zurueck.
+  async _fetchWorkerHistory(endpoint, from, label) {
+    const url = CONFIG.WORKER_BASE_URL.replace(/\/$/, "") + endpoint
+              + (from ? `?from=${from}` : "");
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Worker HTTP ${res.status}`);
     const text = await res.text();
@@ -317,16 +456,36 @@ const DataLayer = {
     let rows;
     try {
       const json = JSON.parse(text);
-      rows = Array.isArray(json) ? json
-           : Array.isArray(json.data) ? json.data
-           : Array.isArray(json.history) ? json.history
-           : null;
-      if (!rows) throw new Error("Unbekannte JSON-Struktur");
-      rows = rows.map(r => this.normalizeGoldRow(r)).filter(Boolean);
+      if (Array.isArray(json.candles)) {
+        rows = json.candles
+          .map(([ts, o, h, l, cl, v]) => (isFinite(ts) && isFinite(cl))
+            ? { timestamp: ts,
+                open:  isFinite(o) ? o : cl,
+                high:  isFinite(h) ? h : cl,
+                low:   isFinite(l) ? l : cl,
+                close: cl,
+                volume: isFinite(v) ? v : 0 }
+            : null)
+          .filter(Boolean);
+      } else if (Array.isArray(json.series)) {
+        rows = json.series
+          .map(([ts, close]) => (isFinite(ts) && isFinite(close))
+            ? { timestamp: ts, open: close, high: close, low: close, close, volume: 0 }
+            : null)
+          .filter(Boolean);
+      } else {
+        rows = Array.isArray(json) ? json
+             : Array.isArray(json.data) ? json.data
+             : Array.isArray(json.history) ? json.history
+             : null;
+        if (!rows) throw new Error("Unbekannte JSON-Struktur");
+        rows = rows.map(r => this.normalizeGoldRow(r)).filter(Boolean);
+      }
     } catch (_) {
       rows = this.parseStooqCsv(text);
     }
 
+    if (!rows.length) throw new Error(`Keine ${label || "Worker"}-Daten erhalten`);
     rows.sort((a, b) => a.timestamp - b.timestamp);
     return rows.filter((r, i) => i === 0 || r.timestamp !== rows[i - 1].timestamp);
   },
@@ -349,6 +508,74 @@ const DataLayer = {
     const low  = parseFloat(r.low  ?? r.l ?? r.Low  ?? Math.min(open, close));
     const volume = parseFloat(r.volume ?? r.v ?? r.Volume ?? 0);
     return { timestamp: ts, open, high, low, close, volume: isFinite(volume) ? volume : 0 };
+  },
+
+  // Allgemeine Stooq-Zeitreihe ueber den Worker. Gleiche Verarbeitung wie
+  // beim Gold — nur mit frei waehlbarem Symbol.
+  async fetchStooqHistory(stooqSymbol) {
+    const base = CONFIG.WORKER_BASE_URL.replace(/\/$/, "");
+    const url = `${base}${CONFIG.STOOQ_ENDPOINT}?s=${encodeURIComponent(stooqSymbol)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Worker HTTP ${res.status} für ${stooqSymbol}`);
+    const text = await res.text();
+    let rows;
+    try {
+      const json = JSON.parse(text);
+      rows = Array.isArray(json) ? json
+           : Array.isArray(json.data) ? json.data
+           : Array.isArray(json.history) ? json.history : null;
+      if (!rows) throw new Error("Unbekannte JSON-Struktur");
+      rows = rows.map(r => this.normalizeGoldRow(r)).filter(Boolean);
+    } catch (_) {
+      rows = this.parseStooqCsv(text);
+    }
+    if (!rows.length) throw new Error(`Keine Daten für ${stooqSymbol}`);
+    rows.sort((a, b) => a.timestamp - b.timestamp);
+    return rows.filter((r, i) => i === 0 || r.timestamp !== rows[i - 1].timestamp);
+  },
+
+  // Globale M2-Geldmenge. Erwartet [{date, value}] oder CSV date,value.
+  // Wird als Linie in einem eigenen Indikator-Fenster gezeichnet.
+  async fetchGlobalM2() {
+    const base = CONFIG.WORKER_BASE_URL.replace(/\/$/, "");
+    const res = await fetch(base + CONFIG.M2_ENDPOINT);
+    if (!res.ok) throw new Error(`Worker HTTP ${res.status} für M2`);
+    const text = await res.text();
+    // Zweite Verteidigungslinie gegen einen Fehler wie im Juli 2026: falsche
+    // Einheiten im Worker liessen eine einzelne, absurd grosse Zahl als
+    // flache Linie im Chart landen. Diese Grenze faengt JEDE zukuenftige
+    // Fehlrechnung ab, unabhaengig von ihrer Ursache — realistisches
+    // globales M2 liegt zwischen 1'000 und 1'000'000 Mrd. USD.
+    const M2_PLAUSIBEL_MIN = 1000, M2_PLAUSIBEL_MAX = 1000000;
+    const out = [];
+    const push = (d, v) => {
+      const ts = Date.parse(String(d).length <= 10 ? String(d) + "T00:00:00Z" : d);
+      const num = parseFloat(v);
+      if (isFinite(ts) && isFinite(num) && num >= M2_PLAUSIBEL_MIN && num <= M2_PLAUSIBEL_MAX) {
+        out.push({ timestamp: ts, value: num });
+      }
+    };
+    try {
+      const json = JSON.parse(text);
+      const rows = Array.isArray(json) ? json : (json.data || json.history || []);
+      rows.forEach(r => push(r.date ?? r.d ?? r[0], r.value ?? r.v ?? r.close ?? r[1]));
+    } catch (_) {
+      // Nur echte CSV verarbeiten. Ohne diese Pruefung wurde bei einer
+      // HTML-Fehlerseite (z.B. eine Bot-Challenge oder ein generischer
+      // Server-Fehler) versucht, JEDE Zeile als "Datum,Wert" zu lesen —
+      // parseFloat kann aus beliebigem Text eine Zahl herausschneiden,
+      // ohne dass diese irgendeine Bedeutung haette.
+      if (!/^date,value/i.test(text.trim())) {
+        throw new Error(`M2: keine CSV erhalten (${text.slice(0, 100)})`);
+      }
+      text.trim().split(/\r?\n/).forEach(line => {
+        const p = line.split(",");
+        if (p.length >= 2 && p[0].toLowerCase() !== "date") push(p[0], p[1]);
+      });
+    }
+    if (!out.length) throw new Error("Keine plausiblen M2-Daten erhalten");
+    out.sort((a, b) => a.timestamp - b.timestamp);
+    return out;
   },
 
   parseStooqCsv(text) {

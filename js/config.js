@@ -6,31 +6,97 @@ const CONFIG = {
   // >>> HIER deine Cloudflare-Worker-Basis-URL eintragen <<<
   WORKER_BASE_URL: "https://pantarey.rey-gafner.workers.dev",
   GOLD_ENDPOINT:   "/goldhistory",
+  SILVER_ENDPOINT: "/silverhistory",
+  BITSTAMP_ENDPOINT: "/bitstamp",
+
+  // ---- Historie-Momentaufnahmen ----------------------------------
+  // Statische Dateien im Repo mit der kompletten Altdatenhistorie.
+  // Der Browser laedt sie vom GitHub-Pages-CDN und fragt den Worker nur
+  // noch nach dem Zuwachs seit der letzten gespeicherten Kerze.
+  //
+  // Vorteile gegenueber dem vollen Abruf bei jedem Laden:
+  //   • gzip-Groesse ~62 KB (BTC) bzw. ~109 KB (Gold), vom Browser
+  //     zwischengespeichert — statt 233 bzw. 529 KB roh je Aufruf
+  //   • der Chart zeigt Historie auch dann, wenn Worker oder Quelle
+  //     gerade nicht erreichbar sind
+  //   • weniger Worker-Aufrufe und kein Durchblaettern von 12 Seiten
+  //
+  // Fehlt eine Datei, faellt der Ladeweg automatisch auf den vollen
+  // Worker-Abruf zurueck — nichts geht kaputt, es wird nur langsamer.
+  // Erzeugen: siehe tools/snapshot.sh
+  // Nur Tageskerzen — fuer 1h/4h waeren es Hunderttausende Kerzen, die
+  // gehoeren nicht ins Repo. Dort laeuft weiter der volle Abruf.
+  HISTORY_SNAPSHOTS: {
+    BTCUSD_BS: "data/btcusd-bitstamp.json",
+    ETHUSD_BS: "data/ethusd-bitstamp.json",
+    BTCUSDT:   "data/btcusdt-binance.json",
+    ETHUSDT:   "data/ethusdt-binance.json",
+    XAUUSD:    "data/gold-lbma.json",
+  },
+  // Allgemeine Stooq-Zeitreihe ueber denselben Worker. Erwartet
+  //   GET <WORKER_BASE_URL>/stooq?s=<symbol>
+  // und liefert entweder Stooq-CSV (date,open,high,low,close,volume) oder
+  // JSON in derselben Form. Stooq selbst erlaubt keinen Direktabruf aus dem
+  // Browser (CORS) — deshalb der Umweg, genau wie beim Gold.
+  STOOQ_ENDPOINT:  "/stooq",
+  // Globale M2-Geldmenge, aggregiert. Erwartet
+  //   GET <WORKER_BASE_URL>/m2
+  // und liefert [{ date, value }, ...] oder CSV date,value.
+  M2_ENDPOINT:     "/m2",
   BINANCE_REST:    "https://api.binance.com/api/v3",
   BINANCE_WS:      "wss://stream.binance.com:9443/ws",
 
+  // Kuratierte Vorschlagsliste (Punkt 6): diese IDs stehen bei leerem
+  // Suchfeld ganz oben, in genau dieser Reihenfolge. Alles andere folgt
+  // darunter, sortiert nach 24h-USD-Volumen (loadAllExchangeSymbols).
+  // XAGUSD (Silber) wird von Punkt 5 ergaenzt.
+  CURATED_IDS: [
+    "BTCUSDT", "BTCUSD_BS", "ETHUSDT", "ETHUSD_BS", "SOLUSDT",
+    "XAUUSD", "XAGUSD", "^SPX", "^NDQ", "^DJI", "QQQ", "VTSAX",
+  ],
+
   DEFAULT_SYMBOLS: [
+    // ── Kuratierte Vorschlagsliste (Punkt 6): diese zuerst, in dieser
+    //    Reihenfolge, wenn das Suchfeld leer ist. Der Rest folgt darunter
+    //    (nach 24h-Volumen sortiert, siehe loadAllExchangeSymbols).
     { id: "BTCUSDT",  label: "BTC/USDT (Binance)",  type: "binance" },
+    // Binance beginnt bei BTC/USDT im August 2017. Bitstamp handelt
+    // BTC/USD seit 2011 — eine durchgehende Reihe ohne Nahtstellen.
+    // Bewusst ein EIGENES Symbol statt einer zusammengeklebten Historie:
+    // USD und USDT sind verschiedene Maerkte mit eigenen Preisen.
+    { id: "BTCUSD_BS", label: "BTC/USD (Bitstamp, ab 2011)", type: "bitstamp", bitstampPair: "btcusd" },
     { id: "ETHUSDT",  label: "ETH/USDT (Binance)",  type: "binance" },
+    // ETH/USD ueber Bitstamp (Herbst 2015, frueher als Kraken). Der Worker
+    // liefert das tatsaechliche Startdatum im Feld "from" mit.
+    { id: "ETHUSD_BS", label: "ETH/USD (Bitstamp)", type: "bitstamp", bitstampPair: "ethusd" },
     { id: "SOLUSDT",  label: "SOL/USDT (Binance)",  type: "binance" },
+    { id: "XAUUSD",   label: "Gold XAU/USD (ab 1968)", type: "worker" },
+    // Silber XAG/USD (Punkt 5): LBMA-Fixing, ein Preis je Tag -> als Linie.
+    // Eigener Worker-Endpunkt /silverhistory (Dispatch in app.js loadData).
+    { id: "XAGUSD",   label: "Silber XAG/USD (ab 1968)", type: "worker" },
+    // Aktienindizes ueber den Worker (Stooq). Nur Tageskerzen.
+    { id: "^SPX", label: "S&P 500",   type: "stooq", stooqSymbol: "^spx" },
+    // FRED fuehrt fuer Nasdaq nur den Composite (Serie NASDAQCOM).
+    { id: "^NDQ", label: "Nasdaq Composite", type: "stooq", stooqSymbol: "^ndq" },
+    { id: "^DJI", label: "Dow Jones",  type: "stooq", stooqSymbol: "^dji" },
+    // Fonds. Gleicher Worker-Weg wie die Indizes, ohne FRED-Rueckfall.
+    { id: "QQQ",   label: "Invesco QQQ Trust",     type: "stooq", stooqSymbol: "qqq"   },
+    { id: "VTSAX", label: "Vanguard VTSAX",        type: "stooq", stooqSymbol: "vtsax" },
+
+    // ── Rest (nicht in der kuratierten Liste) ──
     { id: "AEROUSDT", label: "AERO/USDT (Binance)", type: "binance" },
-    { id: "XAUUSD",   label: "Gold XAU/USD", type: "worker" },
-    // Kraken: längere Geschichte (BTC seit 2013, ETH seit 2016)
-    { id: "XBTUSD_KR",  label: "BTC/USD (Kraken)",  type: "kraken", krakenPair: "XXBTZUSD" },
-    { id: "ETHUSD_KR",  label: "ETH/USD (Kraken)",  type: "kraken", krakenPair: "XETHZUSD" },
+    // SOL/USD via Kraken (fuer SOL gibt es keine bessere Alternative).
     { id: "SOLUSD_KR",  label: "SOL/USD (Kraken)",  type: "kraken", krakenPair: "SOLUSD"   },
-    // Coinbase: AERO seit 2024 gelistet (mehr Historie als Binance Dez 2024)
+    // Coinbase: AERO seit 2024 gelistet (mehr Historie als Binance Dez 2024).
     { id: "AERO-USD", label: "AERO/USD (Coinbase)", type: "coinbase", coinbaseProduct: "AERO-USD" },
-    { id: "BTC-USD",  label: "BTC/USD (Coinbase)",  type: "coinbase", coinbaseProduct: "BTC-USD"  },
-    { id: "ETH-USD",  label: "ETH/USD (Coinbase)",  type: "coinbase", coinbaseProduct: "ETH-USD"  },
-    // Bybit: listet AERO/USDT (Spot)
+    // Bybit: listet AERO/USDT (Spot).
     { id: "AEROUSDT_BY", label: "AERO/USDT (Bybit)", type: "bybit", bybitSymbol: "AEROUSDT" },
-    { id: "BTCUSDT_BY",  label: "BTC/USDT (Bybit)",  type: "bybit", bybitSymbol: "BTCUSDT"  },
   ],
 
   TIMEFRAMES: [
     { id: "15m", label: "15m", binanceInterval: "15m", krakenInterval: "15",    coinbaseInterval: 900,   bybitInterval: "15"  },
     { id: "1h",  label: "1h",  binanceInterval: "1h",  krakenInterval: "60",    coinbaseInterval: 3600,  bybitInterval: "60"  },
+    { id: "2h",  label: "2h",  binanceInterval: "2h",                                                     bybitInterval: "120" },
     { id: "4h",  label: "4h",  binanceInterval: "4h",  krakenInterval: "240",   coinbaseInterval: 21600, bybitInterval: "240" },
     { id: "1d",  label: "1D",  binanceInterval: "1d",  krakenInterval: "1440",  coinbaseInterval: 86400, bybitInterval: "D"   },
     { id: "1w",  label: "1W",  binanceInterval: "1w",  krakenInterval: "10080",                          bybitInterval: "W"   },
@@ -83,6 +149,27 @@ const CONFIG = {
     {
       key: "sma", name: "MYSMA", pane: "main", label: "SMA 20 / 50 / 100 / 200",
       inputs: [
+        // Eigenes Intervall fuer den Durchschnitt.
+        //
+        // "auto" rechnet auf den Kerzen des Charts. Waehlt man ein
+        // groeberes Intervall, werden die Chartkerzen dorthin aggregiert
+        // und der Durchschnitt auf DIESEN Schlusskursen gerechnet — so
+        // sieht man z. B. den 200-Wochen-SMA im Tageschart.
+        //
+        // Nicht dasselbe wie eine umgerechnete Periode: SMA(1400) auf
+        // Tagesbasis mittelt 1400 Tagesschluesse, SMA(200) auf Wochenbasis
+        // mittelt 200 Wochenschluesse. Aehnlich, aber nicht gleich.
+        { key: "tf", label: "Intervall", type: "select", default: "auto",
+          options: [
+            { value: "auto", label: "Chart-Intervall" },
+            { value: "15m",  label: "15 Minuten" },
+            { value: "1h",   label: "1 Stunde" },
+            { value: "2h",   label: "2 Stunden" },
+            { value: "4h",   label: "4 Stunden" },
+            { value: "1d",   label: "1 Tag" },
+            { value: "1w",   label: "1 Woche" },
+            { value: "1M",   label: "1 Monat" },
+          ] },
         { key: "p1", label: "Periode 1", default: 20  },
         { key: "p2", label: "Periode 2", default: 50  },
         { key: "p3", label: "Periode 3", default: 100 },
@@ -98,6 +185,27 @@ const CONFIG = {
     {
       key: "ema", name: "EMA", pane: "main", label: "EMA 21 / 50 / 100 / 200",
       inputs: [
+        // Eigenes Intervall fuer den Durchschnitt.
+        //
+        // "auto" rechnet auf den Kerzen des Charts. Waehlt man ein
+        // groeberes Intervall, werden die Chartkerzen dorthin aggregiert
+        // und der Durchschnitt auf DIESEN Schlusskursen gerechnet — so
+        // sieht man z. B. den 200-Wochen-SMA im Tageschart.
+        //
+        // Nicht dasselbe wie eine umgerechnete Periode: SMA(1400) auf
+        // Tagesbasis mittelt 1400 Tagesschluesse, SMA(200) auf Wochenbasis
+        // mittelt 200 Wochenschluesse. Aehnlich, aber nicht gleich.
+        { key: "tf", label: "Intervall", type: "select", default: "auto",
+          options: [
+            { value: "auto", label: "Chart-Intervall" },
+            { value: "15m",  label: "15 Minuten" },
+            { value: "1h",   label: "1 Stunde" },
+            { value: "2h",   label: "2 Stunden" },
+            { value: "4h",   label: "4 Stunden" },
+            { value: "1d",   label: "1 Tag" },
+            { value: "1w",   label: "1 Woche" },
+            { value: "1M",   label: "1 Monat" },
+          ] },
         { key: "p1", label: "Periode 1", default: 21  },
         { key: "p2", label: "Periode 2", default: 50  },
         { key: "p3", label: "Periode 3", default: 100 },
@@ -111,7 +219,7 @@ const CONFIG = {
       ],
     },
     {
-      key: "boll", name: "BOLL", pane: "main", label: "Bollinger",
+      key: "boll", name: "BOLL", pane: "main", label: "Bollinger Band",
       inputs: [
         { key: "period", label: "Length",  default: 20 },
         { key: "stddev", label: "StdDev",  default: 2.0, step: 0.1 },
@@ -196,6 +304,16 @@ const CONFIG = {
       ],
     },
     {
+      // Globale M2-Geldmenge. Eigenes Fenster unterhalb, wie StochRSI.
+      // Die Zeitreihe kommt ueber den Worker (CONFIG.M2_ENDPOINT), nicht
+      // aus den Kerzen — siehe indicators.js.
+      key: "globalm2", name: "GLOBALM2", pane: "sub", label: "Global M2",
+      inputs: [],
+      plots: [
+        { key: "m2", label: "M2", color: "#e8b64c", opacity: 100, width: 2, visible: true },
+      ],
+    },
+    {
       key: "stochrsi", name: "STOCHRSI", pane: "sub", label: "Stochastic RSI",
       inputs: [
         { key: "smoothK",     label: "K",          default: 3  },
@@ -249,9 +367,29 @@ const CONFIG = {
         { key: "atr", label: "ATR-Linie", color: "#e05555", opacity: 100, width: 2, visible: true },
       ],
     },
+    {
+      // Bollinger Band Width: relative Bandbreite (oberes−unteres)/Basis,
+      // eigenes Fenster unterhalb. Squeeze = die Bandbreite ist das Minimum
+      // ueber das Vergleichsfenster (Volatilitaets-Kompression). Rechenweg
+      // in indicators.js.
+      key: "bbw", name: "BBW", pane: "sub", label: "Bollinger Band Width",
+      inputs: [
+        { key: "length",  label: "Länge",           default: 20 },
+        { key: "mult",    label: "StdDev",          default: 2.0, step: 0.1 },
+        { key: "compLen", label: "Squeeze-Fenster", default: 125 },
+      ],
+      plots: [
+        { key: "bbw", label: "Bandbreite",         color: "#138484", opacity: 100, width: 2, visible: true },
+        { key: "sq",  label: "Squeeze-Markierung", color: "#c026d3", opacity: 40, width: 1, visible: true, noWidth: true },
+      ],
+    },
   ],
 
-  DEFAULT_ACTIVE: ["mnoodle", "bmsb", "ema", "myrsi", "myvol"],
+  // Erstbesuch (kein gespeicherter Workspace): bewusst KEINE Indikatoren
+  // vorausgewaehlt — der Chart startet leer. Rueckkehrer behalten ihre
+  // gespeicherte Auswahl (state.active liest _ws.active, das auch als
+  // leeres Array truthy bleibt und diese Vorgabe nicht ueberschreibt).
+  DEFAULT_ACTIVE: [],
 
   DRAW_TOOLS: [
     { overlay: "segment",                icon: "╱",  title: "Trendlinie" },
@@ -295,6 +433,7 @@ const FIB_LEVEL_SETS = {
     { v: 0.382, color: "#c9973f" },
     { v: 0.5,   color: "#6fae7a" },
     { v: 0.618, color: "#5aa06b" },
+    { v: 0.65,  color: "#e8b64c" },
     { v: 0.786, color: "#4a9ba8" },
     { v: 1,     color: "#9aa5b1" },
     { v: 1.618, color: "#5a7fa8" },
@@ -308,6 +447,7 @@ const FIB_LEVEL_SETS = {
     { v: 0.382, color: "#c9973f" },
     { v: 0.5,   color: "#6fae7a" },
     { v: 0.618, color: "#5aa06b" },
+    { v: 0.65,  color: "#e8b64c" },
     { v: 1,     color: "#9aa5b1" },
     { v: 1.272, color: "#4a9ba8" },
     { v: 1.618, color: "#5a7fa8" },

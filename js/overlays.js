@@ -52,14 +52,20 @@
       const digits = Math.min(precision.price, 4);
       const label = `${diff >= 0 ? "+" : ""}${diff.toFixed(digits)}  (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)`;
       const midX = (coordinates[0].x + coordinates[1].x) / 2;
+      // Deckkraft der Fläche aus extendData (Punkt 4). Farbe bleibt
+      // richtungsabhängig (grün positiv / rot negativ).
+      const ed = overlay.extendData || {};
+      const fillA = (ed.fillOpacity != null ? ed.fillOpacity : 10) / 100;
+      const baseRgb = diff >= 0 ? "63,182,139" : "208,94,94";
+      const borderCol = diff >= 0 ? "#3fb68b" : "#d05e5e";
       return [
         {
           type: "rect",
           attrs: rectAttrs(coordinates[0], coordinates[1]),
           styles: {
             style: "stroke_fill",
-            color: diff >= 0 ? "rgba(63,182,139,0.10)" : "rgba(208,94,94,0.10)",
-            borderColor: diff >= 0 ? "#3fb68b" : "#d05e5e",
+            color: `rgba(${baseRgb},${fillA})`,
+            borderColor: borderCol,
             borderSize: 1,
           },
         },
@@ -68,7 +74,7 @@
           attrs: { x: midX, y: Math.min(coordinates[0].y, coordinates[1].y) - 6, text: label, align: "center", baseline: "bottom" },
           styles: {
             color: "#0d1117",
-            backgroundColor: diff >= 0 ? "#3fb68b" : "#d05e5e",
+            backgroundColor: borderCol,
             paddingLeft: 6, paddingRight: 6, paddingTop: 3, paddingBottom: 3,
             borderRadius: 3,
           },
@@ -96,14 +102,18 @@
           : `${Math.round(ms / 3600000)} Std`;
       }
       const midX = (coordinates[0].x + coordinates[1].x) / 2;
+      // Farbe + Deckkraft aus extendData (Punkt 5).
+      const ed = overlay.extendData || {};
+      const col = ed.color || "#5aa9e6";
+      const fillA = (ed.fillOpacity != null ? ed.fillOpacity : 10) / 100;
       return [
         {
           type: "rect",
           attrs: rectAttrs(coordinates[0], coordinates[1]),
           styles: {
             style: "stroke_fill",
-            color: "rgba(90,169,230,0.10)",
-            borderColor: "#5aa9e6",
+            color: hexA(col, fillA),
+            borderColor: col,
             borderSize: 1,
           },
         },
@@ -112,10 +122,65 @@
           attrs: { x: midX, y: Math.max(coordinates[0].y, coordinates[1].y) + 6, text: label, align: "center", baseline: "top" },
           styles: {
             color: "#0d1117",
-            backgroundColor: "#5aa9e6",
+            backgroundColor: col,
             paddingLeft: 6, paddingRight: 6, paddingTop: 3, paddingBottom: 3,
             borderRadius: 3,
           },
+          ignoreEvent: true,
+        },
+      ];
+    },
+  });
+
+  // ---------- Preis- und Zeitspanne kombiniert (Punkt 4) ----------
+  // Zeigt gleichzeitig die Preisänderung (+/‑ und %) UND die Zeitspanne
+  // (Tage/Stunden). Menü wie Preisspanne (nur Deckkraft); Farbe
+  // richtungsabhängig grün/rot.
+  klinecharts.registerOverlay({
+    name: "priceDateRange",
+    totalStep: 3,
+    needDefaultPointFigure: true,
+    createPointFigures: ({ coordinates, overlay, precision }) => {
+      if (coordinates.length < 2) return [];
+      const p0 = overlay.points[0].value;
+      const p1 = overlay.points[1].value;
+      const diff = p1 - p0;
+      const pct = p0 !== 0 ? (diff / p0) * 100 : 0;
+      const digits = Math.min(precision.price, 4);
+      const priceLabel = `${diff >= 0 ? "+" : ""}${diff.toFixed(digits)}  (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)`;
+
+      const t0 = overlay.points[0].timestamp;
+      const t1 = overlay.points[1].timestamp;
+      let timeLabel = "–";
+      if (t0 && t1) {
+        const ms = Math.abs(t1 - t0);
+        const days = ms / 86400000;
+        timeLabel = days >= 2 ? `${Math.round(days)} Tage` : `${Math.round(ms / 3600000)} Std`;
+      }
+
+      const midX = (coordinates[0].x + coordinates[1].x) / 2;
+      const ed = overlay.extendData || {};
+      const fillA = (ed.fillOpacity != null ? ed.fillOpacity : 10) / 100;
+      const baseRgb = diff >= 0 ? "63,182,139" : "208,94,94";
+      const borderCol = diff >= 0 ? "#3fb68b" : "#d05e5e";
+      const topY = Math.min(coordinates[0].y, coordinates[1].y);
+      const botY = Math.max(coordinates[0].y, coordinates[1].y);
+      return [
+        {
+          type: "rect",
+          attrs: rectAttrs(coordinates[0], coordinates[1]),
+          styles: { style: "stroke_fill", color: `rgba(${baseRgb},${fillA})`, borderColor: borderCol, borderSize: 1 },
+        },
+        {
+          type: "text",
+          attrs: { x: midX, y: topY - 6, text: priceLabel, align: "center", baseline: "bottom" },
+          styles: { color: "#0d1117", backgroundColor: borderCol, paddingLeft: 6, paddingRight: 6, paddingTop: 3, paddingBottom: 3, borderRadius: 3 },
+          ignoreEvent: true,
+        },
+        {
+          type: "text",
+          attrs: { x: midX, y: botY + 6, text: timeLabel, align: "center", baseline: "top" },
+          styles: { color: "#0d1117", backgroundColor: borderCol, paddingLeft: 6, paddingRight: 6, paddingTop: 3, paddingBottom: 3, borderRadius: 3 },
           ignoreEvent: true,
         },
       ];
@@ -129,7 +194,19 @@
     needDefaultPointFigure: false,  // Kein automatisches Verbindungsrechteck oben
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, overlay, xAxis, yAxis }) => {
+    createPointFigures: ({ coordinates, overlay, xAxis, yAxis, bounding }) => {
+      // Während des Zeichnens (currentStep !== -1) statt der teuren Balken nur
+      // zwei vertikale Hilfslinien an Start- und End-X als visuelle Führung
+      // (Punkt 2). Erst nach dem Fixieren wird das Profil berechnet.
+      if (overlay.currentStep !== -1) {
+        const hh = (bounding && bounding.height) ? bounding.height : 100000;
+        return coordinates.map(c => ({
+          type: "line",
+          attrs: { coordinates: [{ x: c.x, y: 0 }, { x: c.x, y: hh }] },
+          styles: { style: "dashed", color: "rgba(232,182,76,0.75)", size: 1, dashedValue: [4, 4] },
+          ignoreEvent: true,
+        }));
+      }
       if (coordinates.length < 2) return [];
       const getData = (typeof window !== "undefined" && window.__tvGetDataList) ? window.__tvGetDataList : null;
       if (!getData) return [];
@@ -294,6 +371,46 @@
   const FIB_LEVELS     = FIB_LEVEL_SETS.fibRetracement;
   const FIB_EXT_LEVELS = FIB_LEVEL_SETS.fibExtension;
 
+  // ── Desktop-Magnet: Einrasten auf O/H/L/C ────────────────────────────
+  // KLineCharts rastet beim Zeichnen nur auf der Zeitachse ein (Kerzenmitte);
+  // die Preisachse bleibt frei. Auf dem Handy macht das magnetSnap() in
+  // app.js selbst — der Desktop zeichnet aber ueber KLineCharts' eigenen
+  // Klickfluss und kam deshalb nie dorthin.
+  //
+  // performEventMoveForDrawing ist der dafuer vorgesehene Haken. Er wird
+  // EINMAL zentral an jede Registrierung gehaengt, statt ihn in zwanzig
+  // Overlay-Definitionen einzeln zu wiederholen.
+  //
+  // Die Toleranz kann hier nicht in Pixeln gerechnet werden — der Haken
+  // bekommt keine Bildschirmkoordinaten. Stattdessen ein Anteil der
+  // Kerzenspanne: stark 45 %, schwach 18 % von (Hoch − Tief).
+  function magnetSnapValue({ mode, performPoint }) {
+    if (!performPoint || mode === "normal" || !mode) return;
+    const candle = window.__tvCandleAt && window.__tvCandleAt(performPoint.timestamp);
+    if (!candle || performPoint.value == null) return;
+    const span = Math.abs(candle.high - candle.low);
+    if (!(span > 0)) return;
+    const tol = span * (mode === "strong_magnet" ? 0.45 : 0.18);
+    let best = null, bestD = tol;
+    for (const v of [candle.open, candle.high, candle.low, candle.close]) {
+      if (v == null) continue;
+      const d = Math.abs(v - performPoint.value);
+      if (d < bestD) { bestD = d; best = v; }
+    }
+    if (best != null) performPoint.value = best;
+  }
+
+  // Fuer den Pruefstand erreichbar.
+  window.__tvMagnetSnap = magnetSnapValue;
+
+  const _registerOverlay = klinecharts.registerOverlay;
+  klinecharts.registerOverlay = function (tpl) {
+    if (tpl && !tpl.performEventMoveForDrawing) {
+      tpl.performEventMoveForDrawing = magnetSnapValue;
+    }
+    return _registerOverlay.call(klinecharts, tpl);
+  };
+
   function hexA(hex, a) {
     const h = hex.replace("#", "");
     const r = parseInt(h.substring(0, 2), 16);
@@ -347,6 +464,21 @@
           type: "rect",
           attrs: { x: xLeft, y: Math.min(y1, y2), width: xRight - xLeft, height: Math.abs(y2 - y1) },
           styles: { style: "fill", color: hexA(visible[i + 1].color, fillAlpha) },
+        });
+      }
+    }
+
+    // 1b. Golden Pocket (Neu3): goldene Fläche zwischen 0.618 und 0.65,
+    //     Deckkraft = Regler + 10 % (max 100 %), damit sie sich abhebt.
+    //     Unabhängig vom Flächen-Schalter und den ausgeblendeten Levels —
+    //     die beiden Niveaus lassen sich immer per yAt berechnen.
+    if (ed.goldenPocket) {
+      const gy1 = yAt(0.618), gy2 = yAt(0.65);
+      if (gy1 != null && gy2 != null) {
+        figs.push({
+          type: "rect",
+          attrs: { x: xLeft, y: Math.min(gy1, gy2), width: xRight - xLeft, height: Math.abs(gy2 - gy1) },
+          styles: { style: "fill", color: hexA("#e8b64c", Math.min(1, fillAlpha + 0.10)) },
         });
       }
     }
@@ -439,6 +571,22 @@
     needDefaultXAxisFigure: true,
     needDefaultYAxisFigure: true,
     createPointFigures: ({ coordinates, overlay }) => {
+      // Während des Zeichnens (currentStep !== -1): die Linien A→B→C als
+      // Gummiband mitziehen (Punkt 3) — erst nach dem dritten Punkt die vollen
+      // Fibonacci-Figuren.
+      if (overlay.currentStep !== -1) {
+        if (coordinates.length < 2) return [];
+        const guide = [];
+        for (let i = 0; i < coordinates.length - 1; i++) {
+          guide.push({
+            type: "line",
+            attrs: { coordinates: [coordinates[i], coordinates[i + 1]] },
+            styles: { style: "dashed", dashedValue: [4, 4], color: "rgba(232,182,76,0.8)", size: 1 },
+            ignoreEvent: true,
+          });
+        }
+        return guide;
+      }
       if (coordinates.length < 3) return [];
       const [cA, cB, cC] = coordinates;
       const pts = overlay.points || [];
@@ -654,7 +802,7 @@
           attrs: { x: x0 + 6, y: yStop, text: `SL ${fmtPrice(ed.stopLoss)}`, align: "left", baseline: "middle" },
           styles: {
             style: "stroke_fill", color: "#d05e5e", backgroundColor: labelColors().bg,
-            borderColor: "rgba(208,94,94,0.4)", borderSize: 1, borderRadius: 2, size: 10,
+            borderColor: "rgba(232,106,106,0.5)", borderSize: 1, borderRadius: 2, size: 10,
             family: "IBM Plex Mono, monospace",
             paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2,
           },
@@ -681,13 +829,53 @@
   // Drei Klicks: Einstieg, Stop, Ziel. CRV und Positionsgrösse fallen
   // daraus. Nutzt dieselben Kapital/Risiko-Felder wie der Grid Bot —
   // eine Quelle, zwei Konsumenten.
-  klinecharts.registerOverlay({
-    name: "positionTool",
-    totalStep: 4,
-    needDefaultPointFigure: false,
-    needDefaultXAxisFigure: false,
-    needDefaultYAxisFigure: true,
-    createPointFigures: ({ coordinates, overlay }) => {
+  // Vierter Punkt = rechter Rand auf der Zeitachse. Aeltere gespeicherte
+  // Zeichnungen haben nur drei Punkte; dann faellt der Rand auf die alte
+  // feste Breite zurueck (maxX + 60), damit nichts kaputtgeht.
+  const PT_MIN_WIDTH = 40;    // px, damit der Kasten nie zusammenfaellt
+  const PT_HANDLE_R  = 7;     // px, Radius der Anfasspunkte
+
+  // Bildschirmlage der drei Anfasspunkte. Wird von overlays.js zum Zeichnen
+  // und von app.js zur Treffererkennung gebraucht — eine Quelle, damit
+  // Gezeichnetes und Antippbares nicht auseinanderlaufen.
+  // Breite in KERZEN, nicht als vierter Punkt. Ein Zeitstempel 20 Kerzen in
+  // der Zukunft laesst sich von KLineCharts nicht auf einen Datenindex
+  // abbilden — convertToPixel gab null zurueck, der Zug brach lautlos ab.
+  // Eine blosse Zahl in extendData braucht ueberhaupt keine Umrechnung.
+  const PT_DEFAULT_BARS = 20;
+  const PT_MIN_BARS = 3;
+  function positionWidthPx(overlay) {
+    const bars = Math.max(PT_MIN_BARS,
+      (overlay && overlay.extendData && overlay.extendData.widthBars) || PT_DEFAULT_BARS);
+    const bar = (window.__tvBarSpace && window.__tvBarSpace()) || 8;
+    return Math.max(PT_MIN_WIDTH, bars * bar);
+  }
+  window.__tvPositionWidthPx = positionWidthPx;
+  window.__tvPositionBars = { DEFAULT: PT_DEFAULT_BARS, MIN: PT_MIN_BARS };
+
+  function positionHandles(x0, x1, cEntry, cStop, cTarget) {
+    // Stop und Ziel sitzen in den LINKEN ECKEN des Kastens, jeder auf seiner
+    // eigenen Linie. Bei einem Long ist das Ziel oben und der Stop unten,
+    // beim Short umgekehrt — das ergibt sich von selbst aus den Kurswerten.
+    // Die Schilder schliessen rechts daran an und laufen nach rechts, es
+    // kann sich also nichts mehr ueberlagern.
+    const hx = x0;
+    const ys = [cEntry, cStop, cTarget].filter(Boolean).map(c => c.y);
+    const midY = (Math.min(...ys) + Math.max(...ys)) / 2;
+    return {
+      stop:   cStop   ? { x: hx, y: cStop.y }   : null,     // pointIndex 1
+      target: cTarget ? { x: hx, y: cTarget.y } : null,     // pointIndex 2
+      width:  { x: x1 + PT_HANDLE_R + 3, y: midY },         // pointIndex 3
+    };
+  }
+  // Schilder beginnen rechts NEBEN den Eckgriffen und laufen nach rechts.
+  const chipLeft = (x0) => x0 + PT_HANDLE_R + 6;
+  window.__tvPositionHandles = positionHandles;
+  window.__tvPositionGeom = { MIN_WIDTH: PT_MIN_WIDTH, HANDLE_R: PT_HANDLE_R };
+
+  // Benannt statt inline, damit der Pruefstand den Renderer ohne echten
+  // Chart aufrufen und Ruhe- gegen Auswahlzustand vergleichen kann.
+  function renderPosition({ coordinates, overlay }) {
       if (coordinates.length < 2) return [];
       const pts = overlay.points || [];
       if (pts.length < 2 || pts[0].value == null) return [];
@@ -697,21 +885,36 @@
       const target = pts[2]?.value;
       const cEntry = coordinates[0], cStop = coordinates[1], cTarget = coordinates[2];
 
+      // Nur bei angetippter Zeichnung: Beschriftungen und Anfasspunkte.
+      // Im Ruhezustand bleiben nur Flaechen und Linien stehen, damit der
+      // Chart nicht mit Text zugestellt wird.
+      const selected = window.__tvSelectedId === overlay.id;
+
       const isLong = stop != null && stop < entry;
-      const x0 = Math.min(...coordinates.map(c => c.x));
-      const x1 = Math.max(...coordinates.map(c => c.x)) + 60;
+      const x0 = Math.min(...coordinates.slice(0, 3).filter(Boolean).map(c => c.x));
+      // Rechter Rand aus der Kerzenanzahl. Keine Umrechnung eines
+      // Zukunfts-Zeitstempels mehr noetig — genau daran ist der
+      // Breiten-Griff dreimal gescheitert.
+      const x1 = x0 + positionWidthPx(overlay);
       const figs = [];
 
       const risk = stop != null ? Math.abs(entry - stop) : null;
       const reward = target != null ? Math.abs(target - entry) : null;
       const rr = (risk && reward) ? reward / risk : null;
 
+      // Flaechenfarben und Deckkraft kommen aus extendData, damit das
+      // eigene Stilmenue sie aendern kann. Ohne Angabe die bisherigen Werte.
+      const ed = overlay.extendData || {};
+      const stopCol   = ed.stopColor   || "#d05e5e";
+      const targetCol = ed.targetColor || "#3fb68b";
+      const zoneAlpha = (ed.zoneOpacity != null ? ed.zoneOpacity : 10) / 100;
+
       // Risiko-Zone (Einstieg -> Stop)
       if (cStop) {
         figs.push({
           type: "rect",
           attrs: { x: x0, y: Math.min(cEntry.y, cStop.y), width: x1 - x0, height: Math.abs(cStop.y - cEntry.y) },
-          styles: { style: "fill", color: "rgba(208,94,94,0.10)" },
+          styles: { style: "fill", color: hexA(stopCol, zoneAlpha) },
         });
       }
       // Gewinn-Zone (Einstieg -> Ziel)
@@ -719,7 +922,7 @@
         figs.push({
           type: "rect",
           attrs: { x: x0, y: Math.min(cEntry.y, cTarget.y), width: x1 - x0, height: Math.abs(cTarget.y - cEntry.y) },
-          styles: { style: "fill", color: "rgba(63,182,139,0.10)" },
+          styles: { style: "fill", color: hexA(targetCol, zoneAlpha) },
         });
       }
 
@@ -730,7 +933,7 @@
       });
       const chip = (y, text, color) => ({
         type: "text",
-        attrs: { x: x1 - 4, y, text, align: "right", baseline: "middle" },
+        attrs: { x: chipLeft(x0), y, text, align: "left", baseline: "middle" },
         styles: {
           style: "stroke_fill", color, backgroundColor: labelColors().bg,
           borderColor: hexA(color.replace("rgba", "rgb").split(",").slice(0, 3).join(",") + ")", 0.4),
@@ -740,21 +943,25 @@
       });
 
       figs.push(line(cEntry.y, "rgba(154,165,177,0.9)"));
-      figs.push(chip(cEntry.y, `Einstieg ${fmtPrice(entry)}`, "#9aa5b1"));
+      if (selected) figs.push(chip(cEntry.y, `Einstieg ${fmtPrice(entry)}`, "#9aa5b1"));
 
       if (cStop) {
-        figs.push(line(cStop.y, "rgba(208,94,94,0.9)"));
-        const rPct = ((Math.abs(entry - stop) / entry) * 100).toFixed(2);
-        figs.push(chip(cStop.y, `Stop ${fmtPrice(stop)}  −${rPct}%`, "#d05e5e"));
+        figs.push(line(cStop.y, hexA(stopCol, 0.9)));
+        if (selected) {
+          const rPct = ((Math.abs(entry - stop) / entry) * 100).toFixed(2);
+          figs.push(chip(cStop.y, `Stop ${fmtPrice(stop)}  \u2212${rPct}%`, stopCol));
+        }
       }
       if (cTarget) {
-        figs.push(line(cTarget.y, "rgba(63,182,139,0.9)"));
-        const gPct = ((Math.abs(target - entry) / entry) * 100).toFixed(2);
-        figs.push(chip(cTarget.y, `Ziel ${fmtPrice(target)}  +${gPct}%`, "#3fb68b"));
+        figs.push(line(cTarget.y, hexA(targetCol, 0.9)));
+        if (selected) {
+          const gPct = ((Math.abs(target - entry) / entry) * 100).toFixed(2);
+          figs.push(chip(cTarget.y, `Ziel ${fmtPrice(target)}  +${gPct}%`, targetCol));
+        }
       }
 
-      // Kennzahlen-Block: CRV und Positionsgrösse
-      if (rr != null) {
+      // Kennzahlen-Block: CRV und Positionsgroesse — ebenfalls nur bei Auswahl
+      if (rr != null && selected) {
         const sizing = (window.__tvSizing && window.__tvSizing()) || null;
         const lines = [`${isLong ? "Long" : "Short"}   CRV 1:${rr.toFixed(2)}`];
         if (sizing && risk) {
@@ -763,7 +970,9 @@
           lines.push(`Size ${size.toLocaleString("de-CH")} USDT  (${sizing.riskPct}% von ${sizing.capital.toLocaleString("de-CH")})`);
           lines.push(`Risiko ${Math.round(sizing.capital * sizing.riskPct / 100)} USDT  =  1R`);
         }
-        const yTop = Math.min(...coordinates.map(c => c.y)) - 8;
+        // Zusaetzlich um den Griffradius hoeher, sonst beruehrt die unterste
+        // Zeile den Eckgriff auf der oberen Kastenlinie.
+        const yTop = Math.min(...coordinates.slice(0, 3).filter(Boolean).map(c => c.y)) - 8 - PT_HANDLE_R;
         lines.forEach((txt, i) => {
           figs.push({
             type: "text",
@@ -778,8 +987,45 @@
         });
       }
 
-      return figs;
-    },
+    // Die tatsaechlich gezeichnete Geometrie nach aussen geben. app.js hat
+    // sie bisher aus den Overlay-Punkten NACHGERECHNET — und lag daneben,
+    // sobald sich ein Punkt nicht in Pixel umrechnen liess (der vierte
+    // Punkt liegt 20 Kerzen rechts, oft ausserhalb der geladenen Daten).
+    // Der Griff wurde dann an einer Stelle gesucht, an der er nicht ist.
+    window.__tvPositionBox = window.__tvPositionBox || {};
+    window.__tvPositionBox[overlay.id] = { x0, x1, cEntry, cStop, cTarget };
+
+      // Anfasspunkte. Nur diese drei sind ziehbar — der Einstieg bleibt, wo
+      // er gesetzt wurde, und der Kasten als Ganzes laesst sich nicht
+      // verschieben. app.js prueft dieselben Positionen bei der Beruehrung.
+      if (selected) {
+        const h = positionHandles(x0, x1, cEntry, cStop, cTarget);
+        const dot = (pos, color) => pos && figs.push({
+          type: "circle",
+          attrs: { x: pos.x, y: pos.y, r: PT_HANDLE_R },
+          styles: {
+            style: "stroke_fill",
+            color: labelColors().bg,
+            borderColor: color,
+            borderSize: 2,
+          },
+        });
+        dot(h.stop,   stopCol);
+        dot(h.target, targetCol);
+        dot(h.width,  "#e8b64c");
+      }
+
+    return figs;
+  }
+  window.__tvRenderPosition = renderPosition;
+
+  klinecharts.registerOverlay({
+    name: "positionTool",
+    totalStep: 4,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: true,
+    createPointFigures: renderPosition,
   });
 
   // ---------- Freihand ----------
@@ -797,14 +1043,37 @@
     createPointFigures: ({ coordinates, overlay }) => {
       if (coordinates.length < 2) return [];
       const ed = overlay.extendData || {};
+      // Glättung (D3): 3-Punkt-Mittelwert in DREI Durchläufen, jetzt IMMER
+      // angewendet — nicht mehr an eine Menü-Checkbox gekoppelt. Da die
+      // Live-Vorschau (_fhRedrawPreview) dieselbe freehand-createPointFigures
+      // nutzt, wird schon WÄHREND des Zeichnens geglättet. Endpunkte bleiben je
+      // Durchlauf fix, die gespeicherten Rohpunkte unberührt (nur die
+      // gezeichneten Koordinaten) — also weiterhin verlustfrei.
+      let coords = coordinates;
+      if (coordinates.length >= 3) {
+        const SMOOTH_PASSES = 3;
+        for (let pass = 0; pass < SMOOTH_PASSES; pass++) {
+          const src = coords;
+          const out = [src[0]];
+          for (let i = 1; i < src.length - 1; i++) {
+            out.push({
+              x: (src[i - 1].x + src[i].x + src[i + 1].x) / 3,
+              y: (src[i - 1].y + src[i].y + src[i + 1].y) / 3,
+            });
+          }
+          out.push(src[src.length - 1]);
+          coords = out;
+        }
+      }
       return [{
         type: "line",
-        attrs: { coordinates },
+        attrs: { coordinates: coords },
         styles: {
-          style: "solid",
+          style: ed.style || "solid",
           color: ed.color || "#e8b64c",
           size: ed.size || 2,
           smooth: true,
+          dashedValue: ed.dashedValue || [4, 4],
         },
       }];
     },
@@ -901,22 +1170,66 @@
     needDefaultPointFigure: true,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
-    createPointFigures: ({ coordinates, overlay, yAxis }) => {
+    // Rechtsklick auf Ankerlinie ODER VWAP-Kurve: Stil + Löschen (Punkt 2).
+    // Beide sind jetzt Teil des Overlays, also überall auf der Linie greifbar.
+    onRightClick: (event) => {
+      if (window.__tvOpenOverlayMenu) { window.__tvOpenOverlayMenu(event.overlay, event); return true; }
+      return false;
+    },
+    createPointFigures: ({ coordinates, overlay, xAxis, yAxis }) => {
       if (coordinates.length < 1) return [];
       const x = coordinates[0].x;
+      const ls = (overlay.styles && overlay.styles.line) || {};
+      const col   = ls.color || (overlay.extendData && overlay.extendData.color) || "#c792ea";
+      const width = ls.size  || 2;
+      const lineStyle = ls.style || "solid";
+      const lineDash  = ls.dashedValue || [4, 4];
+      const figs = [];
       // Ankerlinie von oben nach unten durch das Preis-Pane
       const yTop    = yAxis ? yAxis.convertToPixel(yAxis.getRange?.()?.to ?? 1e9) : 0;
       const yBottom = yAxis ? yAxis.convertToPixel(yAxis.getRange?.()?.from ?? 0)  : 2000;
-      return [{
+      figs.push({
         type: "line",
         attrs: { coordinates: [{ x, y: yTop }, { x, y: yBottom }] },
-        styles: { style: "dashed", color: "rgba(199,146,234,0.6)", size: 1, dashedValue: [4, 3], smooth: false },
-      }];
+        styles: { style: "dashed", color: "rgba(199,146,234,0.55)", size: 1, dashedValue: [4, 3], smooth: false },
+      });
+      // VWAP-Kurve ab dem Anker — EXAKT wie der AVWAP-Indikator:
+      // kumulativ (H+L+C)/3 × Volumen ÷ Volumen. Jedes Overlay rechnet aus
+      // seinem eigenen Anker (mehrere AVWAPs funktionieren dadurch korrekt).
+      // Volumenlose Assets (Gold/Silber/Indizes) ergeben keine Kurve — wie
+      // beim bisherigen Indikator.
+      const anchorTs = overlay.points[0] && overlay.points[0].timestamp;
+      const getData = (typeof window !== "undefined" && window.__tvGetDataList) ? window.__tvGetDataList : null;
+      if (anchorTs && getData && xAxis && yAxis) {
+        const data = getData() || [];
+        let cumPV = 0, cumV = 0;
+        const pts = [];
+        for (let i = 0; i < data.length; i++) {
+          const d = data[i];
+          if (!d || d.timestamp < anchorTs) continue;
+          const vol = d.volume || 0;
+          const typ = (d.high + d.low + d.close) / 3;
+          cumPV += typ * vol;
+          cumV  += vol;
+          if (cumV <= 0) continue;
+          const px = xAxis.convertToPixel(i);
+          const py = yAxis.convertToPixel(cumPV / cumV);
+          if (px != null && py != null && isFinite(px) && isFinite(py)) pts.push({ x: px, y: py });
+        }
+        if (pts.length >= 2) {
+          figs.push({
+            type: "line",
+            attrs: { coordinates: pts },
+            styles: { style: lineStyle, color: col, size: width, smooth: false, dashedValue: lineDash },
+          });
+        }
+      }
+      return figs;
     },
     onDrawEnd: (ev) => {
-      const ts = ev?.overlay?.points?.[0]?.timestamp;
-      if (ts && typeof window.__tvAnchorVwap === "function") {
-        window.__tvAnchorVwap(ts, ev.overlay.id);
+      // Die Kurve zeichnet das Overlay selbst — nur einen Redraw anstossen.
+      if (typeof window.__tvAnchorVwap === "function") {
+        window.__tvAnchorVwap(ev?.overlay?.points?.[0]?.timestamp, ev?.overlay?.id);
       }
       return false;
     },
@@ -984,6 +1297,431 @@
     },
   });
 
+  // ---------- Elliott-Wellen-Setup (Welle 3 / Golden Pocket) ----------
+  //
+  // Programmatisch vom EWT-Scanner erzeugt, wie "pattern" und "smcZone".
+  //
+  // Punkt-Reihenfolge — vom Scanner in app.js in exakt dieser Folge
+  // uebergeben. ALLE Punkte haengen an echten Timestamps und Kurswerten,
+  // nie an Pixeln: dadurch sitzt die Zeichnung bei jedem Zoom- und
+  // Scrollzustand automatisch richtig, ohne eigenes Nachrechnen.
+  //   0  Start Welle 1   (Zeitpunkt Tief,  Tiefkurs)
+  //   1  Ende  Welle 1   (Zeitpunkt Hoch,  Hochkurs)
+  //   2  Box oben links  (Zeitpunkt Hoch,  0.5-Level)
+  //   3  Box unten rechts(rechter Rand,    0.618-Level)
+  //   4  Welle-3-Ziel    (rechter Rand,    1.618-Extension)  — optional
+  //
+  // Die Y-Werte der Box stammen aus der LOGARITHMISCHEN Rechnung in
+  // ewt.js. Hier wird nichts mehr interpoliert — sonst waere die
+  // geometrische Korrektheit an dieser Stelle wieder verloren.
+  klinecharts.registerOverlay({
+    name: "ewtZone",
+    totalStep: 1,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: true,
+    createPointFigures: ({ coordinates, overlay, bounding, barSpace }) => {
+      if (coordinates.length < 4) return [];
+      const ed = overlay.extendData || {};
+
+      // Gelb wartend · Gruen getriggert · Rot invalidiert · Grau Time-Out
+      const PAL = {
+        pending:   "232,182,76",
+        triggered: "63,182,139",
+        // Heller als die Kerzenfarbe --down (#d05e5e): fuer duenne Linien
+        // und kleine Schrift auf dunklem Grund ist die dunkle Variante
+        // schlecht lesbar.
+        invalid:   "232,106,106",
+        timeout:   "150,170,190",
+      };
+      const rgb = PAL[ed.state] || PAL.pending;
+      const done = ed.state === "invalid" || ed.state === "timeout";
+      const col  = `rgba(${rgb},${done ? 0.6 : 0.95})`;
+
+      const c0 = coordinates[0], c1 = coordinates[1];
+      const c2 = coordinates[2], c3 = coordinates[3];
+      const c4 = coordinates.length > 4 ? coordinates[4] : null;
+      const figs = [];
+
+      // ---- Golden-Pocket-Box ----
+      // Nach dem Einstieg gebrochen: gruen gefuellt, aber roter Strichrand.
+      // Ohne diese Unterscheidung sieht im Rueckblick jede gruene Box wie
+      // ein Treffer aus.
+      const broke = ed.outcome === "invalidiert";
+      figs.push({
+        type: "rect",
+        attrs: rectAttrs(c2, c3),
+        styles: {
+          style: "stroke_fill",
+          color: `rgba(${rgb},${done ? 0.07 : 0.16})`,
+          borderColor: broke ? "rgba(232,106,106,0.95)" : col,
+          borderSize: 1,
+          borderStyle: (done || broke) ? "dashed" : "solid",
+          dashedValue: [4, 3],
+        },
+        ignoreEvent: false,
+      });
+
+      // ---- Welle 1 als Linie mit Anfassern ----
+      figs.push({
+        type: "line",
+        attrs: { coordinates: [c0, c1] },
+        styles: { style: "solid", color: col, size: 2, smooth: false },
+      });
+      [c0, c1].forEach(c => figs.push({
+        type: "circle",
+        attrs: { x: c.x, y: c.y, r: 3.5 },
+        styles: { style: "fill", color: col },
+      }));
+      // Welle 1 beschriften. Die Projektion zaehlt ab Welle 2 weiter,
+      // zusammen ergibt das die durchgehende Folge 1-2-3-4-5-A-B-C.
+      // backgroundColor explizit, sonst KLC-Default weiss auf graublau.
+      const numStyle = {
+        style: "stroke_fill", color: col,
+        backgroundColor: "rgba(13,17,23,0.85)",
+        borderColor: col, borderSize: 1, borderRadius: 3,
+        size: zoomSize(barSpace, 10), family: "IBM Plex Mono, monospace",
+        paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
+      };
+      figs.push({
+        type: "text",
+        attrs: { x: c1.x + 6, y: c1.y, text: "1", align: "left", baseline: "middle" },
+        styles: numStyle,
+        ignoreEvent: true,
+      });
+      // Welle 2 sitzt in der Box — bei getriggerten Setups am gemessenen
+      // Tief, sonst mittig als Erwartungswert.
+      figs.push({
+        type: "text",
+        attrs: { x: Math.min(c2.x, c3.x) + 6, y: (c2.y + c3.y) / 2,
+                 text: "2", align: "left", baseline: "middle" },
+        styles: numStyle,
+        ignoreEvent: true,
+      });
+
+      // Invalidierungs-Niveau: Waagrechte auf Hoehe des Start-Tiefs bis an
+      // den rechten Rand der Box. Bricht der Kurs darunter, ist die
+      // EWT-Regel "Welle 2 unterschreitet den Start von Welle 1 nicht"
+      // verletzt — das ist die eine harte Regel des Setups.
+      figs.push({
+        type: "line",
+        attrs: { coordinates: [{ x: c0.x, y: c0.y }, { x: c3.x, y: c0.y }] },
+        styles: { style: "dashed", dashedValue: [3, 4],
+                  color: `rgba(232,106,106,${done ? 0.45 : 0.75})`, size: 1 },
+      });
+
+      // ---- Welle-3-Ziel (nur bei getriggerten Setups) ----
+      if (c4) {
+        figs.push({
+          type: "line",
+          attrs: { coordinates: [{ x: c2.x, y: c4.y }, { x: c3.x, y: c4.y }] },
+          styles: { style: "dashed", dashedValue: [6, 4],
+                    color: "rgba(63,182,139,0.75)", size: 1 },
+        });
+        if (ed.targetLabel) {
+          figs.push({
+            type: "text",
+            attrs: { x: c3.x - 4, y: c4.y, text: ed.targetLabel,
+                     align: "right", baseline: "bottom" },
+            styles: {
+              style: "stroke_fill", color: "rgba(63,182,139,0.95)",
+              backgroundColor: "rgba(13,17,23,0.85)",
+              borderColor: "rgba(63,182,139,0.6)", borderSize: 1, borderRadius: 3,
+              size: zoomSize(barSpace, 10), family: "IBM Plex Mono, monospace",
+              paddingLeft: 5, paddingRight: 5, paddingTop: 1, paddingBottom: 1,
+            },
+            ignoreEvent: true,
+          });
+        }
+      }
+
+      // ---- Beschriftung ----
+      // In den Sichtbereich klemmen: scrollt das Setup halb aus dem Bild,
+      // saehe man sonst nur noch eine Box ohne Erklaerung. Gleiche
+      // Behandlung wie beim Muster-Overlay.
+      const zAnc = ed.label
+        ? labelAnchor(coordinates, bounding, Math.min(c2.x, c3.x) + 4) : null;
+      if (zAnc) {
+        const lc = labelColors();
+        const y = Math.min(c2.y, c3.y);
+        figs.push({
+          type: "text",
+          attrs: { x: zAnc.x, y, text: ed.label, align: zAnc.align, baseline: "bottom" },
+          styles: {
+            style: "stroke_fill",
+            color: col,
+            backgroundColor: lc.bg,
+            borderColor: col,
+            borderSize: 1,
+            borderRadius: 3,
+            size: zoomSize(barSpace, 10),
+            family: "IBM Plex Mono, monospace",
+            paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+          },
+          ignoreEvent: true,
+        });
+      }
+
+      return figs;
+    },
+  });
+
+  // ---------- EWT-Projektion (Welle 3/4/5) ----------
+  //
+  // Bewusst zurueckhaltend gezeichnet: gepunktet, halbtransparent, mit
+  // Fragezeichen im Titel. Das ist eine Fibonacci-Fortschreibung, keine
+  // Vorhersage — und es soll auch so AUSSEHEN. Wer eine gepunktete
+  // blasse Linie sieht, liest sie anders als eine kraeftige durchgezogene.
+  //
+  // Punkt-Reihenfolge:
+  // Vollstaendiger Elliott-Zyklus: fuenf Impulswellen, dann die
+  // dreiteilige Korrektur. Welle 1 und 2 liegen bereits als Fakten im
+  // ewtZone-Overlay (Linie und Box) — hier wird ab Welle 2 weitergezaehlt,
+  // sodass zusammen 1-2-3-4-5-A-B-C lesbar ist.
+  //
+  //   0  Anker = Welle-2-Tief      4  Welle 5
+  //   1  Welle 3                   5  Welle A
+  //   2  Welle-3-Zielband oben     6  Welle B
+  //   3  Welle-4-Tief              7  Welle C
+  klinecharts.registerOverlay({
+    name: "ewtProjection",
+    totalStep: 1,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, overlay, bounding, barSpace }) => {
+      if (coordinates.length < 8) return [];
+      const ed = overlay.extendData || {};
+      // Angenommene Basis (Welle-2-Tief noch nicht bekannt) wird noch
+      // blasser gezeichnet als eine gemessene.
+      const weak = ed.basis !== "gemessen";
+      const a    = weak ? 0.42 : 0.68;
+      // Impulswellen blau, Korrekturwellen warm — damit auf einen Blick
+      // erkennbar ist, wo der Impuls endet und die Korrektur beginnt.
+      const col  = `rgba(90,169,230,${a})`;
+      const colC = `rgba(224,150,102,${a})`;
+      const c0 = coordinates[0], c1 = coordinates[1], c2 = coordinates[2];
+      const c3 = coordinates[3], c4 = coordinates[4];
+      const cA = coordinates[5], cB = coordinates[6], cC = coordinates[7];
+      const figs = [];
+
+      // Zielband Welle 3 (1.618 bis 2.618).
+      //
+      // Frueher spannte es vom Anker bis zum Welle-3-Punkt und stand als
+      // grosses leeres Rechteck ueber dem Wellenzug, ohne erkennbaren
+      // Bezug. Jetzt sitzt es im letzten Drittel vor dem Ziel und reicht
+      // etwas darueber hinaus — es liest sich als Zone AM Ziel, nicht als
+      // Kasten daneben.
+      const bandFrom = c0.x + (c1.x - c0.x) * 0.62;
+      const bandTo   = c1.x + (c1.x - c0.x) * 0.18;
+      figs.push({
+        type: "rect",
+        attrs: rectAttrs({ x: bandFrom, y: c1.y }, { x: bandTo, y: c2.y }),
+        styles: {
+          style: "stroke_fill",
+          color: `rgba(90,169,230,${weak ? 0.03 : 0.06})`,
+          borderColor: `rgba(90,169,230,${a * 0.6})`,
+          borderSize: 1, borderStyle: "dashed", dashedValue: [2, 3],
+        },
+        ignoreEvent: true,
+      });
+
+      // Impulsteil 2 -> 3 -> 4 -> 5, gepunktet
+      figs.push({
+        type: "line",
+        attrs: { coordinates: [c0, c1, c3, c4] },
+        styles: { style: "dashed", dashedValue: [2, 4], color: col, size: 1.5, smooth: false },
+      });
+      // Korrekturteil 5 -> A -> B -> C
+      figs.push({
+        type: "line",
+        attrs: { coordinates: [c4, cA, cB, cC] },
+        styles: { style: "dashed", dashedValue: [2, 4], color: colC, size: 1.5, smooth: false },
+      });
+
+      // Wendepunkte mit Zaehlung
+      [[c1, "3", col], [c3, "4", col], [c4, "5", col],
+       [cA, "A", colC], [cB, "B", colC], [cC, "C", colC]].forEach(([c, n, k]) => {
+        figs.push({
+          type: "circle",
+          attrs: { x: c.x, y: c.y, r: 3 },
+          styles: { style: "stroke_fill", color: "rgba(13,17,23,0.9)",
+                    borderColor: k, borderSize: 1.5 },
+        });
+        figs.push({
+          type: "text",
+          attrs: { x: c.x + 7, y: c.y, text: n, align: "left", baseline: "middle" },
+          styles: {
+            style: "stroke_fill", color: k,
+            backgroundColor: "rgba(13,17,23,0.85)",
+            borderColor: k, borderSize: 1, borderRadius: 3,
+            size: zoomSize(barSpace, 10), family: "IBM Plex Mono, monospace",
+            paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
+          },
+          ignoreEvent: true,
+        });
+      });
+
+      // Titel. Das Fragezeichen ist Absicht.
+      const pAnc = ed.label ? labelAnchor(coordinates, bounding, c0.x + 4) : null;
+      if (pAnc) {
+        const lc = labelColors();
+        figs.push({
+          type: "text",
+          attrs: { x: pAnc.x, y: Math.min(c1.y, c2.y) - 4, text: ed.label,
+                   align: pAnc.align, baseline: "bottom" },
+          styles: {
+            style: "stroke_fill", color: col,
+            backgroundColor: lc.bg, borderColor: col,
+            borderSize: 1, borderRadius: 3, size: zoomSize(barSpace, 10),
+            family: "IBM Plex Mono, monospace",
+            paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+          },
+          ignoreEvent: true,
+        });
+      }
+      return figs;
+    },
+  });
+
+  // Wohin gehoert das Etikett einer Struktur?
+  //
+  // Frueher wurde die x-Position stumpf ins Sichtfenster geklemmt, damit
+  // ein halb herausgescrolltes Etikett lesbar bleibt. Das klemmte aber
+  // auch Etiketten von Strukturen an den Rand, die VOLLSTAENDIG ausserhalb
+  // liegen — im Chart sichtbar als Beschriftungen, die links kleben
+  // bleiben, obwohl die zugehoerige Welle laengst weg ist.
+  //
+  // Rueckgabe null = gar nicht zeichnen. Sonst { x, align }: liegt das
+  // Etikett nahe am rechten Rand, wird rechtsbuendig ausgerichtet, damit
+  // der Text nach INNEN laeuft statt aus dem Bild.
+  // Schriftgroesse an den Zoom koppeln.
+  //
+  // KLineCharts uebergibt barSpace an createPointFigures — daraus laesst
+  // sich der Zoomgrad direkt ablesen (Pixel je Kerze). Feste Groessen
+  // bleiben beim Hineinzoomen winzig, waehrend die Kerzen wachsen.
+  // Ausgezoomt (barSpace ~3) bleibt es klein, stark hineingezoomt
+  // (barSpace ~30) wird es sichtbar groesser, gedeckelt auf base+8.
+  function zoomSize(barSpace, base) {
+    const bar = (barSpace && barSpace.bar) || 6;
+    return Math.round(Math.max(base, Math.min(base + 8, base - 2 + bar * 0.45)));
+  }
+
+  function labelAnchor(coordinates, bounding, preferX) {
+    const W = (bounding && bounding.width) || 1200;
+    let minX = Infinity, maxX = -Infinity;
+    for (const c of coordinates) {
+      if (c.x < minX) minX = c.x;
+      if (c.x > maxX) maxX = c.x;
+    }
+    // Struktur komplett ausserhalb -> kein Etikett.
+    // (Off-Screen-Koordinaten sind bei KLineCharts echt negativ bzw. > W —
+    // im Bundle geprueft, dataIndexToCoordinate klemmt nicht.)
+    if (maxX < 0 || minX > W) return null;
+    const x = preferX != null ? preferX : minX;
+    // FRUEHER wurde x an den Rand geklemmt, damit der Titel beim Scrollen
+    // sichtbar blieb. Das erzeugte aber genau die stoerenden, von ihrer
+    // Struktur losgeloesten Etiketten am linken Rand, sobald der Ankerpunkt
+    // aus dem Bild lief. Jetzt gilt: liegt der Anker selbst ausserhalb des
+    // Fensters, gibt es KEIN Etikett — lieber gar keins als ein gepinntes.
+    const M = 6;
+    if (x < M || x > W - M) return null;
+    return x > W * 0.62 ? { x, align: "right" } : { x, align: "left" };
+  }
+
+  // ---------- EWT-Wellenzug (Impuls 1-5 / Korrektur A-B-C) ----------
+  //
+  // Ein Overlay fuer beide Strukturarten. Die Beschriftung kommt aus
+  // extendData.labels, die Punktzahl richtet sich danach — so braucht es
+  // keine getrennten Overlays fuer Impuls und Korrektur.
+  //
+  // Alle Punkte haengen an dataIndex und Kurswert, nie an Pixeln. Der
+  // Wellenzug sitzt dadurch bei jedem Zoom- und Scrollzustand richtig.
+  klinecharts.registerOverlay({
+    name: "ewtWave",
+    totalStep: 1,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, overlay, bounding, barSpace }) => {
+      if (coordinates.length < 2) return [];
+      const ed = overlay.extendData || {};
+      const bull = ed.dir === "bull";
+      // Impuls in Richtungsfarbe, Korrektur warm abgesetzt.
+      // Das Rot ist heller als die Kerzenfarbe --down (#d05e5e). Fuer
+      // Kerzenkoerper ist die dunkle Variante richtig, fuer duenne Linien
+      // und kleine Schrift auf dunklem Grund aber schlecht lesbar.
+      const rgb = ed.kind === "abc" ? "224,150,102" : (bull ? "63,182,139" : "232,106,106");
+      // Feinere Wellengrade duenner und blasser: die uebergeordnete
+      // Struktur soll optisch dominieren.
+      const w = ed.degreeRank === 0 ? 2.2 : ed.degreeRank === 1 ? 1.7 : 1.3;
+      const a = ed.degreeRank === 0 ? 0.95 : ed.degreeRank === 1 ? 0.75 : 0.55;
+      const col = `rgba(${rgb},${a})`;
+      const figs = [];
+
+      figs.push({
+        type: "line",
+        attrs: { coordinates },
+        styles: { style: ed.kind === "abc" ? "dashed" : "solid",
+                  dashedValue: [5, 4], color: col, size: w, smooth: false },
+      });
+
+      const labels = ed.labels || [];
+      coordinates.forEach((c0, i) => {
+        figs.push({
+          type: "circle",
+          attrs: { x: c0.x, y: c0.y, r: ed.degreeRank === 0 ? 3.5 : 2.8 },
+          styles: { style: "stroke_fill", color: "rgba(13,17,23,0.9)",
+                    borderColor: col, borderSize: 1.5 },
+        });
+        if (!labels[i]) return;
+        // Hoch- und Tiefpunkte abwechselnd oben/unten beschriften, damit
+        // die Zahlen nicht auf der Linie liegen.
+        //
+        // WICHTIG: backgroundColor MUSS gesetzt werden. KLineCharts faellt
+        // sonst auf seinen Default zurueck — im Bundle nachgesehen:
+        // color "#FFFFFF" auf backgroundColor "#76808F". Das ergab weisse
+        // Ziffern auf graublauen Kaesten, in denen die Richtungsfarbe
+        // komplett verlorenging.
+        const up = i % 2 === (bull ? 1 : 0);
+        figs.push({
+          type: "text",
+          attrs: { x: c0.x, y: c0.y + (up ? -8 : 8), text: labels[i],
+                   align: "center", baseline: up ? "bottom" : "top" },
+          styles: {
+            style: "stroke_fill", color: col,
+            backgroundColor: "rgba(13,17,23,0.85)",
+            borderColor: col, borderSize: 1, borderRadius: 3,
+            size: zoomSize(barSpace, 11), family: "IBM Plex Mono, monospace",
+            paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
+          },
+          ignoreEvent: true,
+        });
+      });
+
+      // Titel am ersten Punkt, in den Sichtbereich geklemmt — sonst
+      // verschwindet er beim Scrollen aus dem Bild.
+      const anc = ed.label ? labelAnchor(coordinates, bounding, coordinates[0].x) : null;
+      if (anc) {
+        const lc = labelColors();
+        figs.push({
+          type: "text",
+          attrs: { x: anc.x, y: coordinates[0].y + (bull ? 14 : -14), text: ed.label,
+                   align: anc.align, baseline: bull ? "top" : "bottom" },
+          styles: {
+            style: "stroke_fill", color: col,
+            backgroundColor: lc.bg, borderColor: col,
+            borderSize: 1, borderRadius: 3, size: zoomSize(barSpace, 10),
+            family: "IBM Plex Mono, monospace",
+            paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+          },
+          ignoreEvent: true,
+        });
+      }
+      return figs;
+    },
+  });
+
   // ---------- Polyline (nur Rendering) ----------
   // Das Zeichnen läuft klickbasiert über eigene Handler in app.js
   // (startPolyline), analog zum Freihand-Werkzeug. Hier nur die Darstellung
@@ -996,15 +1734,20 @@
     needDefaultYAxisFigure: false,
     createPointFigures: ({ coordinates, overlay }) => {
       if (coordinates.length < 2) return [];
+      // Stil aus extendData (zuverlässig durch Erstellung + Menü gesetzt),
+      // styles.line als Fallback (Punkt 5).
       const ed = overlay.extendData || {};
-      const color = ed.color || "#e8b64c";
-      const size  = ed.size || 1.5;
+      const ls = (overlay.styles && overlay.styles.line) || {};
+      const color = ed.color || ls.color || "#e8b64c";
+      const size  = ed.size  || ls.size  || 1.5;
+      const style = ed.style || ls.style || "solid";
+      const dash  = ed.dashedValue || ls.dashedValue || [4, 4];
       const figs = [];
       for (let i = 0; i < coordinates.length - 1; i++) {
         figs.push({
           type: "line",
           attrs: { coordinates: [coordinates[i], coordinates[i + 1]] },
-          styles: { style: "solid", color, size, smooth: false },
+          styles: { style, color, size, smooth: false, dashedValue: dash },
         });
       }
       return figs;

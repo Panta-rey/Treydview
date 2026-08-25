@@ -41,7 +41,7 @@ const Settings = {
     return out;
   },
 
-  open(indKey, onApply) {
+  open(indKey, onApply, onDelete) {
     const ind = CONFIG.INDICATORS.find(i => i.key === indKey);
     if (!ind) return;
     const hasInputs = (ind.inputs || []).length > 0;
@@ -246,5 +246,19 @@ const Settings = {
 
     document.getElementById("settingsClose").onclick = () => overlay.classList.add("hidden");
     overlay.onclick = (e) => { if (e.target === overlay) overlay.classList.add("hidden"); };
+
+    // Löschen-Button (Punkt 6b): nur wenn ein onDelete-Callback übergeben wird
+    // (Pane-Zahnrad). Schliesst das Panel und ruft den Callback, der die Pane
+    // schliesst und den Indikator im Dropdown abwählt.
+    const delBtn = document.getElementById("settingsDelete");
+    if (delBtn) {
+      if (typeof onDelete === "function") {
+        delBtn.style.display = "";
+        delBtn.onclick = () => { overlay.classList.add("hidden"); onDelete(indKey); };
+      } else {
+        delBtn.style.display = "none";
+        delBtn.onclick = null;
+      }
+    }
   },
 };
