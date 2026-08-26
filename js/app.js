@@ -1333,6 +1333,25 @@ function placeMobileDropdown(dd, trigger, panel) {
     return;
   }
   const wide = panel.classList.contains("dd-panel--wide");
+  // HF3: Hochformat — Lower-Bar-Dropups (öffnen nach oben) füllen den
+  // Chart-Bereich (gelber Bereich): oben unter der Topbar, unten über der Lower
+  // Bar, gleiche Höhe für alle, Breite an den Inhalt angepasst (max =
+  // Chartbreite), horizontal zentriert. Zentrierung über gemessene Breite statt
+  // transform, damit der Griff-Wisch (translateY) nicht kollidiert.
+  if (dir === "up") {
+    const tb = document.querySelector(".topbar");
+    const bb = document.querySelector(".bottom-bar");
+    const topPx = tb ? Math.round(tb.getBoundingClientRect().bottom) + 4 : 64;
+    const botPx = bb ? Math.round(vh - bb.getBoundingClientRect().top) + 4 : 60;
+    setP("top", topPx + "px"); setP("bottom", botPx + "px");
+    setP("height", "auto"); setP("max-height", "none");
+    setP("right", "auto"); setP("left", "0px");
+    setP("width", "auto"); setP("min-width", "200px"); setP("max-width", "96vw");
+    const pw = Math.min(panel.offsetWidth || 260, vw - 2 * M);
+    setP("left", Math.max(M, Math.round((vw - pw) / 2)) + "px");
+    positionDdGrip(panel, "up");
+    return;
+  }
   const W = Math.min(wide ? 300 : 240, vw - 2 * M);
   setP("width", W + "px");
   setP("max-width", "none");
@@ -1383,31 +1402,39 @@ function hideDdGrip() {
 function bindSheetSwipeClose(sheet, closeFn) {
   if (!sheet || sheet.__swipeBound) return;
   sheet.__swipeBound = true;
-  let s = null;
+  let s = null, axis = null;
   sheet.addEventListener("touchstart", (e) => {
-    if (!isLandscapeBar()) { s = null; return; }
     const t = e.touches[0];
     const rect = sheet.getBoundingClientRect();
-    if (t.clientX - rect.left > 30) { s = null; return; }   // nur linke Griffkante
+    if (isLandscapeBar()) {
+      // Querformat: linke Griffkante → nach rechts wischen schliesst.
+      if (t.clientX - rect.left > 30) { s = null; return; }
+      axis = "x";
+    } else {
+      // Hochformat: oberer Griff → nach unten wischen schliesst (HF2).
+      if (t.clientY - rect.top > 44) { s = null; return; }
+      axis = "y";
+    }
     s = { x: t.clientX, y: t.clientY };
   }, { passive: true });
   sheet.addEventListener("touchmove", (e) => {
     if (!s) return;
     const t = e.touches[0];
-    const dx = t.clientX - s.x;
-    if (dx > 0) {
+    const d = axis === "x" ? (t.clientX - s.x) : (t.clientY - s.y);
+    if (d > 0) {
       e.preventDefault();
-      // CSS setzt transform:none !important — nur inline !important schlägt das.
-      sheet.style.setProperty("transform", "translateX(" + dx + "px)", "important");
+      const tf = axis === "x" ? ("translateX(" + d + "px)") : ("translateY(" + d + "px)");
+      // CSS kann transform:none !important setzen — nur inline !important schlägt das.
+      sheet.style.setProperty("transform", tf, "important");
     }
   }, { passive: false });
   const end = (e) => {
     if (!s) return;
     const t = e.changedTouches && e.changedTouches[0];
-    const dx = t ? t.clientX - s.x : 0;
+    const d = t ? (axis === "x" ? (t.clientX - s.x) : (t.clientY - s.y)) : 0;
     sheet.style.removeProperty("transform");
-    if (dx > 60) { try { closeFn(); } catch (err) {} }
-    s = null;
+    if (d > 60) { try { closeFn(); } catch (err) {} }
+    s = null; axis = null;
   };
   sheet.addEventListener("touchend", end, { passive: true });
   sheet.addEventListener("touchcancel", end, { passive: true });
@@ -1422,6 +1449,20 @@ function syncLLModal() {
   const lpOpen = !!(lp && lp.classList.contains("open"));
   const wlOpen = !!(wl && !wl.classList.contains("hidden"));
   const open = tvIsMobile() && (lpOpen || wlOpen);
+
+  // QF1: Die Watchlist im offenen Zustand auf Body-Ebene hängen — wie das
+  // Layout-Modal. Im .app-Container liegt sie sonst in dessen Stapelkontext,
+  // der sie im Querformat abdunkelte (Portrait war zufällig ok). Auf Body-Ebene
+  // ist sie strukturell identisch zum Layout und damit exakt gleich hell.
+  if (wl) {
+    if (wlOpen && tvIsMobile()) {
+      if (wl.parentElement && wl.parentElement !== document.body) {
+        wl.__ddHome = wl.parentElement; document.body.appendChild(wl);
+      }
+    } else if (wl.__ddHome && wl.parentElement === document.body) {
+      wl.__ddHome.appendChild(wl);
+    }
+  }
 
   let bd = document.getElementById("llBackdrop");
   if (open && !bd) {
@@ -7841,7 +7882,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m67";
+const TV_BUILD = "m68";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
