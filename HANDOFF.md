@@ -2742,3 +2742,49 @@ index.html (Wurzel). index.html trägt bereits die js/css-Pfade + fibGoldenPocke
 - HF1 (Sync-Abstand — bitte prüfen, ob die deployte css/style.css die Regel wirklich
   hat), P2 (Achsen/Tags ohne Dezimalstellen wo sinnvoll), P1 (Icon-Form), QF3
   (Dropouts sichtbar), QF1/QF4/QF5.
+
+## Build m68 — Mobil-Fixes (21. August 2026)
+
+Vier hartnäckige Mobil-Punkte an den ECHTEN Ursachen gelöst (mehrfach vorher
+kosmetisch verfehlt).
+
+### Hochformat
+- **HF1 (Topbar-Abstand rechts, 4. Anlauf):** Ursache — padding/margin/::after am
+  Ende eines waagrecht scrollenden Flex-Containers gehen verloren; Topbar-Container-
+  Padding griff aus unklarem Grund auch nicht. Endgültige Lösung: TRANSPARENTER BORDER
+  an .tb-row (`border-left/right: calc(8px + safe) solid transparent`). Der Border
+  definiert die Scrollport-Grenze — Inhalt kann physisch nicht hineinscrollen, Abstand
+  bleibt links UND rechts. Topbar-Padding wieder auf 0.
+- **HF2 (Zeichenwerkzeuge Wisch schliessen):** bindSheetSwipeClose war nur Querformat.
+  Jetzt beидe Achsen: Querformat linke Kante→rechts, Hochformat oberer Griff (≤44px)→
+  unten. axis-abhängiges translateX/Y.
+- **HF3 (Lower-Bar-Dropups in den Chart-Bereich):** Hochformat-Pendant zu QF-neu.
+  placeMobileDropdown: für dir==="up" den Chart-Bereich füllen (top=Topbar-Unterkante,
+  bottom=Lower-Bar-Oberkante gemessen), Breite=Inhalt (max 96vw), zentriert über
+  gemessene Breite (kein transform → kollidiert nicht mit dem Wisch). draw-sheet/gb-bar
+  analog per CSS (top:calc(safe+80px), bottom:--tv-botbar, width:fit-content,
+  margin:0 auto).
+
+### Querformat
+- **QF1 (Watchlist dunkler, 4. Anlauf):** Das ::before-Backdrop-Fix (m67) lag in
+  `@media max-width:720px` — matcht im Querformat (Breite >720px) NICHT, deshalb nur
+  Portrait gefixt. Jetzt: Watchlist beim Öffnen an document.body gehängt (syncLLModal,
+  wie das Layout-Modal) → raus aus dem .app-Stapelkontext, der sie im Querformat
+  abdunkelte. Zusätzlich im pointer:coarse-Block (Portrait+Querformat):
+  `.watchlist:not(.hidden)` z-index 901 + `::before/::after { display:none }`.
+
+### Lektionen
+- Trailing padding/margin/::after in einem overflow-scroll-Flex-Container ist
+  unzuverlässig; ein transparenter BORDER am Scroll-Element ist der robuste Weg für
+  seitlichen Abstand.
+- `@media max-width:720px` matcht auf modernen iPhones im QUERFORMAT NICHT (Breite
+  844–932px). Mobile-Regeln, die beide Orientierungen treffen sollen, brauchen
+  `(pointer:coarse)`.
+- Zum Zentrieren einer fit-content-Box ohne transform (transform-Slot bleibt für den
+  Wisch frei): `left:0; right:0; width:fit-content; margin:0 auto`.
+
+### Offen / nächste Schritte
+- Dominanz BTC.D/USDT.D (Variante A, 1 Jahr, gratis via Worker-Top-Coins-Summe) —
+  freigegeben, als eigener Schritt.
+- Kerzen-Muster-Zeichentool (Icon: drei steigende Tageskerzen, unter Zeichenwerkzeuge →
+  Zonen & Profile, "Kerzen Muster").
