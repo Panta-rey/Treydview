@@ -876,7 +876,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m67"; }
+:root { --tv-build: "m68"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1019,24 +1019,29 @@ input, textarea, select, [contenteditable="true"] {
   .topbar {
     flex-direction: column; align-items: stretch;
     gap: 0; z-index: 630;
-    /* HF1: horizontaler Abstand am CONTAINER — dadurch enden beide Reihen-Boxen
-       (links UND rechts) vor dem Bildschirmrand, unabhängig vom Scrollen. Das
-       ist die zuverlässige Lösung; trailing padding/margin/::after im Zeilen-
-       Scroll-Container wurde am Ende verschluckt. Oben zusätzlich der Notch-/
-       Dynamic-Island-Abstand. */
-    padding: env(safe-area-inset-top) calc(8px + env(safe-area-inset-right)) 0 calc(8px + env(safe-area-inset-left));
+    /* Oben Notch-/Dynamic-Island-Abstand. Horizontaler Abstand kommt über den
+       Border-Trick an den Reihen (siehe .tb-row). */
+    padding: env(safe-area-inset-top) 0 0 0;
   }
   .tb-row {
     display: flex !important; align-items: center; gap: 5px;
-    padding: 5px 0;                 /* HF1: horizontaler Abstand kommt vom .topbar */
+    /* HF1 (endgültig): der horizontale Abstand steckt in einem TRANSPARENTEN
+       BORDER, nicht in padding/margin. Der Border definiert die Scrollport-
+       Grenze eines overflow-Containers — der Inhalt kann physisch nicht in den
+       Border-Bereich scrollen, also bleibt der Abstand links UND rechts erhalten
+       (padding/margin/::after gehen am Scroll-Ende verloren). Der transparente
+       Border zeigt den --bg-raised-Hintergrund der Topbar. */
+    border-left: calc(8px + env(safe-area-inset-left)) solid transparent;
+    border-right: calc(8px + env(safe-area-inset-right)) solid transparent;
+    padding: 5px 0;
     min-height: 38px;
     overflow-x: auto; overflow-y: visible;
     scrollbar-width: none; -webkit-overflow-scrolling: touch;
   }
   .tb-row::-webkit-scrollbar { display: none; }
   .tb-row > * { flex-shrink: 0; }
-  .tb-row::after { content: ""; flex: 0 0 0; }   /* HF1: nicht mehr nötig */
-  .tb-end-spacer { display: none; }              /* HF1: nicht mehr nötig */
+  .tb-row::after { content: ""; flex: 0 0 0; }
+  .tb-end-spacer { display: none; }
   #tbRow2 { border-top: 1px solid rgba(143,163,184,.12); }
   .tb-gap { flex: 1 1 auto; min-width: 8px; }
 
@@ -1224,7 +1229,11 @@ input, textarea, select, [contenteditable="true"] {
   }
   /* QF1: Watchlist exakt gleiche Farbe wie das Layout-Fenster (--bg-raised).
      (Vorher --bg-hover — das wirkte im Kontrast zum Abdunkler unpassend.) */
-  .watchlist:not(.hidden) { background: var(--bg-raised) !important; }
+  .watchlist:not(.hidden) { background: var(--bg-raised) !important; z-index: 901 !important; }
+  /* QF1: keinerlei Pseudo-Abdunkelung — gilt Portrait UND Querformat
+     (pointer:coarse), anders als das alte ::before in max-width:720px. */
+  .watchlist:not(.hidden)::before,
+  .watchlist:not(.hidden)::after { display: none !important; background: none !important; }
   #layoutPanel.open::before { display: none !important; }
 
   /* Griff: dickere Linie an der zum Knopf zeigenden Kante. Grosses,
@@ -1371,6 +1380,20 @@ input, textarea, select, [contenteditable="true"] {
   .main-chart, .main-chart canvas { touch-action: none; }
 
   .draw-sheet { background: var(--bg-raised); }
+  /* HF3: Zeichenwerkzeuge & Grid Bot im Hochformat den Chart-Bereich füllen
+     (gelber Bereich): oben unter der Topbar (~safe + 2 Reihen), unten über der
+     Lower Bar, Breite an den Inhalt angepasst (max = Chartbreite), horizontal
+     zentriert über margin:auto (nicht transform — sonst kollidiert der Wisch
+     nach unten). */
+  .draw-sheet, .gb-bar {
+    top: calc(env(safe-area-inset-top) + 80px) !important;
+    bottom: var(--tv-botbar) !important;
+    left: 0 !important; right: 0 !important;
+    width: fit-content !important; min-width: 220px; max-width: 96vw !important;
+    margin: 0 auto !important;
+    height: auto !important; max-height: none !important;
+    border-radius: 14px 14px 0 0;
+  }
   .draw-sheet-grid { grid-template-columns: repeat(5, 1fr); gap: 6px; }
   .draw-sheet-item {
     padding: 7px 2px; gap: 3px; font-size: 9px; border-radius: 7px;
