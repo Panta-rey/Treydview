@@ -2788,3 +2788,38 @@ kosmetisch verfehlt).
   freigegeben, als eigener Schritt.
 - Kerzen-Muster-Zeichentool (Icon: drei steigende Tageskerzen, unter Zeichenwerkzeuge →
   Zonen & Profile, "Kerzen Muster").
+
+## Build m69 — Mobil-Fixes (Disziplin-Runde, 21. August 2026)
+
+Drei Punkte an den ECHTEN Root-Causes (vorher u.a. 5× am Topbar-Abstand verfehlt).
+
+- **Punkt 1 (Indikator-/Muster-Liste abgeschnitten, Portrait+Querformat):** `.dd-list`
+  hat in der Basis `max-height:280px`. In den angedockten (voll hohen) Panels deckelte
+  das die Liste → Leerraum darunter. Fix: `.dd-panel.dd-anchored .dd-list
+  { max-height:none !important; overflow-y:visible !important }` — Liste füllt die
+  volle Höhe, das Panel scrollt.
+- **Punkt 3 (Topbar rechts kein Abstand — ROOT CAUSE nach 5 Versuchen):** Basis
+  `.topbar{flex-wrap:wrap}` wurde im Mobile nie zurückgesetzt. Zusammen mit
+  `flex-direction:column` + `align-items:stretch` streckten die Reihen NICHT sauber auf
+  die Viewport-Breite / die Topbar konnte >100vw werden → der rechte Rand (Border/
+  Padding) wurde von `html,body{overflow:hidden}` ABGESCHNITTEN. Deshalb erschien
+  rechts nie ein Abstand. Fix: `.topbar{flex-wrap:nowrap; width:100vw; max-width:100vw}`
+  → Topbar exakt 100vw; `.tb-row{width:100%; border-left/right:calc(8px+safe) solid
+  transparent}` → der transparente Border definiert die Scrollport-Grenze (Abstand
+  bleibt am Scroll-Ende erhalten, anders als padding/margin) und wird nicht mehr
+  geklippt.
+- **Punkt 2 (Querformat: linke Leiste hinter dem Chart):** Nebeneffekt des Border-Tricks
+  — im Querformat wird tbRow1 zur 54px-Leiste, der 8px-Border links/rechts verschmälerte
+  sie und schob den Inhalt hinter den Chart. Fix: `#tbRow1,#tbRow2{border-left/right:0
+  !important}` im Landscape-@media.
+- Aufräumung: JS-tb-end-spacer und verwaiste ::after/spacer-CSS entfernt.
+
+### Lektion
+- Auf Mobil `flex-wrap` beim Umstellen auf `flex-direction:column` explizit auf
+  `nowrap` setzen — sonst unvorhersehbare Cross-Size/Breite. Für seitlichen Abstand in
+  einem overflow-scroll-Container ist ein transparenter BORDER zuverlässig, ABER nur
+  wenn der Container garantiert ≤ Viewport-Breite ist (sonst klippt overflow:hidden den
+  Border weg).
+
+### Offen / nächster Chat
+- Dominanz BTC.D/USDT.D (Variante A) und Kerzen-Muster-Tool → in frischem Chat.

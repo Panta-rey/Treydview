@@ -876,7 +876,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m68"; }
+:root { --tv-build: "m69"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1018,19 +1018,26 @@ input, textarea, select, [contenteditable="true"] {
      verdeckt — der Bildschirm wird dunkel, ohne dass etwas erscheint. */
   .topbar {
     flex-direction: column; align-items: stretch;
+    /* WICHTIG (Punkt 3): flex-wrap MUSS zurückgesetzt werden. Die Basis-Topbar
+       hat flex-wrap:wrap; mit flex-direction:column bricht der Inhalt sonst in
+       eine ZWEITE Spalte um → Topbar breiter als 100vw → der rechte Rand (und
+       damit der rechte Abstand) wird von html,body{overflow:hidden} abgeschnitten.
+       Das war die Ursache, warum rechts nie ein Abstand erschien. */
+    flex-wrap: nowrap;
+    width: 100vw; max-width: 100vw;
     gap: 0; z-index: 630;
-    /* Oben Notch-/Dynamic-Island-Abstand. Horizontaler Abstand kommt über den
-       Border-Trick an den Reihen (siehe .tb-row). */
     padding: env(safe-area-inset-top) 0 0 0;
   }
   .tb-row {
     display: flex !important; align-items: center; gap: 5px;
-    /* HF1 (endgültig): der horizontale Abstand steckt in einem TRANSPARENTEN
-       BORDER, nicht in padding/margin. Der Border definiert die Scrollport-
-       Grenze eines overflow-Containers — der Inhalt kann physisch nicht in den
-       Border-Bereich scrollen, also bleibt der Abstand links UND rechts erhalten
-       (padding/margin/::after gehen am Scroll-Ende verloren). Der transparente
-       Border zeigt den --bg-raised-Hintergrund der Topbar. */
+    width: 100%; max-width: 100%; box-sizing: border-box;
+    /* Horizontaler Abstand über einen TRANSPARENTEN BORDER: der definiert die
+       Scrollport-Grenze eines overflow-Containers — Inhalt kann physisch nicht
+       hineinscrollen, der Abstand bleibt links UND rechts am Scroll-Ende erhalten
+       (padding-right ist dort browser-unzuverlässig). Funktioniert jetzt, weil
+       die Topbar dank flex-wrap:nowrap garantiert 100vw ist und der Border nicht
+       mehr von overflow:hidden abgeschnitten wird. Im Querformat zurückgesetzt
+       (die 54px-Leiste darf nicht schmaler werden). */
     border-left: calc(8px + env(safe-area-inset-left)) solid transparent;
     border-right: calc(8px + env(safe-area-inset-right)) solid transparent;
     padding: 5px 0;
@@ -1040,8 +1047,6 @@ input, textarea, select, [contenteditable="true"] {
   }
   .tb-row::-webkit-scrollbar { display: none; }
   .tb-row > * { flex-shrink: 0; }
-  .tb-row::after { content: ""; flex: 0 0 0; }
-  .tb-end-spacer { display: none; }
   #tbRow2 { border-top: 1px solid rgba(143,163,184,.12); }
   .tb-gap { flex: 1 1 auto; min-width: 8px; }
 
@@ -1201,6 +1206,12 @@ input, textarea, select, [contenteditable="true"] {
     z-index: 644 !important;
   }
   .dd-panel.dd-anchored.open::before { display: none !important; }
+  /* Punkt 1: Die Indikator-/Muster-Liste ist in der Basis auf max-height:280px
+     gedeckelt. In den angedockten (voll hohen) Panels soll sie die GANZE Höhe
+     nutzen — Deckelung weg, das Panel selbst scrollt (overflow-y:auto oben). */
+  .dd-panel.dd-anchored .dd-list {
+    max-height: none !important; overflow-y: visible !important;
+  }
 
   /* ── M1a: Layout & Watchlist als zentriertes Vollbild-Modal (wie FAQ) ──
      Der Dimmer #llBackdrop (JS, klickbar = schliessen) liegt darunter; das
@@ -1552,7 +1563,10 @@ input, textarea, select, [contenteditable="true"] {
     z-index: 630;
   }
   #tbRow1 .tb-gap { display: none; }
-  #tbRow1 .tb-end-spacer { display: none; }   /* HF1 nur Portrait */
+  /* Punkt 2: Im Querformat wird tbRow1 zur 54px-Leiste — der Portrait-Border
+     (8px links/rechts) würde sie verschmälern und den Inhalt hinter den Chart
+     schieben. Border hier zurücksetzen. */
+  #tbRow1, #tbRow2 { border-left: 0 !important; border-right: 0 !important; }
   #tbRow1 #syncBtn { margin-right: 0; }   /* HF1 nur Portrait, Landscape ist Spalte */
   #tbRow1 .cycle-bar { flex-direction: column; gap: 6px; }
   /* M1b: linke Leiste, Pills leicht grösser */

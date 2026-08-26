@@ -7882,7 +7882,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m68";
+const TV_BUILD = "m69";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
@@ -7929,16 +7929,6 @@ quiet(() => {
   r1.appendChild(gap);
   ["layoutDropdown", "wlToggleBtn", "themeBtn", "fullscreenBtn", "faqBtn", "syncBtn"]
     .forEach(id => { const el = $(id); if (el) r1.appendChild(el); });
-  // HF1: echter Abstandhalter am Zeilenende. Ein DOM-Element wird im waagrecht
-  // scrollenden Flex-Container zuverlässig als Flex-Item gehalten — anders als
-  // trailing padding/margin/::after, die dort verschluckt werden können. Damit
-  // klebt der Sync-Button nicht mehr am rechten Rand.
-  if (!r1.querySelector(".tb-end-spacer")) {
-    const endSpacer = document.createElement("span");
-    endSpacer.className = "tb-end-spacer";
-    endSpacer.setAttribute("aria-hidden", "true");
-    r1.appendChild(endSpacer);
-  }
 
   // Zeile 2: Asset Intervall Vergleich Typ-Zahnrad · Lücke · Preis Änderung
   const gap2 = r2.querySelector(".tb-gap");
