@@ -434,13 +434,11 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
     transform: translateX(0);
   }
   /* Backdrop hinter der Watchlist */
-  .watchlist:not(.hidden)::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.45);
-    z-index: -1;
-  }
+  /* QF1: Das alte Aside-Backdrop legte sich (z-index:-1) über die eigene
+     --bg-raised-Fläche und dunkelte die Watchlist um 45 % ab — dadurch wirkte
+     sie dunkler als das Layout-Fenster. Seit die Watchlist ein Modal mit
+     eigenem #llBackdrop ist, ist es überflüssig. Aus. */
+  .watchlist:not(.hidden)::before { display: none; }
 
   /* Drawbar fly-outs klappen auf Mobile nach oben auf — die Positionierung
      macht renderDrawbar() im JS (Inline-Styles schlagen Stylesheet-Regeln). */
@@ -878,7 +876,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m66"; }
+:root { --tv-build: "m67"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1021,31 +1019,24 @@ input, textarea, select, [contenteditable="true"] {
   .topbar {
     flex-direction: column; align-items: stretch;
     gap: 0; z-index: 630;
-    /* Ohne diesen Abstand liegen die Zyklus-Pills hinter dem
-       Dynamic Island und sind weder les- noch antippbar. */
-    padding: env(safe-area-inset-top) 0 0 0;
+    /* HF1: horizontaler Abstand am CONTAINER — dadurch enden beide Reihen-Boxen
+       (links UND rechts) vor dem Bildschirmrand, unabhängig vom Scrollen. Das
+       ist die zuverlässige Lösung; trailing padding/margin/::after im Zeilen-
+       Scroll-Container wurde am Ende verschluckt. Oben zusätzlich der Notch-/
+       Dynamic-Island-Abstand. */
+    padding: env(safe-area-inset-top) calc(8px + env(safe-area-inset-right)) 0 calc(8px + env(safe-area-inset-left));
   }
   .tb-row {
     display: flex !important; align-items: center; gap: 5px;
-    /* Rechts denselben Abstand wie links — inklusive Notch-Bereich. Der
-       Innenabstand rechts geht in einem waagrecht scrollenden Flex-Container
-       am Ende verloren; ::after haelt ihn als echtes Element offen. */
-    padding: 5px calc(8px + env(safe-area-inset-right)) 5px calc(8px + env(safe-area-inset-left));
+    padding: 5px 0;                 /* HF1: horizontaler Abstand kommt vom .topbar */
     min-height: 38px;
     overflow-x: auto; overflow-y: visible;
     scrollbar-width: none; -webkit-overflow-scrolling: touch;
   }
   .tb-row::-webkit-scrollbar { display: none; }
   .tb-row > * { flex-shrink: 0; }
-  .tb-row::after {
-    /* HF1: klar sichtbarer Abstand am Zeilenende (Sync-Button). Der
-       flex-basis-Wert ist ein echtes Element und wird — anders als margin/
-       padding am Ende eines scrollenden Flex-Containers — verlässlich gehalten. */
-    content: ""; flex: 0 0 calc(14px + env(safe-area-inset-right)); align-self: stretch;
-  }
-  /* HF1: zusätzlicher echter DOM-Abstandhalter (applyMobileLayout) — im
-     Zweifel zuverlässiger als das ::after-Pseudo im Scroll-Container. */
-  .tb-end-spacer { flex: 0 0 calc(8px + env(safe-area-inset-right)); align-self: stretch; }
+  .tb-row::after { content: ""; flex: 0 0 0; }   /* HF1: nicht mehr nötig */
+  .tb-end-spacer { display: none; }              /* HF1: nicht mehr nötig */
   #tbRow2 { border-top: 1px solid rgba(143,163,184,.12); }
   .tb-gap { flex: 1 1 auto; min-width: 8px; }
 
@@ -1593,7 +1584,7 @@ input, textarea, select, [contenteditable="true"] {
   .dd-panel:not(.dd-anchored),
   .dd-panel--wide:not(.dd-anchored),
   .dd-panel--right:not(.dd-anchored),
-  .watchlist, .draw-sheet {
+  .watchlist {
     top: 0 !important; bottom: 0 !important;
     left: auto !important; right: var(--tv-rbar) !important;
     width: min(58vw, 400px) !important; max-width: none !important;
@@ -1602,14 +1593,18 @@ input, textarea, select, [contenteditable="true"] {
   }
   .draw-sheet-grid { grid-template-columns: repeat(3, 1fr); }
 
-  /* QF3/QF4: Zeichenwerkzeuge & Grid Bot öffnen als Dropout von der rechten
-     Leiste nach links, mit Griff an der LINKEN Kante (nach rechts wischen
-     schliesst — JS bindSheetSwipeClose). Grid Bot nutzt die volle
-     Asset-Fenster-Breite (viel Information). */
+  /* QF-neu: Zeichenwerkzeuge, Grid Bot UND die dd-Dropouts öffnen im Querformat
+     EINHEITLICH als rechts angedocktes Fenster über die volle Chart-Höhe (unter
+     dem Top-Strip bis unten), Breite an den Inhalt angepasst (max = halbe
+     Chartbreite). Griff an der linken Kante, nach rechts wischen schliesst. */
   .draw-sheet, .gb-bar {
     transform: none !important;              /* Slide-Transform aus, Swipe steuert */
-    padding-left: 12px;                      /* QF4: knapp hinter dem Griff (5–10px), weniger Lücke als 16 */
+    padding-left: 12px;                      /* knapp hinter dem Griff (5–10px) */
     overflow-y: auto; -webkit-overflow-scrolling: touch;
+    top: var(--tv-row2) !important; bottom: 0 !important;
+    left: auto !important; right: var(--tv-rbar) !important;
+    width: auto !important; min-width: 210px !important; max-width: 56vw !important;
+    height: auto !important; max-height: none !important; border-radius: 0;
   }
   .draw-sheet::before, .gb-bar::before {
     content: ""; position: absolute; left: 5px; top: 50%;
@@ -1618,14 +1613,7 @@ input, textarea, select, [contenteditable="true"] {
     box-shadow: 0 1px 4px rgba(0,0,0,.45);
   }
   .draw-sheet:not(.hidden), .gb-bar:not(.hidden) { display: flex !important; flex-direction: column; }
-  .gb-bar {
-    top: 0 !important; bottom: 0 !important;
-    left: var(--tv-lbar) !important; right: var(--tv-rbar) !important;
-    width: auto !important; max-width: none !important;
-    height: 100% !important; max-height: 100% !important; border-radius: 0;
-  }
-  /* Grid-Bot-Inhalt scrollt innerhalb der vollen Höhe (vorher oben verquetscht,
-     unten überlaufend). Kopf/Tabs bleiben oben, der Rest scrollt. */
+  /* Grid-Bot-Inhalt scrollt innerhalb der vollen Höhe (Kopf/Tabs oben fix). */
   .gb-bar .gb-body { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   /* Der Griff oben im Zeichenblatt entfällt im Querformat (linker Griff ersetzt ihn). */
   .draw-sheet-handle { display: none; }

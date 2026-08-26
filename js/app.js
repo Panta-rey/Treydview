@@ -1313,6 +1313,25 @@ function placeMobileDropdown(dd, trigger, panel) {
   // (.dd-panel{left:0!important…}) sonst gewinnen.
   const setP = (p, v) => panel.style.setProperty(p, v, "important");
   setP("position", "fixed");
+  // QF-neu: Im Querformat alle Rechte-Bar-Dropouts EINHEITLICH als rechts
+  // angedocktes Fenster über die volle Chart-Höhe (unter dem Top-Strip bis
+  // unten), Breite an den Inhalt angepasst (max = halbe Chartbreite). Kein
+  // Anker mehr — alle Fenster gleich hoch und am selben Ort.
+  if (isLandscapeBar()) {
+    setP("top", "var(--tv-row2)");
+    setP("bottom", "0");
+    setP("left", "auto");
+    setP("right", "var(--tv-rbar)");
+    setP("width", "auto");            // shrink-to-fit an den Inhalt
+    setP("min-width", "210px");
+    setP("max-width", "56vw");
+    setP("height", "auto");
+    setP("max-height", "none");
+    setP("border-radius", "0");
+    setP("padding-left", "14px");     // Platz für den linken Griff
+    positionDdGrip(panel, "left");
+    return;
+  }
   const wide = panel.classList.contains("dd-panel--wide");
   const W = Math.min(wide ? 300 : 240, vw - 2 * M);
   setP("width", W + "px");
@@ -7822,7 +7841,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m66";
+const TV_BUILD = "m67";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
