@@ -876,7 +876,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m69"; }
+:root { --tv-build: "m70"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1069,9 +1069,14 @@ input, textarea, select, [contenteditable="true"] {
   #typeTrigger  { padding: 5px 8px; width: auto; height: auto; justify-content: center; }
   #typeTrigger .type-label-text { display: none; }
   .type-gear-icon { width: 17px; height: 17px; }
-  /* HF1: kleiner Abstand zwischen Sync-Button und rechtem Bildschirmrand
-     (der ::after-Spacer allein wirkt zu bündig). */
-  #syncBtn { margin-right: 8px; }
+  /* HF1 (endgültig): tbRow1 (3 Pills + 6 Buttons ≈ 443px) läuft bei ~390px
+     Viewport-Breite über und scrollt waagrecht. Der transparente .tb-row-Border
+     UND margin-right am letzten Item werden von WebKit am Scroll-Ende geschluckt —
+     deshalb wirkte der Abstand nur in der NICHT überlaufenden Preiszeile (tbRow2),
+     nicht in der Buttonzeile (tbRow1). Ein echtes Flex-Item als letztes Kind wird
+     dagegen mitgescrollt und hält den Abstand zuverlässig. Nur tbRow1 braucht das
+     (tbRow2 läuft nicht über und wird vom Border korrekt bedient). */
+  #tbRow1::after { content: ""; flex: 0 0 8px; align-self: stretch; }
 
   /* Zyklus-Pills: gewünschte Reihenfolge F&G · Fund · OI.
      Im HTML steht F&G, OI, Fund — daher OI nach hinten sortieren.
@@ -1563,6 +1568,9 @@ input, textarea, select, [contenteditable="true"] {
     z-index: 630;
   }
   #tbRow1 .tb-gap { display: none; }
+  /* Der Portrait-Endspacer (HF1) hat im Querformat nichts zu suchen — tbRow1 ist
+     hier eine vertikale Spalte, ein 8px-Flex-Item am Ende gäbe unten Leerraum. */
+  #tbRow1::after { display: none; }
   /* Punkt 2: Im Querformat wird tbRow1 zur 54px-Leiste — der Portrait-Border
      (8px links/rechts) würde sie verschmälern und den Inhalt hinter den Chart
      schieben. Border hier zurücksetzen. */
@@ -1581,6 +1589,12 @@ input, textarea, select, [contenteditable="true"] {
   #tbRow2 {
     position: fixed; top: 0;
     left: var(--tv-lbar); right: var(--tv-rbar);
+    /* Die Basisregel .tb-row setzt width:100%/max-width:100% (fürs Hochformat).
+       Zusammen mit left+right ist die fixed-Box überbestimmt → CSS ignoriert dann
+       right, tbRow2 wird 100vw breit ab der linken Leiste und ragt rechts über die
+       Right Bar hinaus (schiebt Preis/Änderung ins Off-Screen). width:auto gibt die
+       Breitenkontrolle an left+right zurück → tbRow2 endet bündig an der Right Bar. */
+    width: auto; max-width: none;
     height: var(--tv-row2);
     /* Rechts denselben Abstand wie links. Die kurze Schreibweise 0 8px
        hatte zwar beidseitig 8px, aber .tb-row scrollt waagrecht und
