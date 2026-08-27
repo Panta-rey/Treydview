@@ -2823,3 +2823,67 @@ Drei Punkte an den ECHTEN Root-Causes (vorher u.a. 5× am Topbar-Abstand verfehl
 
 ### Offen / nächster Chat
 - Dominanz BTC.D/USDT.D (Variante A) und Kerzen-Muster-Tool → in frischem Chat.
+
+## Build m70 — Mobil-Fixes (27. August 2026)
+
+Drei Topbar-Punkte an den ECHTEN Ursachen gelöst. Nur `css/style.css` inhaltlich
+geändert (+ Build-Bump in style.css/index.html/app.js). Kein Desktop-/JS-/HTML-
+Eingriff — alle Fixes in bestehenden `@media`-Blöcken.
+
+### Querformat (P1 + P2 — gemeinsame Wurzel)
+- **P1 (Topbar ragt rechts über die Right Bar):** Die Basisregel `.tb-row{width:100%;
+  max-width:100%}` (fürs Hochformat, matcht via `pointer:coarse` auch im Querformat)
+  wurde im Landscape-Block für `#tbRow2` NIE zurückgesetzt. `#tbRow2` bekam dort zwar
+  `left:--tv-lbar`+`right:--tv-rbar`, aber mit gleichzeitig aktivem `width:100%` ist die
+  fixed-Box ÜBERBESTIMMT → CSS ignoriert bei LTR das `right`, tbRow2 wird 100vw breit
+  ab der linken Leiste und ragt rechts über die Right Bar (und den Bildschirm) hinaus.
+  Fix: `#tbRow2{width:auto;max-width:none}` im Landscape → Breite wird aus left+right
+  berechnet, tbRow2 endet bündig an der linken Kante der Right Bar.
+- **P2 (Änderung im Querformat unsichtbar):** KEINE eigene Ursache — Folge von P1. Durch
+  die 100vw-Überbreite dehnte sich der `flex:1`-gap in tbRow2 ins Off-Screen und schob
+  Preis (noch halb sichtbar) + Änderung (ganz weg) nach rechts raus. `tb2Change` hat
+  nirgends ein `display:none`. Mit dem P1-Fix sitzen Preis + Änderung wieder sichtbar am
+  rechten Rand vor der Right Bar. Ein Fix, zwei Punkte.
+
+### Hochformat
+- **HF1 (Sync-Button rechts kein Abstand — Preiszeile hatte ihn, Buttonzeile nicht):**
+  Der m68/m69-Border-Trick (`border-right:8px transparent` an `.tb-row`) wirkt NUR bei
+  nicht-überlaufenden Zeilen. tbRow2 (Preis) läuft nicht über → Border greift. tbRow1
+  (3 Pills + 6 Buttons ≈ 443px bei ~390px Viewport) LÄUFT ÜBER → scrollt waagrecht, und
+  am Scroll-Ende schluckt WebKit sowohl den Border-Abstand als auch das bisherige
+  `#syncBtn{margin-right:8px}`. Deshalb: zweite Zeile Abstand, erste nicht. Fix:
+  `#syncBtn{margin-right:8px}` entfernt, dafür `#tbRow1::after{content:"";flex:0 0 8px;
+  align-self:stretch}` — ein ECHTES Flex-Item als letztes Kind wird mitgescrollt und
+  hält den Abstand überlaufsicher (anders als margin/padding/Border). Im Landscape
+  ausgeblendet (`#tbRow1::after{display:none}`, dort ist tbRow1 eine vertikale Spalte).
+
+### Lektionen
+- Bei `position:fixed` mit `left`+`right`+`width` ist die Box überbestimmt; CSS ignoriert
+  dann `right` (LTR). Wird eine fixed-Box über left/right begrenzt, MUSS ein evtl. aus
+  einer Basisregel geerbtes `width` explizit auf `auto` (und `max-width:none`) gesetzt
+  werden, sonst ignoriert der Browser die rechte Grenze. Genau das war bei tbRow1
+  (bekam `width:--tv-lbar`) korrekt, bei tbRow2 aber vergessen.
+- Der transparente `.tb-row`-Border (m68/m69) hält den seitlichen Abstand nur in NICHT
+  überlaufenden Zeilen zuverlässig. In einer waagrecht scrollenden (überlaufenden) Zeile
+  schluckt WebKit Border UND margin/padding am Scroll-Ende — dort ist nur ein echtes
+  Flex-Item mit fester `flex-basis` als letztes Kind verlässlich (scrollt mit). Wichtig:
+  ein `::after` als margin/padding-Träger ist NICHT zuverlässig (m68-Falle), ein `::after`
+  mit `flex:0 0 Npx` (echte Breite) schon.
+
+### Datei-MD5 (Build m70, nur geänderte)
+| Datei | MD5 |
+|---|---|
+| style.css  | fef50c969b3657d553fba372e5f6e48e |
+| index.html | 4bce6f1daaec7df29430d4c04eedb5ce |
+| app.js     | e18ad3ecd26ff7c154f86aeaabd56f46 |
+
+> app.js/index.html: NUR Build-Bump (m69→m70), inhaltlich unverändert (per Diff
+> bestätigt). style.css: die drei o.g. Fixes + Build-Tag.
+
+### Offen / am Gerät zu verifizieren
+- P1 (tbRow2 bündig an Right Bar), P2 (Preis + Änderung im Querformat beide sichtbar),
+  HF1 (Sync-Button-Abstand rechts identisch zur Preiszeile) — nur statisch/rechnerisch
+  geprüft, Gerätetest steht aus.
+
+### Offen / nächster Chat
+- Dominanz BTC.D/USDT.D (Variante A) und Kerzen-Muster-Tool → weiterhin offen.
