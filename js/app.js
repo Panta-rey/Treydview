@@ -4044,11 +4044,6 @@ function openOverlayMenu(overlay, event) {
   if (priceRow) priceRow.style.display = isHoriz ? "" : "none";
   if (dateRow)  dateRow.style.display  = isVert  ? "" : "none";
 
-  // D3: Die Glättung läuft jetzt IMMER (siehe overlays.js freehand-
-  // createPointFigures), auch live beim Zeichnen. Die Menü-Checkbox ist damit
-  // überflüssig und würde nur verwirren — sie wird daher ausgeblendet.
-  const smoothRow = document.getElementById("omSmoothRow");
-  if (smoothRow) smoothRow.style.display = "none";
   if (isHoriz && priceEl && p0.value != null) {
     priceEl.value = p0.value;
     priceEl.onchange = () => {
@@ -5748,7 +5743,6 @@ function gbRenderTiers() {
     ["Netto-Erwartung", (x) => x.viability ? sign(x.viability.net) : "–"],
   ];
 
-  const nCols = r.tiers.length + 1;
   let html = "<thead><tr><th></th>" + r.tiers.map(x => {
     const isReco = rec.tier === x.id;
     return `<th class="tier-head${isReco ? " tier-reco" : ""}">${x.label}${isReco ? " ★" : ""}<span class="tier-hz">${x.horizon}</span></th>`;
@@ -7882,7 +7876,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m71";
+const TV_BUILD = "m72";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

@@ -96,7 +96,6 @@ const CONFIG = {
   TIMEFRAMES: [
     { id: "15m", label: "15m", binanceInterval: "15m", krakenInterval: "15",    coinbaseInterval: 900,   bybitInterval: "15"  },
     { id: "1h",  label: "1h",  binanceInterval: "1h",  krakenInterval: "60",    coinbaseInterval: 3600,  bybitInterval: "60"  },
-    { id: "2h",  label: "2h",  binanceInterval: "2h",                                                     bybitInterval: "120" },
     { id: "4h",  label: "4h",  binanceInterval: "4h",  krakenInterval: "240",   coinbaseInterval: 21600, bybitInterval: "240" },
     { id: "1d",  label: "1D",  binanceInterval: "1d",  krakenInterval: "1440",  coinbaseInterval: 86400, bybitInterval: "D"   },
     { id: "1w",  label: "1W",  binanceInterval: "1w",  krakenInterval: "10080",                          bybitInterval: "W"   },
@@ -164,7 +163,6 @@ const CONFIG = {
             { value: "auto", label: "Chart-Intervall" },
             { value: "15m",  label: "15 Minuten" },
             { value: "1h",   label: "1 Stunde" },
-            { value: "2h",   label: "2 Stunden" },
             { value: "4h",   label: "4 Stunden" },
             { value: "1d",   label: "1 Tag" },
             { value: "1w",   label: "1 Woche" },
@@ -200,7 +198,6 @@ const CONFIG = {
             { value: "auto", label: "Chart-Intervall" },
             { value: "15m",  label: "15 Minuten" },
             { value: "1h",   label: "1 Stunde" },
-            { value: "2h",   label: "2 Stunden" },
             { value: "4h",   label: "4 Stunden" },
             { value: "1d",   label: "1 Tag" },
             { value: "1w",   label: "1 Woche" },
@@ -433,7 +430,6 @@ const FIB_LEVEL_SETS = {
     { v: 0.382, color: "#c9973f" },
     { v: 0.5,   color: "#6fae7a" },
     { v: 0.618, color: "#5aa06b" },
-    { v: 0.65,  color: "#e8b64c" },
     { v: 0.786, color: "#4a9ba8" },
     { v: 1,     color: "#9aa5b1" },
     { v: 1.618, color: "#5a7fa8" },
@@ -447,7 +443,6 @@ const FIB_LEVEL_SETS = {
     { v: 0.382, color: "#c9973f" },
     { v: 0.5,   color: "#6fae7a" },
     { v: 0.618, color: "#5aa06b" },
-    { v: 0.65,  color: "#e8b64c" },
     { v: 1,     color: "#9aa5b1" },
     { v: 1.272, color: "#4a9ba8" },
     { v: 1.618, color: "#5a7fa8" },
@@ -501,24 +496,4 @@ function textOn(bgHex) {
 function contrastRatio(hexA, hexB) {
   const a = luminance(hexA), b = luminance(hexB);
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-}
-
-// Für einen Indikator mit mehreren Linien: KLineCharts erlaubt nur EINE
-// Textfarbe je Indikator, der Balken übernimmt aber je Linie deren Farbe.
-//
-// Die Mehrheit zu fragen ("sind die meisten Linien hell?") ist das falsche
-// Kriterium: setzt man bei vier Linien nur EINE auf Weiss, ist die Mehrheit
-// dunkel, die Wahl fällt auf weissen Text — und genau die weisse Linie wird
-// unlesbar. Ein unlesbares Label ist schlimmer als vier mittelmässige.
-//
-// Deshalb: die Farbe wählen, deren SCHLECHTESTER Kontrast über alle Linien
-// am höchsten ist. Minimax statt Mehrheit.
-function textForLines(colors) {
-  if (!colors || !colors.length) return "#ffffff";
-  let best = "#ffffff", bestWorst = -1;
-  for (const cand of ["#0d1117", "#ffffff"]) {
-    const worst = Math.min(...colors.map(c => contrastRatio(c, cand)));
-    if (worst > bestWorst) { bestWorst = worst; best = cand; }
-  }
-  return best;
 }

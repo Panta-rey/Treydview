@@ -47,16 +47,6 @@ function emaSeries(values, period) {
   return out;
 }
 
-function wmaAt(values, period, i) {
-  if (i < period - 1) return null;
-  let num = 0, den = 0;
-  for (let j = 0; j < period; j++) {
-    const w = period - j, v = values[i - j];
-    if (v == null) return null;
-    num += v * w; den += w;
-  }
-  return num / den;
-}
 
 function atrSeries(dataList, period) {
   const tr = dataList.map((d, i) => {
@@ -110,8 +100,6 @@ function vwmaSeries(dataList, period) {
   }
   return out;
 }
-
-function smaSeries(values, period) { return emaSeries(values, period); } // alias für EMA-smoothed (SMMA = RMA in Pine)
 
 function maByType(values, period, type, dataList) {
   switch (type) {
@@ -531,7 +519,7 @@ klinecharts.registerIndicator({
 klinecharts.registerIndicator({
   name: "GLOBALM2",
   shortName: "Global M2",
-  precision: 0,
+  precision: 2,
   calcParams: [],
   figures: [
     { key: "m2", title: "M2: ", type: "line", styles: (d, ind) => plotStyle(ind, "m2", "#e8b64c", 2) },
@@ -561,7 +549,7 @@ klinecharts.registerIndicator({
 klinecharts.registerIndicator({
   name: "STOCHRSI",
   shortName: "StochRSI",
-  precision: 0,
+  precision: 2,
   calcParams: [3, 3, 14, 14],
   // 20/50/80-Bänder als horizontale Referenzlinien (gestrichelt)
   figures: [
@@ -734,7 +722,7 @@ klinecharts.registerIndicator({
 klinecharts.registerIndicator({
   name: "MYRSI",
   shortName: "RSI",
-  precision: 0,
+  precision: 2,
   calcParams: [14, "None", 14, 2.0],
   figures: [
     { key: "band70", title: "", type: "line", styles: (d, ind) => plotStyle(ind, "band70", "rgba(120,123,134,0.7)", 1) },
@@ -867,12 +855,9 @@ klinecharts.registerIndicator({
   shortName: "VOL",
   precision: 0,
   shouldOhlc: false,
-  // Neu2: Achse startet bei 0 (nicht ins Negative), Balken sitzen ab 0 statt
-  // an der Pane-Unterkante zu kleben.
-  minValue: 0,
   calcParams: [5, 10, 20],
   figures: [
-    { key: "vol",  title: "VOL: ", type: "bar", baseValue: 0,
+    { key: "vol",  title: "VOL: ", type: "bar",
       styles: (d, ind) => {
         const isUp = d.current?.indicatorData?.isUp;
         const key  = isUp ? "up" : "dn";
