@@ -253,6 +253,15 @@ const COMPARE_COLORS = [
 const chartEl = document.getElementById("mainChart");
 const chart = klinecharts.init("mainChart");
 
+// ---- Grid-Bot-UI-Bridge (m73) ----
+// Die Grid-Bot-Bedienoberfläche wurde nach gridbot.js ausgelagert (GridBot.initUI).
+// Ihre app.js-Abhängigkeiten werden hier explizit übergeben. Platzierung direkt nach
+// der Chart-Init: chart/state existieren, die Helfer sind gehoistete Funktions-
+// deklarationen -> gbUI ist vor allen Aufrufstellen verfügbar. Zero-Impact.
+const gbUI = GridBot.initUI({
+  chart, state, setStatus, saveWorkspace, setChartCursor, resize, updateCycleBar, derivSymbolFor,
+});
+
 // Bridge: FRVP-Overlay (overlays.js) braucht Zugriff auf die Candle-Daten
 window.__tvGetDataList = () => chart.getDataList();
 
@@ -1123,7 +1132,7 @@ async function loadData() {
     // der Grid Bot auf einem halb gefuellten Chart und meldete "Mayer –",
     // weil SMA200 mit unter 200 Kerzen null liefert. Jetzt haengt es am
     // tatsaechlichen Ladeende.
-    whenChartReady(() => quiet(() => gbRefresh(false), "cycle bar init"));
+    whenChartReady(() => quiet(() => gbUI.refresh(false), "cycle bar init"));
   }
 
   if (state.symbol.type === "kraken" || state.symbol.type === "coinbase" || state.symbol.type === "bybit") {
@@ -4044,11 +4053,6 @@ function openOverlayMenu(overlay, event) {
   if (priceRow) priceRow.style.display = isHoriz ? "" : "none";
   if (dateRow)  dateRow.style.display  = isVert  ? "" : "none";
 
-  // D3: Die Glättung läuft jetzt IMMER (siehe overlays.js freehand-
-  // createPointFigures), auch live beim Zeichnen. Die Menü-Checkbox ist damit
-  // überflüssig und würde nur verwirren — sie wird daher ausgeblendet.
-  const smoothRow = document.getElementById("omSmoothRow");
-  if (smoothRow) smoothRow.style.display = "none";
   if (isHoriz && priceEl && p0.value != null) {
     priceEl.value = p0.value;
     priceEl.onchange = () => {
@@ -5347,93 +5351,6 @@ function syncLabels() {
 // dailyD: optionale Tages-Kerzen für ATR/SMA/ER. Wenn vorhanden, basieren
 // diese Metriken immer auf Tagesdaten — unabhängig vom aktiven Chart-Timeframe.
 // Ohne dailyD Fallback auf Chart-Kerzen (wie bisher).
-function gbMarketData(dailyD) {
-  const d = chart.getDataList();
-  if (!d || d.length < 10) return null;
-
-  // Preis und Volumen immer aus den aktuellen Chart-Kerzen (aktuellster Tick)
-  const closes = d.map(x => x.close);
-  const price = closes.at(-1);
-  if (!price) return null;
-
-  // Für ATR/SMA/ER: Tages-Kerzen bevorzugen wenn vorhanden, sonst Chart-Kerzen.
-  // Das stellt sicher dass ATR14/90/200 immer tägliche Volatilität misst —
-  // unabhängig davon ob der Chart auf 15m, 4h oder 1D steht.
-  const base = (dailyD && dailyD.length >= 50) ? dailyD : d;
-  const baseCloses = base.map(x => x.close);
-
-  const sma = (n) => {
-    if (baseCloses.length < n) return null;
-    const s = baseCloses.slice(-n);
-    return s.reduce((a, b) => a + b, 0) / n;
-  };
-
-  // Kaufman Efficiency Ratio auf Tages-Basis (auf 15m/4h-Kerzen zu rauschig)
-  const efficiencyRatio = (period = 20) => {
-    if (baseCloses.length < period + 1) return null;
-    const seg = baseCloses.slice(-(period + 1));
-    const direction = Math.abs(seg[seg.length - 1] - seg[0]);
-    let volatility = 0;
-    for (let i = 1; i < seg.length; i++) volatility += Math.abs(seg[i] - seg[i - 1]);
-    return volatility > 0 ? direction / volatility : 0;
-  };
-
-  // RSI 14 nach Wilder aus Chart-Kerzen (Preis-Impuls ist TF-sensitiv, OK so)
-  const rsiWilder = (period = 14) => {
-    if (closes.length < period + 1) return null;
-    let gain = 0, loss = 0;
-    for (let i = 1; i <= period; i++) {
-      const ch = closes[i] - closes[i - 1];
-      if (ch > 0) gain += ch; else loss -= ch;
-    }
-    let ag = gain / period, al = loss / period;
-    for (let i = period + 1; i < closes.length; i++) {
-      const ch = closes[i] - closes[i - 1];
-      ag = (ag * (period - 1) + (ch > 0 ? ch : 0)) / period;
-      al = (al * (period - 1) + (ch < 0 ? -ch : 0)) / period;
-    }
-    if (al === 0) return 100;
-    return 100 - 100 / (1 + ag / al);
-  };
-
-  // ATR nach Wilder auf base (Tages-Kerzen wenn vorhanden), in % vom Preis
-  const atrPct = (period) => {
-    if (base.length < period + 1) return null;
-    const tr = [];
-    for (let i = 1; i < base.length; i++) {
-      tr.push(Math.max(
-        base[i].high - base[i].low,
-        Math.abs(base[i].high - base[i - 1].close),
-        Math.abs(base[i].low  - base[i - 1].close)
-      ));
-    }
-    let a = tr.slice(0, period).reduce((x, y) => x + y, 0) / period;
-    for (let i = period; i < tr.length; i++) a = (a * (period - 1) + tr[i]) / period;
-    return (a / price) * 100;
-  };
-
-  // Volumen-Signal aus Chart-Kerzen (aktuellster TF, passt so)
-  const vols = d.map(x => x.volume || 0);
-  const volMa = vols.slice(-20).reduce((a, b) => a + b, 0) / 20;
-  const volSignal = vols.at(-1) > volMa * 2 ? "🔥 Volumen-Spike (Achtung Trendwende/Ausbruch)"
-                  : vols.at(-1) < volMa * 0.5 ? "😴 Volumen-Flaute" : "➖ Volumen normal";
-
-  const a14 = atrPct(14), a90 = atrPct(90), a200 = atrPct(200);
-  const context = (a14 != null && a90 != null)
-    ? (a14 < a90 * 0.8 ? "Volatilitäts-Kontraktion (Kompression)"
-     : a14 > a90 * 1.3 ? "Volatilitäts-Expansion" : "Normale Volatilität")
-    : "—";
-
-  const sma200v = sma(200);
-  return {
-    price, sma50: sma(50), sma200: sma200v, rsi: rsiWilder(14),
-    atr14: a14, atr90: a90, atr200: a200,
-    volumeSignal: volSignal, marketContext: context,
-    mayer: sma200v ? price / sma200v : null,
-    er: efficiencyRatio(20),
-    dailyDataUsed: base !== d,
-  };
-}
 
 // Welches Binance-Futures-Symbol passt zum angezeigten Asset?
 //
@@ -5463,100 +5380,6 @@ function derivSymbolFor(sym) {
 }
 
 // ---------- Rechnen und rendern ----------
-async function gbRefresh(force) {
-  // Tages-Kerzen separat holen — ATR/SMA/ER sollen immer auf Tagesdaten basieren,
-  // unabhängig davon welchen Chart-Timeframe der Nutzer gerade anschaut.
-  // 200 Kerzen reichen für ATR200 + SMA200 + ER20. Nur für Binance-Symbole;
-  // bei anderen Exchanges (Kraken, Coinbase, Bybit) wird mit Chart-Daten gerechnet.
-  let dailyD = null;
-  try {
-    if (state.symbol.type === "binance") {
-      dailyD = await DataLayer.fetchBinanceKlines(state.symbol.id, "1d", 210);
-    } else if (state.symbol.type === "bybit") {
-      dailyD = await DataLayer.fetchBybitKlines(state.symbol.bybitSymbol, "D", 210);
-    } else if (state.symbol.type === "kraken") {
-      dailyD = await DataLayer.fetchKrakenKlines(state.symbol.krakenPair, "1440", 210);
-    } else if (state.symbol.type === "bitstamp") {
-      // Sonst rechnete Mayer/ATR auf Wochen- oder Monatskerzen, sobald der
-      // Chart nicht auf 1D steht.
-      dailyD = await DataLayer.fetchBitstampHistory(state.symbol.bitstampPair, 86400);
-      dailyD = (dailyD || []).slice(-210).map(k => Array.isArray(k)
-        ? { timestamp: k[0], open: k[1], high: k[2], low: k[3], close: k[4], volume: k[5] } : k);
-    }
-  } catch (e) { dailyD = null; }   // Fallback: Chart-Kerzen
-
-  const market = gbMarketData(dailyD);
-  if (!market) { setStatus("Grid Bot: zu wenig Chart-Daten (200+ Kerzen nötig)"); return; }
-
-  if (force) Derivatives.clearCache();
-  document.getElementById("gbUpdated").textContent = "lädt…";
-
-  let deriv = { funding: null, oi: null, ls: null, fng: null, errors: [] };
-  // Fuer Gold, Indizes und Fonds gibt es keinen Perpetual — dort waeren
-  // Funding und Open Interest sinnlos. Fear&Greed ist symbolunabhaengig
-  // und wird trotzdem geholt.
-  try {
-    deriv = await Derivatives.fetchAll(derivSymbolFor(state.symbol));
-  } catch (e) {
-    deriv.errors = [String(e.message || e)];
-  }
-
-  const opts = {
-    capital: state.gbCapital,
-    riskPct: null,                       // null -> Risiko-Budget kommt aus dem Profil
-    feePct:  GridBot.getThresholds().feeRoundtrip,
-    tiers:   state.gbTiers,
-  };
-  GridBot.setThresholds(state.gbThresholds);
-  state.gbResult = GridBot.compute(market, deriv, opts);
-
-  gbRenderStatus();
-  gbRenderTiers();
-  gbRenderData();
-  if (state.gbActiveTier) gbDrawBands(state.gbActiveTier);
-}
-
-function gbRenderStatus() {
-  const r = state.gbResult;
-  if (!r) return;
-
-  // Die Statuszeile beantwortet in einem Blick: soll ich überhaupt?
-  const rec = r.recommendation || {};
-  const pill = document.getElementById("gbHeadline");
-  const short = { defensive: "Defensiv", "accumulate-spot": "Spot/DCA", "accumulate-grid": "Makro-Grid",
-                  range: "Kurzfrist", "long-bias": "Long-Bias", wait: "Beobachten" }[rec.stage] || "—";
-  pill.textContent = short;
-  pill.className = "gb-pill " + ({ defensive: "stop", "accumulate-spot": "long", "accumulate-grid": "long",
-                                   range: "", "long-bias": "long", wait: "wait" }[rec.stage] || "");
-
-  const set = (id, txt, cls) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.textContent = txt;
-    el.className = "gb-stat" + (cls ? " " + cls : "");
-  };
-
-  const m = r.mayer;
-  set("gbRegime", m != null ? "Mayer " + m.toFixed(2) : "Mayer –",
-      m == null ? "" : m > GridBot.CYCLE.mayerExpensive ? "warn" : m < GridBot.CYCLE.mayerCheap ? "good" : "");
-
-  const er = r.er;
-  set("gbRsi", er != null ? "ER " + er.toFixed(2) : "ER –",
-      er == null ? "" : er >= GridBot.CYCLE.erTrend ? "warn" : er < GridBot.CYCLE.erRange ? "good" : "");
-
-  const fng = r.derivatives?.fng;
-  set("gbFunding", fng != null ? "F&G " + fng : "F&G –",
-      fng == null ? "" : fng > GridBot.CYCLE.fngGreed ? "warn" : fng < GridBot.CYCLE.fngFear ? "good" : "");
-
-  const rsi = r.market?.rsi;
-  set("gbFng", rsi != null ? "RSI " + rsi.toFixed(0) : "RSI –",
-      rsi == null ? "" : (rsi >= 75 || rsi <= 25) ? "warn" : "");
-
-  document.getElementById("gbUpdated").textContent = state.gbUpdated || "";
-
-  // Zyklus-Ampel in der Topbar synchron aktualisieren
-  updateCycleBar(r);
-}
 
 // Zyklus-Ampel: 5 farbige Kürzel-Pills, Klick öffnet Popover mit Details.
 // Reihenfolge: F&G → OI → Fund → M → ER
@@ -5707,301 +5530,12 @@ function updateCycleBar(r) {
   document.addEventListener("click", closePopover);
 })();
 
-function gbRenderTiers() {
-  const r = state.gbResult;
-  const t = document.getElementById("gbTiers");
-  const box = document.getElementById("gbRecoBox");
-  if (!r || !r.tiers.length) {
-    t.innerHTML = '<tbody><tr><td class="lbl">Keine Daten</td></tr></tbody>';
-    if (box) box.innerHTML = "";
-    return;
-  }
-
-  // ---- Empfehlung: die eine Aussage, um die es geht ----
-  const rec = r.recommendation || {};
-  const stageClass = { defensive: "reco-stop", "accumulate-spot": "reco-go", "accumulate-grid": "reco-go",
-                       range: "reco-go", "long-bias": "reco-go", wait: "reco-wait" }[rec.stage] || "reco-wait";
-  if (box) {
-    box.className = "gb-reco " + stageClass;
-    box.innerHTML = `<div class="reco-main">${rec.label || "—"}</div>`
-      + `<div class="reco-why">${rec.why || ""}</div>`
-      + `<div class="reco-meta">`
-        + `<span>Grid-Eignung: <b>${r.gridSuitability?.label || "—"}</b></span>`
-        + `<span>Profil: <b>${r.profile?.name || "—"}</b></span>`
-        + (r.tiers.some(x => x.leverageGuard) ? `<span class="reco-guard">⚠ Hebel-Leitplanke aktiv → max 1×</span>` : "")
-      + `</div>`;
-  }
-
-  const fmt = (n) => n == null ? "–" : n.toLocaleString("de-CH", { maximumFractionDigits: 0 });
-  const sign = (n) => (n > 0 ? "+" : "") + n.toFixed(1) + "%";
-
-  // Nur was man in Pionex tatsächlich eintippt oder zum Entscheiden braucht.
-  // Alles andere (Scores, ATR, Faktoren) rechnet im Hintergrund.
-  const rows = [
-    ["Range oben",   (x) => fmt(x.upper)],
-    ["Range unten",  (x) => fmt(x.lower)],
-    ["Grids",        (x) => x.grids],
-    ["Hebel",        (x) => x.leverage + "×" + (x.leverageGuard ? " ⚠" : "")],
-    ["Investment",   (x) => fmt(x.positionSize) + " USDT"],
-    ["Stop Loss",    (x) => fmt(x.stopLoss)],
-    ["Sicherheit",   (x) => x.safety],
-    ["Netto-Erwartung", (x) => x.viability ? sign(x.viability.net) : "–"],
-  ];
-
-  const nCols = r.tiers.length + 1;
-  let html = "<thead><tr><th></th>" + r.tiers.map(x => {
-    const isReco = rec.tier === x.id;
-    return `<th class="tier-head${isReco ? " tier-reco" : ""}">${x.label}${isReco ? " ★" : ""}<span class="tier-hz">${x.horizon}</span></th>`;
-  }).join("") + "</tr></thead><tbody>";
-
-  rows.forEach(([lbl, fn]) => {
-    html += `<tr><td class="lbl">${lbl}</td>` + r.tiers.map(x => {
-      const isReco = rec.tier === x.id;
-      let cls = isReco ? "on" : "";
-      if (lbl === "Netto-Erwartung" && x.viability && !x.viability.ok) cls = "neg";
-      return `<td${cls ? ` class="${cls}"` : ""}>${fn(x)}</td>`;
-    }).join("") + "</tr>";
-  });
-
-  html += '<tr><td class="lbl"></td>' + r.tiers.map(x =>
-    `<td><button class="gb-show${state.gbActiveTier === x.id ? " active" : ""}" data-tier="${x.id}">${state.gbActiveTier === x.id ? "Im Chart ✓" : "Im Chart"}</button></td>`
-  ).join("") + "</tr></tbody>";
-  t.innerHTML = html;
-
-  t.querySelectorAll(".gb-show").forEach(b => {
-    b.addEventListener("click", () => {
-      const id = b.dataset.tier;
-      state.gbActiveTier = state.gbActiveTier === id ? null : id;
-      saveWorkspace();
-      gbRenderTiers();
-      gbDrawBands(state.gbActiveTier);
-    });
-  });
-
-  const w = document.getElementById("gbWarning");
-  w.textContent = r.missing.length ? "Quellen fehlen: " + r.missing.join(", ") : "";
-  w.className = "gb-note" + (r.missing.length ? " warn" : "");
-}
-
-function gbRenderData() {
-  const r = state.gbResult;
-  const box = document.getElementById("gbData");
-  if (!r) return;
-  const n = (v, d = 2, suf = "") => v == null ? "–" : v.toFixed(d) + suf;
-  const blk = (title, kvs) =>
-    `<div><div class="gb-blk-title">${title}</div>` +
-    kvs.map(([k, v]) => `<div class="gb-kv"><span>${k}</span><span>${v}</span></div>`).join("") + "</div>";
-
-  box.innerHTML =
-    blk("Markt & Trend", [
-      ["Preis", n(r.market.price, 0)],
-      ["SMA50", n(r.market.sma50, 0)],
-      ["SMA200", n(r.market.sma200, 0)],
-      ["Abstand SMA200", n(r.market.sma200Dist, 2, "%")],
-      ["RSI14 (Wilder)", n(r.market.rsi, 1)],
-      ["ATR14 / 90 / 200", `${n(r.market.atr14)} / ${n(r.market.atr90)} / ${n(r.market.atr200)}`],
-      ["Volumen", r.market.volumeSignal],
-    ]) +
-    blk("Sentiment & Derivate", [
-      ["Fear & Greed", r.derivatives.fng != null ? `${r.derivatives.fng} (${r.derivatives.fngLabel})` : "–"],
-      ["F&G Ø30 / Ø90", `${n(r.derivatives.fngAvg30, 1)} / ${n(r.derivatives.fngAvg90, 1)}`],
-      ["Funding 8h", n(r.derivatives.funding8h, 4, "%")],
-      ["Funding monatlich", n(r.derivatives.fundingMonthly, 2, "%")],
-      ["Open Interest", r.derivatives.oiNow != null ? n(r.derivatives.oiNow, 0) + " BTC" : "–"],
-      ["OI Δ30T / Δ90T", `${n(r.derivatives.oiChange30, 2, "%")} / ${n(r.derivatives.oiChange90, 2, "%")}`],
-      ["L/S Ratio", n(r.derivatives.lsRatio, 4)],
-      ["OI-Interpretation", r.oiInterpretation],
-    ]) +
-    blk("Konfluenz", [
-      ["Trend-Score", r.confluence.trendScore ?? "–"],
-      ["Derivate-Score", r.confluence.derivativeScore ?? "–"],
-      ["Summe", r.confluence.sum ?? "–"],
-      ["Extrem-Filter", r.confluence.extreme],
-      ["Roh-Bias (vor Filter)", r.rawBias],
-      ["Bias (final)", r.bias],
-      ["Regime", r.regime],
-    ]);
-}
-
 // ---------- Grid-Bänder im Chart ----------
-function gbClearBands() {
-  (state.gbBandIds || []).forEach(id => { try { chart.removeOverlay(id); } catch (e) {} });
-  state.gbBandIds = [];
-}
 
 // ---------- Einstellungs-Felder ----------
-function gbRenderSettings() {
-  const box = document.getElementById("gbPaneSettings");
-  if (!box) return;
-
-  // Vier Felder. Der Rest ist bewusst fest.
-  //
-  // Aus der Parameter-Referenz zum Dashboard:
-  //   "Schwellen nie direkt ändern (fest in Formel).
-  //    Aggressivität über Profil (I16) steuern."
-  //
-  // Der Grund: Mayer < 0.9 traf jeden Akkumulations-Boden seit 2015. Wer
-  // die Schwelle hochdreht, weil "Defensiv" erscheint, senkt nicht das
-  // Risiko — nur die Warnung. Die Werte, die hier stehen dürfen, sind die
-  // über DEIN Setup (Kapital, Börse), nicht die über den Markt.
-  const th = GridBot.getThresholds();
-  const prof = GridBot.profileValues();
-
-  box.innerHTML = `
-    <div class="gb-set-wrap">
-      <div class="gb-set-block">
-        <div class="gb-set-title">Dein Setup</div>
-        <label>Kapital (USDT)<input type="number" id="gbCapital" value="${state.gbCapital}" min="10" step="100"></label>
-        <label>Gebühr Roundtrip %<input type="number" id="gbFee" value="${th.feeRoundtrip}" min="0" max="1" step="0.01"></label>
-        <label>Füllungen je Grid/Monat<input type="number" id="gbFills" value="${th.fillsPerGrid}" min="1" max="8" step="1"></label>
-      </div>
-
-      <div class="gb-set-block">
-        <div class="gb-set-title">Aggressivität</div>
-        <label>Risiko-Profil<select id="gbProfile">
-          ${Object.keys(GridBot.PROFILES).map(p =>
-            `<option value="${p}"${p === prof.name ? " selected" : ""}>${p}</option>`).join("")}
-        </select></label>
-        <div class="gb-prof-info" id="gbProfInfo"></div>
-      </div>
-    </div>
-
-    <div class="gb-set-note">
-      Alle Schwellwerte — Mayer 0.9 / 2.0, Fear&amp;Greed 35 / 80, ER 0.3 / 0.5, RSI 25 / 75 —
-      sind bewusst fest verdrahtet und nicht editierbar. Sie sind historisch kalibriert:
-      Mayer unter 0.9 traf jeden BTC-Akkumulationsboden seit 2015. Wer sie verschiebt, weil
-      das Ergebnis nicht gefällt, senkt nicht das Risiko, sondern nur die Warnung.
-      Aggressivität steuerst du über das Profil. Was genau gerechnet wird, steht im FAQ.
-    </div>
-  `;
-
-  const renderProfInfo = () => {
-    const p = GridBot.PROFILES[document.getElementById("gbProfile").value];
-    document.getElementById("gbProfInfo").innerHTML =
-      `<div class="pi-row"><span>Hebel max</span><b>${p.leverageCap}×</b></div>`
-      + `<div class="pi-row"><span>Risiko je Bot</span><b>${p.riskBudget}%</b></div>`
-      + `<div class="pi-row"><span>Gap-Puffer</span><b>${p.gapBuffer}%</b></div>`;
-  };
-  renderProfInfo();
-
-  document.getElementById("gbProfile").addEventListener("change", (e) => {
-    GridBot.setProfile(e.target.value);
-    state.gbProfile = e.target.value;
-    renderProfInfo();
-    saveWorkspace();
-    gbRefresh();
-  });
-
-  const num = (id, key) => {
-    document.getElementById(id).addEventListener("change", (e) => {
-      const v = parseFloat(e.target.value);
-      if (isNaN(v)) return;
-      if (key === "capital") { state.gbCapital = v; }
-      else { GridBot.setThresholds({ [key]: v }); state.gbThresholds = GridBot.getThresholds(); }
-      saveWorkspace();
-      gbRefresh();
-    });
-  };
-  num("gbCapital", "capital");
-  num("gbFee", "feeRoundtrip");
-  num("gbFills", "fillsPerGrid");
-}
-
-function gbDrawBands(tierId) {
-  gbClearBands();
-  if (!tierId || !state.gbResult) return;
-  const t = state.gbResult.tiers.find(x => x.id === tierId);
-  if (!t) return;
-
-  const d = chart.getDataList();
-  if (!d || !d.length) return;
-  const ts = d[Math.max(0, d.length - 200)].timestamp;
-
-  try {
-    const id = chart.createOverlay({
-      name: "gridBands",
-      points: [{ timestamp: ts, value: t.upper }, { timestamp: d.at(-1).timestamp, value: t.lower }],
-      lock: true,
-      onMouseEnter: () => { setChartCursor("pointer"); return false; },
-      onMouseLeave: () => { setChartCursor(""); return false; },
-      extendData: {
-        lower: t.lower, upper: t.upper, grids: t.grids, stopLoss: t.stopLoss,
-        takeProfit: t.takeProfit, label: t.label, direction: t.direction, leverage: t.leverage,
-      },
-    });
-    if (id) state.gbBandIds.push(id);
-  } catch (e) {}
-}
 
 // Höhe der Leiste per Handle verstellbar — damit man alle Zahlen
 // ohne Scrollen sehen kann, wenn man will.
-function gbInitResize() {
-  const handle = document.getElementById("gbResize");
-  const bar = document.getElementById("gridBotBar");
-  let dragging = false, startY = 0, startH = 0;
-
-  const onMove = (e) => {
-    if (!dragging) return;
-    const y = e.touches ? e.touches[0].clientY : e.clientY;
-    const max = document.querySelector(".chart-col").clientHeight - 160;
-    const h = Math.max(34, Math.min(max, startH + (startY - y)));
-    bar.style.height = h + "px";
-    state.gbHeight = h;
-    resize();
-  };
-  const onUp = () => {
-    if (!dragging) return;
-    dragging = false;
-    document.body.style.cursor = "";
-    saveWorkspace();
-  };
-
-  const onDown = (e) => {
-    dragging = true;
-    startY = e.touches ? e.touches[0].clientY : e.clientY;
-    startH = bar.getBoundingClientRect().height;
-    document.body.style.cursor = "ns-resize";
-    e.preventDefault();
-  };
-
-  handle.addEventListener("mousedown", onDown);
-  handle.addEventListener("touchstart", onDown, { passive: false });
-  document.addEventListener("mousemove", onMove);
-  document.addEventListener("touchmove", onMove, { passive: false });
-  document.addEventListener("mouseup", onUp);
-  document.addEventListener("touchend", onUp);
-}
-
-function gbApplyHeight() {
-  const bar = document.getElementById("gridBotBar");
-  if (state.gbCollapsed) { bar.style.height = ""; return; }
-  bar.style.height = (state.gbHeight || 250) + "px";
-}
-
-function gbToggleBar(show) {
-  const bar = document.getElementById("gridBotBar");
-  const on = show != null ? show : bar.classList.contains("hidden");
-  bar.classList.toggle("hidden", !on);
-  document.getElementById("gbResize").classList.toggle("hidden", !on || state.gbCollapsed);
-  document.getElementById("gridBotBtn").classList.toggle("active", on);
-  if (on) gbApplyHeight();
-  state.gbOpen = on;
-  saveWorkspace();
-  resize();
-  if (on && !state.gbResult) gbRefresh(false);
-}
-
-function gbSetCollapsed(c) {
-  document.getElementById("gbBody").classList.toggle("collapsed", c);
-  document.getElementById("gbResize").classList.toggle("hidden", c || !state.gbOpen);
-  document.getElementById("gbChev").innerHTML = c
-    ? '<path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
-    : '<path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
-  state.gbCollapsed = c;
-  gbApplyHeight();
-  saveWorkspace();
-  resize();
-}
 
 // ---------- Fibonacci-Einstellungen ----------
 // Levels aus config.js — dieselbe Quelle wie overlays.js zum Zeichnen.
@@ -7034,7 +6568,7 @@ async function applyNamedLayout(name) {
   drawVrvp();
   // clearAllDrawings hat gbActiveTier genullt — Tier-Buttons nachziehen,
   // sonst zeigt einer "Im Chart ✓" ohne Band im Chart.
-  if (state.gbResult) gbRenderTiers();
+  if (state.gbResult) gbUI.renderTiers();
 
   // Vergleichs-Assets aus dem Layout übernehmen. Ohne das bleibt der
   // alte Compare-State stehen und man sieht Kerzen UND Vergleichslinien
@@ -7319,10 +6853,10 @@ initDropdowns();
 syncLabels();
 GridBot.setThresholds(state.gbThresholds);
 GridBot.setProfile(state.gbProfile);
-gbRenderSettings();
-gbInitResize();
-gbSetCollapsed(state.gbCollapsed);
-if (state.gbOpen) gbToggleBar(true);
+gbUI.renderSettings();
+gbUI.initResize();
+gbUI.setCollapsed(state.gbCollapsed);
+if (state.gbOpen) gbUI.toggleBar(true);
 applyTheme();
 renderLayoutList();
 renderAssetList();
@@ -7467,10 +7001,10 @@ document.getElementById("posToolTopBtn").addEventListener("click", () => {
   btn.classList.add("active");
   setStatus("Long/Short: 1. Einstieg klicken  →  2. Stop  →  3. Ziel");
 });
-document.getElementById("gridBotBtn").addEventListener("click", () => gbToggleBar());
+document.getElementById("gridBotBtn").addEventListener("click", () => gbUI.toggleBar());
 // QF4: Grid Bot im Querformat als Links-Dropout — am linken Griff nach rechts
 // wischen schliesst.
-bindSheetSwipeClose(document.getElementById("gridBotBar"), () => gbToggleBar(false));
+bindSheetSwipeClose(document.getElementById("gridBotBar"), () => gbUI.toggleBar(false));
 
   // Magnetknopf in der Bottom Bar
   quiet(() => {
@@ -7490,15 +7024,15 @@ bindSheetSwipeClose(document.getElementById("gridBotBar"), () => gbToggleBar(fal
     });
     update();
   }, "magnet bb btn");
-document.getElementById("gbClose").addEventListener("click", (e) => { e.stopPropagation(); gbToggleBar(false); });
+document.getElementById("gbClose").addEventListener("click", (e) => { e.stopPropagation(); gbUI.toggleBar(false); });
 document.getElementById("gbToggle").addEventListener("click", (e) => {
   e.stopPropagation();
-  gbSetCollapsed(!state.gbCollapsed);
+  gbUI.setCollapsed(!state.gbCollapsed);
 });
-document.getElementById("gbRefresh").addEventListener("click", (e) => { e.stopPropagation(); gbRefresh(true); });
+document.getElementById("gbRefresh").addEventListener("click", (e) => { e.stopPropagation(); gbUI.refresh(true); });
 document.getElementById("gbStatus").addEventListener("click", (e) => {
   if (e.target.closest(".gb-icon")) return;
-  gbSetCollapsed(!state.gbCollapsed);
+  gbUI.setCollapsed(!state.gbCollapsed);
 });
 document.querySelectorAll(".gb-tab").forEach(tab => {
   tab.addEventListener("click", (e) => {
@@ -7509,7 +7043,7 @@ document.querySelectorAll(".gb-tab").forEach(tab => {
     Object.values(map).forEach(id => document.getElementById(id).classList.add("hidden"));
     document.getElementById(map[tab.dataset.tab]).classList.remove("hidden");
     // Pane öffnen falls kollabiert
-    if (state.gbCollapsed) gbSetCollapsed(false);
+    if (state.gbCollapsed) gbUI.setCollapsed(false);
   });
 });
 // ---------- FAQ-Handler ----------
@@ -7882,7 +7416,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
-const TV_BUILD = "m71";
+const TV_BUILD = "m73";
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.

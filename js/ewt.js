@@ -529,19 +529,6 @@
   // Aufrufstelle einen Parameter durchreichen muss.
   const FIT_BETA = { value: 0.5 };
 
-  // Skip-Tupel, aufsteigend nach Summe sortiert: kuerzeste Wellen zuerst,
-  // wie options_sorted im Python-Generator.
-  function skipTuples(maxSkip) {
-    const out = [];
-    for (let a = 0; a <= maxSkip; a++)
-     for (let b = 0; b <= maxSkip; b++)
-      for (let c2 = 0; c2 <= maxSkip; c2++)
-       for (let d2 = 0; d2 <= maxSkip; d2++)
-        for (let e = 0; e <= maxSkip; e++) out.push([a, b, c2, d2, e]);
-    out.sort((x, y) => x.reduce((s, v) => s + v, 0) - y.reduce((s, v) => s + v, 0));
-    return out;
-  }
-
   // ============================================================
   // 4. Projektion der Folgewellen
   // ============================================================

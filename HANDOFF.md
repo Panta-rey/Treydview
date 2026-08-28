@@ -2887,3 +2887,46 @@ Eingriff — alle Fixes in bestehenden `@media`-Blöcken.
 
 ### Offen / nächster Chat
 - Dominanz BTC.D/USDT.D (Variante A) und Kerzen-Muster-Tool → weiterhin offen.
+
+## Build m71 — Hotfix HF1 (27. August 2026)
+
+Korrektur eines in m70 selbst eingebauten Fehlers. Nur `css/style.css` inhaltlich
+(eine Regel) + Build-Bump. Kumulativ auf m70 (die m70-Fixes für tbRow2 sind
+enthalten).
+
+### Hochformat
+- **HF1 (Sync/Icon-Abstand rechts asymmetrisch — m70-Fehler):** m70 hat für die
+  überlaufsichere rechte Kante ein echtes Flex-Item `#tbRow1::after{flex:0 0 8px}`
+  eingeführt, aber den bereits geerbten transparenten `.tb-row`-`border-right` (8px)
+  NICHT entfernt. Beide addierten sich → rechts 8+8 = **16px** gegen links **8px**
+  (nur `border-left`). Sichtbar: die Icons der ersten Zeile standen weiter vom rechten
+  Rand ab als die Pills vom linken. Fix: `#tbRow1{border-right:0}` — rechts bleibt nur
+  der Spacer (8px, mitscrollend/überlaufsicher), der Border rechts fällt weg. Ergebnis
+  symmetrisch: links `border-left` 8px = rechts Spacer 8px.
+
+### Lektion
+- Wenn ein von einer Basisklasse geerbter Abstand (hier `.tb-row`-Border) durch einen
+  anderen Mechanismus (Flex-Spacer) ERSETZT wird, muss der geerbte Wert am spezifischen
+  Element explizit auf 0 — sonst ADDIEREN sich beide. Nach jeder Abstandsänderung den
+  effektiven Wert BEIDER Seiten gegenrechnen (links vs rechts), nicht nur die geänderte
+  Seite prüfen.
+
+### Datei-MD5 (Build m71, nur geänderte)
+| Datei | MD5 |
+|---|---|
+| style.css  | c323f130467688f69683df484963e496 |
+| index.html | 9724ce15e672454bd0600dadbf9ebdbc |
+| app.js     | a7ad47c40490b32edc3bcee2dd147436 |
+
+> app.js/index.html: NUR Build-Bump (m70→m71). style.css: HF1-Korrektur + Build-Tag.
+> Prüfungen: node -c ok, CSS-Braces 739/739, Prüfung 1 nur Build-Tag.
+
+### Offen / am Gerät zu verifizieren
+- HF1 (erste Zeile: Icons rechts jetzt gleich weit vom Rand wie Pills links, beide 8px).
+- Offene Design-Frage an Rey: aktuell 8px symmetrisch (rechts = links). Falls stattdessen
+  BÜNDIG (0px, Icons + Pills kleben am Rand) gewünscht: Spacer-Breite auf 0 und
+  `border-left:0` — Einzeiler, noch nicht umgesetzt (auf Rückmeldung wartend).
+- P1/P2 aus m70 (Querformat) weiterhin am Gerät zu bestätigen.
+
+### Offen / nächster Chat
+- Dominanz BTC.D/USDT.D (Variante A) und Kerzen-Muster-Tool → weiterhin offen.

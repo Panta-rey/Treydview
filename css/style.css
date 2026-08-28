@@ -466,16 +466,6 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 /* main-chart braucht relative Position für Legende-Overlay */
 .chart-col{position:relative;}
 
-/* ---- Draw-Stil-Popover ---- */
-.draw-style-popover{position:fixed;z-index:400;background:var(--bg-raised);border:1px solid var(--border);border-radius:6px;padding:10px;display:flex;flex-direction:column;gap:8px;box-shadow:0 8px 32px rgba(0,0,0,.6);width:220px;}
-.dsp-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);}
-.dsp-row label{width:70px;flex-shrink:0;}
-.dsp-row input[type=color]{width:36px;height:26px;padding:1px;border:1px solid var(--border);border-radius:4px;background:var(--bg);cursor:pointer;}
-.dsp-row input[type=range]{flex:1;accent-color:var(--accent);}
-.dsp-row input[type=number]{width:50px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;}
-.dsp-row select{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:3px 6px;cursor:pointer;}
-.dsp-row span{font-size:11px;width:34px;text-align:right;}
-
 /* ---- Multi-Asset-Vergleich ---- */
 .dd-compare{color:var(--accent);border-color:rgba(232,182,76,.4);}
 .dd-compare:hover{background:rgba(232,182,76,.08);}
@@ -644,7 +634,6 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 
 .gb-body{border-top:1px solid var(--border);overflow-y:auto;flex:1 1 auto;min-height:0;}
 .gb-body.collapsed{display:none;}
-.gb-tabs{display:flex;gap:2px;padding:6px 12px 0;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg-raised);z-index:2;}
 .gb-tab{background:transparent;border:none;color:var(--text-dim);font-family:var(--font-mono);font-size:12px;padding:5px 12px;cursor:pointer;border-radius:4px 4px 0 0;}
 .gb-tab:hover{color:var(--text);}
 .gb-tab.active{background:var(--bg);color:var(--accent);}
@@ -664,8 +653,6 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .gb-table tbody tr:last-child{border-bottom:none;}
 .gb-table tbody tr:hover{background:var(--bg-hover);}
 .gb-table tbody tr:hover td.lbl{color:var(--text);}
-.gb-table tr.gb-group td{padding-top:11px;color:var(--text-dim);font-size:10px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);}
-.gb-table tr.gb-group:hover{background:transparent;}
 .gb-table td.on{color:var(--accent);}
 .gb-show{background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:3px;padding:3px 10px;font-family:var(--font-mono);font-size:11px;cursor:pointer;}
 .gb-show:hover{border-color:var(--accent);color:var(--accent);}
@@ -691,7 +678,6 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .gb-set-block input:focus{border-color:var(--accent);}
 
 /* Long/Short: eigener Platz in der Drawbar, kein Untermenü */
-.draw-pos.active{background:rgba(232,182,76,.14);border-color:var(--accent);}
 
 /* Tabs in der Statuszeile (kein eigener Tab-Block mehr) */
 .gb-sep-v{width:1px;background:var(--border);height:16px;flex-shrink:0;margin:0 4px;}
@@ -876,7 +862,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m71"; }
+:root { --tv-build: "m73"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
