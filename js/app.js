@@ -5530,6 +5530,124 @@ function updateCycleBar(r) {
   document.addEventListener("click", closePopover);
 })();
 
+<<<<<<< HEAD
+=======
+function gbRenderTiers() {
+  const r = state.gbResult;
+  const t = document.getElementById("gbTiers");
+  const box = document.getElementById("gbRecoBox");
+  if (!r || !r.tiers.length) {
+    t.innerHTML = '<tbody><tr><td class="lbl">Keine Daten</td></tr></tbody>';
+    if (box) box.innerHTML = "";
+    return;
+  }
+
+  // ---- Empfehlung: die eine Aussage, um die es geht ----
+  const rec = r.recommendation || {};
+  const stageClass = { defensive: "reco-stop", "accumulate-spot": "reco-go", "accumulate-grid": "reco-go",
+                       range: "reco-go", "long-bias": "reco-go", wait: "reco-wait" }[rec.stage] || "reco-wait";
+  if (box) {
+    box.className = "gb-reco " + stageClass;
+    box.innerHTML = `<div class="reco-main">${rec.label || "—"}</div>`
+      + `<div class="reco-why">${rec.why || ""}</div>`
+      + `<div class="reco-meta">`
+        + `<span>Grid-Eignung: <b>${r.gridSuitability?.label || "—"}</b></span>`
+        + `<span>Profil: <b>${r.profile?.name || "—"}</b></span>`
+        + (r.tiers.some(x => x.leverageGuard) ? `<span class="reco-guard">⚠ Hebel-Leitplanke aktiv → max 1×</span>` : "")
+      + `</div>`;
+  }
+
+  const fmt = (n) => n == null ? "–" : n.toLocaleString("de-CH", { maximumFractionDigits: 0 });
+  const sign = (n) => (n > 0 ? "+" : "") + n.toFixed(1) + "%";
+
+  // Nur was man in Pionex tatsächlich eintippt oder zum Entscheiden braucht.
+  // Alles andere (Scores, ATR, Faktoren) rechnet im Hintergrund.
+  const rows = [
+    ["Range oben",   (x) => fmt(x.upper)],
+    ["Range unten",  (x) => fmt(x.lower)],
+    ["Grids",        (x) => x.grids],
+    ["Hebel",        (x) => x.leverage + "×" + (x.leverageGuard ? " ⚠" : "")],
+    ["Investment",   (x) => fmt(x.positionSize) + " USDT"],
+    ["Stop Loss",    (x) => fmt(x.stopLoss)],
+    ["Sicherheit",   (x) => x.safety],
+    ["Netto-Erwartung", (x) => x.viability ? sign(x.viability.net) : "–"],
+  ];
+
+  let html = "<thead><tr><th></th>" + r.tiers.map(x => {
+    const isReco = rec.tier === x.id;
+    return `<th class="tier-head${isReco ? " tier-reco" : ""}">${x.label}${isReco ? " ★" : ""}<span class="tier-hz">${x.horizon}</span></th>`;
+  }).join("") + "</tr></thead><tbody>";
+
+  rows.forEach(([lbl, fn]) => {
+    html += `<tr><td class="lbl">${lbl}</td>` + r.tiers.map(x => {
+      const isReco = rec.tier === x.id;
+      let cls = isReco ? "on" : "";
+      if (lbl === "Netto-Erwartung" && x.viability && !x.viability.ok) cls = "neg";
+      return `<td${cls ? ` class="${cls}"` : ""}>${fn(x)}</td>`;
+    }).join("") + "</tr>";
+  });
+
+  html += '<tr><td class="lbl"></td>' + r.tiers.map(x =>
+    `<td><button class="gb-show${state.gbActiveTier === x.id ? " active" : ""}" data-tier="${x.id}">${state.gbActiveTier === x.id ? "Im Chart ✓" : "Im Chart"}</button></td>`
+  ).join("") + "</tr></tbody>";
+  t.innerHTML = html;
+
+  t.querySelectorAll(".gb-show").forEach(b => {
+    b.addEventListener("click", () => {
+      const id = b.dataset.tier;
+      state.gbActiveTier = state.gbActiveTier === id ? null : id;
+      saveWorkspace();
+      gbRenderTiers();
+      gbDrawBands(state.gbActiveTier);
+    });
+  });
+
+  const w = document.getElementById("gbWarning");
+  w.textContent = r.missing.length ? "Quellen fehlen: " + r.missing.join(", ") : "";
+  w.className = "gb-note" + (r.missing.length ? " warn" : "");
+}
+
+function gbRenderData() {
+  const r = state.gbResult;
+  const box = document.getElementById("gbData");
+  if (!r) return;
+  const n = (v, d = 2, suf = "") => v == null ? "–" : v.toFixed(d) + suf;
+  const blk = (title, kvs) =>
+    `<div><div class="gb-blk-title">${title}</div>` +
+    kvs.map(([k, v]) => `<div class="gb-kv"><span>${k}</span><span>${v}</span></div>`).join("") + "</div>";
+
+  box.innerHTML =
+    blk("Markt & Trend", [
+      ["Preis", n(r.market.price, 0)],
+      ["SMA50", n(r.market.sma50, 0)],
+      ["SMA200", n(r.market.sma200, 0)],
+      ["Abstand SMA200", n(r.market.sma200Dist, 2, "%")],
+      ["RSI14 (Wilder)", n(r.market.rsi, 1)],
+      ["ATR14 / 90 / 200", `${n(r.market.atr14)} / ${n(r.market.atr90)} / ${n(r.market.atr200)}`],
+      ["Volumen", r.market.volumeSignal],
+    ]) +
+    blk("Sentiment & Derivate", [
+      ["Fear & Greed", r.derivatives.fng != null ? `${r.derivatives.fng} (${r.derivatives.fngLabel})` : "–"],
+      ["F&G Ø30 / Ø90", `${n(r.derivatives.fngAvg30, 1)} / ${n(r.derivatives.fngAvg90, 1)}`],
+      ["Funding 8h", n(r.derivatives.funding8h, 4, "%")],
+      ["Funding monatlich", n(r.derivatives.fundingMonthly, 2, "%")],
+      ["Open Interest", r.derivatives.oiNow != null ? n(r.derivatives.oiNow, 0) + " BTC" : "–"],
+      ["OI Δ30T / Δ90T", `${n(r.derivatives.oiChange30, 2, "%")} / ${n(r.derivatives.oiChange90, 2, "%")}`],
+      ["L/S Ratio", n(r.derivatives.lsRatio, 4)],
+      ["OI-Interpretation", r.oiInterpretation],
+    ]) +
+    blk("Konfluenz", [
+      ["Trend-Score", r.confluence.trendScore ?? "–"],
+      ["Derivate-Score", r.confluence.derivativeScore ?? "–"],
+      ["Summe", r.confluence.sum ?? "–"],
+      ["Extrem-Filter", r.confluence.extreme],
+      ["Roh-Bias (vor Filter)", r.rawBias],
+      ["Bias (final)", r.bias],
+      ["Regime", r.regime],
+    ]);
+}
+
+>>>>>>> 40653032185d048cef54a78fa80272fd980f7219
 // ---------- Grid-Bänder im Chart ----------
 
 // ---------- Einstellungs-Felder ----------
@@ -7416,7 +7534,9 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
+
 const TV_BUILD = "m73";
+
 window.__tvBuild = TV_BUILD;
 
 // Build-Abgleich: meldet sofort, wenn der Browser eine alte CSS liefert.
