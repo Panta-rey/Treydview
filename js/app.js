@@ -5647,7 +5647,6 @@ function gbRenderData() {
     ]);
 }
 
->>>>>>> 40653032185d048cef54a78fa80272fd980f7219
 // ---------- Grid-Bänder im Chart ----------
 
 // ---------- Einstellungs-Felder ----------
