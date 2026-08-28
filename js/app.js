@@ -5530,8 +5530,6 @@ function updateCycleBar(r) {
   document.addEventListener("click", closePopover);
 })();
 
-<<<<<<< HEAD
-=======
 function gbRenderTiers() {
   const r = state.gbResult;
   const t = document.getElementById("gbTiers");
