@@ -47,6 +47,16 @@ function emaSeries(values, period) {
   return out;
 }
 
+function wmaAt(values, period, i) {
+  if (i < period - 1) return null;
+  let num = 0, den = 0;
+  for (let j = 0; j < period; j++) {
+    const w = period - j, v = values[i - j];
+    if (v == null) return null;
+    num += v * w; den += w;
+  }
+  return num / den;
+}
 
 function atrSeries(dataList, period) {
   const tr = dataList.map((d, i) => {
@@ -101,6 +111,8 @@ function vwmaSeries(dataList, period) {
   return out;
 }
 
+function smaSeries(values, period) { return emaSeries(values, period); } // alias für EMA-smoothed (SMMA = RMA in Pine)
+
 function maByType(values, period, type, dataList) {
   switch (type) {
     case "EMA":  return emaSeries(values, period);
@@ -132,6 +144,59 @@ function trSeries(dataList) {
 }
 
 // ---------- MONEY NOODLE ----------
+// ---------- Multi-Timeframe-Resampling für MA-Indikatoren ----------
+// Aggregiert die Chartkerzen auf ein gröberes Intervall und projiziert einen
+// darauf gerechneten Durchschnitt stufenweise zurück auf die Chartkerzen.
+// Ist das gewählte Intervall nicht gröber als das Chartintervall (oder "auto"),
+// wird unverändert auf den Chart-Closes gerechnet ("auto"-Verhalten).
+const _TF_MS = { "15m": 9e5, "1h": 36e5, "4h": 144e5, "1d": 864e5, "1w": 6048e5, "1M": 2592e6 };
+
+function chartIntervalMs(dataList) {
+  const diffs = [];
+  for (let i = 1; i < dataList.length && i <= 200; i++) {
+    const d = dataList[i].timestamp - dataList[i - 1].timestamp;
+    if (d > 0) diffs.push(d);
+  }
+  if (!diffs.length) return 0;
+  diffs.sort((a, b) => a - b);
+  return diffs[Math.floor(diffs.length / 2)];
+}
+
+function resampleCloses(dataList, tfId) {
+  const D = 864e5;
+  let keyOf;
+  if (tfId === "1w") keyOf = (ts) => Math.floor((ts - 4 * D) / (7 * D));
+  else if (tfId === "1M") keyOf = (ts) => { const d = new Date(ts); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
+  else if (_TF_MS[tfId]) { const m = _TF_MS[tfId]; keyOf = (ts) => Math.floor(ts / m); }
+  else return null;
+  const aggClose = [];
+  const bucketOf = new Array(dataList.length);
+  let key = null, bi = -1;
+  for (let i = 0; i < dataList.length; i++) {
+    const k = keyOf(dataList[i].timestamp);
+    if (k !== key) { key = k; bi++; aggClose.push(dataList[i].close); }
+    else aggClose[bi] = dataList[i].close;
+    bucketOf[i] = bi;
+  }
+  return { aggClose, bucketOf };
+}
+
+// Liefert { closes, project }: closes = Basis für die MA-Rechnung (aggregiert
+// oder Chart-Closes), project = bildet eine auf closes gerechnete Serie zurück
+// auf die Chartkerzen ab. Bei "auto"/zu feinem Intervall: Identität.
+function maContext(dataList, tf) {
+  const closes = dataList.map(d => d.close);
+  if (!tf || tf === "auto" || !_TF_MS[tf]) return { closes, project: (s) => s };
+  const cMs = chartIntervalMs(dataList);
+  if (!(cMs > 0) || _TF_MS[tf] <= cMs) return { closes, project: (s) => s };
+  const agg = resampleCloses(dataList, tf);
+  if (!agg) return { closes, project: (s) => s };
+  return {
+    closes: agg.aggClose,
+    project: (series) => dataList.map((_, i) => series[agg.bucketOf[i]] ?? null),
+  };
+}
+
 klinecharts.registerIndicator({
   name: "MNOODLE",
   shortName: "MNoodle",
@@ -206,18 +271,17 @@ klinecharts.registerIndicator({
     { key: "ema21", title: "21 EMA: ", type: "line", styles: (d, ind) => plotStyle(ind, "ema21", "#d05e5e", 2) },
   ],
   calc: (dataList, indicator) => {
-    const [smaP, emaP] = indicator.calcParams;
-    const closes = dataList.map(d => d.close);
-    const emaArr = emaSeries(closes, emaP);
-    return dataList.map((_, i) => {
-      let sma = null;
-      if (i >= smaP - 1) {
-        let s = 0;
-        for (let j = i - smaP + 1; j <= i; j++) s += closes[j];
-        sma = s / smaP;
-      }
-      return { sma20: sma ?? undefined, ema21: emaArr[i] ?? undefined };
+    const [smaP, emaP, tf] = indicator.calcParams;
+    const { closes, project } = maContext(dataList, tf);
+    const emaArr = project(emaSeries(closes, emaP));
+    const smaRaw = closes.map((_, i) => {
+      if (i < smaP - 1) return null;
+      let s = 0;
+      for (let j = i - smaP + 1; j <= i; j++) s += closes[j];
+      return s / smaP;
     });
+    const smaArr = project(smaRaw);
+    return dataList.map((_, i) => ({ sma20: smaArr[i] ?? undefined, ema21: emaArr[i] ?? undefined }));
   },
   draw: ({ ctx, kLineDataList, visibleRange, indicator, xAxis, yAxis }) => {
     const result = indicator.result;
@@ -629,10 +693,10 @@ klinecharts.registerIndicator({
     { key: "s4", title: "SMA4: ", type: "line", styles: (d, ind) => plotStyle(ind, "s4", "#3fb68b", 2) },
   ],
   calc: (dataList, indicator) => {
-    const [p1, p2, p3, p4] = indicator.calcParams;
-    const closes = dataList.map(d => d.close);
-    const s1 = smaSeries2(closes, p1), s2 = smaSeries2(closes, p2);
-    const s3 = smaSeries2(closes, p3), s4 = smaSeries2(closes, p4);
+    const [p1, p2, p3, p4, tf] = indicator.calcParams;
+    const { closes, project } = maContext(dataList, tf);
+    const s1 = project(smaSeries2(closes, p1)), s2 = project(smaSeries2(closes, p2));
+    const s3 = project(smaSeries2(closes, p3)), s4 = project(smaSeries2(closes, p4));
     return dataList.map((_, i) => ({
       s1: s1[i] ?? undefined, s2: s2[i] ?? undefined,
       s3: s3[i] ?? undefined, s4: s4[i] ?? undefined,
@@ -654,8 +718,9 @@ klinecharts.registerIndicator({
   ],
   calc: (dataList, indicator) => {
     const params = indicator.calcParams;
-    const closes = dataList.map(d => d.close);
-    const results = params.map(p => emaSeries(closes, p));
+    const tf = params[4];
+    const { closes, project } = maContext(dataList, tf);
+    const results = [params[0], params[1], params[2], params[3]].map(p => project(emaSeries(closes, p)));
     return dataList.map((_, i) => ({
       ema1: results[0][i] ?? undefined, ema2: results[1][i] ?? undefined,
       ema3: results[2][i] ?? undefined, ema4: results[3] ? (results[3][i] ?? undefined) : undefined,

@@ -74,11 +74,12 @@ export default {
       if (url.pathname === "/bitstamp"    && request.method === "GET")  return await getBitstamp(request, env);
       if (url.pathname === "/stooq"       && request.method === "GET")  return await getStooq(request, env);
       if (url.pathname === "/m2"          && request.method === "GET")  return await getM2(env);
+      if (url.pathname === "/dominance"   && request.method === "GET")  return await getDominance(env);
       if (url.pathname === "/history"     && request.method === "GET")  return await getHistory(env);
       if (url.pathname === "/snapshot"    && request.method === "POST") return await postSnapshot(request, env);
       if (url.pathname === "/sync"        && (request.method === "GET" || request.method === "POST")) return await handleSync(request, env);
       if (url.pathname === "/")
-        return json({ ok: true, service: "panta-rey", routes: ["/macro", "/goldhistory", "/silverhistory", "/bitstamp", "/stooq", "/m2", "/history", "/snapshot", "/sync"] });
+        return json({ ok: true, service: "panta-rey", routes: ["/macro", "/goldhistory", "/silverhistory", "/bitstamp", "/stooq", "/m2", "/dominance", "/history", "/snapshot", "/sync"] });
       return json({ error: "not found" }, 404);
     } catch (e) {
       return json({ error: String(e && e.message || e) }, 500);
@@ -800,6 +801,73 @@ async function buildM2(key) {
     throw new Error(`Keine plausiblen M2-Monate (Reihenlaengen: ${info})`);
   }
   return zeilen;
+}
+
+// ============================================================
+//   /dominance  →  BTC.D / USDT.D (Variante A, gratis via CoinGecko)
+// ============================================================
+// Die globale Gesamt-Marktkapitalisierung wird durch die Summe der Top-40-Coins
+// approximiert (deckt ~93 %). Pro Tag: BTC.D = BTC-MC / Top40-Summe, analog USDT.D.
+// 1 Jahr taeglich, in KV gecacht (24 h). COINGECKO_KEY (Demo, gratis) gibt stabile
+// 100 Calls/min; ohne Key laeuft der keyless Public-Endpoint (5-30/min, wackliger).
+// 41 Subrequests (1x markets + 40x market_chart) bleiben unter dem 50er-Limit.
+const DOMINANCE_TTL_MS = 24 * 60 * 60 * 1000;
+const DOMINANCE_TOP_N = 40;
+
+async function cgFetch(path, env) {
+  const headers = { "Accept": "application/json" };
+  const key = env.COINGECKO_KEY || env.COINGECKO_API_KEY;
+  if (key) headers["x-cg-demo-api-key"] = key;
+  const r = await fetch("https://api.coingecko.com/api/v3" + path, { headers });
+  if (!r.ok) throw new Error("CoinGecko " + r.status + " fuer " + path);
+  return r.json();
+}
+
+async function getDominance(env) {
+  const domKey = `dominance_${CACHE_VERSION}`;
+  let cached = null;
+  try { cached = JSON.parse(await env.PANTA.get(domKey)); } catch (_) {}
+  if (cached && cached.ts && cached.series && (Date.now() - cached.ts) < DOMINANCE_TTL_MS)
+    return json(cached.series);
+
+  // 1) Top-N Coins nach Marktkapitalisierung
+  const markets = await cgFetch(
+    `/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${DOMINANCE_TOP_N}&page=1&sparkline=false`, env);
+  if (!Array.isArray(markets) || !markets.length) return err("CoinGecko: keine Marktdaten", 502);
+  const ids = markets.map(c => c.id);
+
+  // 2) Pro Coin die 365-Tage-Marktkapitalisierung; pro Tag summieren.
+  const totalByDay = new Map(), btcByDay = new Map(), usdtByDay = new Map();
+  for (const id of ids) {
+    let chart;
+    try {
+      chart = await cgFetch(`/coins/${id}/market_chart?vs_currency=usd&days=365&interval=daily`, env);
+    } catch (_) { continue; }  // Einzelausfall tolerieren, Rest summiert weiter
+    const caps = (chart && chart.market_caps) ? chart.market_caps : [];
+    for (const pt of caps) {
+      const ts = pt[0], mc = pt[1];
+      if (mc == null) continue;
+      const day = Math.floor(ts / 864e5) * 864e5;
+      totalByDay.set(day, (totalByDay.get(day) || 0) + mc);
+      if (id === "bitcoin") btcByDay.set(day, mc);
+      if (id === "tether")  usdtByDay.set(day, mc);
+    }
+  }
+
+  // 3) Serie bauen: [{ t, btcd, usdtd }] in %
+  const days = [...totalByDay.keys()].sort((a, b) => a - b);
+  const series = days.map(day => {
+    const tot = totalByDay.get(day) || 0;
+    return {
+      t: day,
+      btcd:  (tot > 0 && btcByDay.has(day))  ? +((btcByDay.get(day)  / tot) * 100).toFixed(4) : null,
+      usdtd: (tot > 0 && usdtByDay.has(day)) ? +((usdtByDay.get(day) / tot) * 100).toFixed(4) : null,
+    };
+  }).filter(p => p.btcd != null || p.usdtd != null);
+
+  if (!series.length) return err("Dominanz: leere Serie", 502);
+  try { await env.PANTA.put(domKey, JSON.stringify({ ts: Date.now(), series })); } catch (_) {}
+  return json(series);
 }
 
 async function getM2(env) {

@@ -205,6 +205,24 @@ const DataLayer = {
   // API: GET /0/public/OHLC?pair=XBTUSD&interval=1440&since=<unix_s>
   // Antwort: { result: { XBTUSD: [[time,o,h,l,c,vwap,vol,count], ...], last: <unix_s> } }
 
+  // Krypto-Dominanz (BTC.D / USDT.D) vom Worker-Endpunkt /dominance.
+  // Ein Prozentwert pro Tag; als flache Kerzen (o=h=l=c) gebaut, damit Chart
+  // und Vergleich sie wie ein normales Asset behandeln.
+  async fetchDominance(domCoin) {
+    const base = CONFIG.WORKER_BASE_URL.replace(/\/$/, "");
+    const r = await fetch(base + "/dominance");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const series = await r.json();
+    if (!Array.isArray(series)) throw new Error("Dominanz: unerwartetes Format");
+    return series
+      .map(p => {
+        const v = p[domCoin];
+        if (v == null || !isFinite(v)) return null;
+        return { timestamp: p.t, open: v, high: v, low: v, close: v, volume: 0 };
+      })
+      .filter(Boolean);
+  },
+
   async fetchKrakenKlines(pair, intervalMin, limit) {
     const MAX_PER_REQ = 720;
     const all = [];

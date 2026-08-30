@@ -403,6 +403,115 @@
   // Fuer den Pruefstand erreichbar.
   window.__tvMagnetSnap = magnetSnapValue;
 
+  // ---------- Kerzen-/Linien-Muster (Bars Pattern) ----------
+  // Zwei-Punkt-Auswahl wie FRVP: die Ankerpunkte spannen eine Ziel-Box auf.
+  // Beim Fixieren merkt sich onDrawEnd (app.js) den Quell-Zeitbereich in
+  // extendData; die echten Kerzen dieses Bereichs werden hier als bewegliches
+  // Abbild in die Box gerendert. Solange die Box flach ist (frisch gezeichnet),
+  // erscheinen die Kerzen in natürlicher Höhe (yAxis); zieht man eine Ecke auf,
+  // skaliert das Abbild in X und Y in die Box. Verschieben = Box ziehen.
+  klinecharts.registerOverlay({
+    name: "barPattern",
+    totalStep: 3,
+    needDefaultPointFigure: true,   // zwei Eck-Griffe zum Skalieren
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, overlay, yAxis, bounding }) => {
+      // Zeichenphase: zwei senkrechte Hilfslinien (Quell-Bereich markieren)
+      if (overlay.currentStep !== -1) {
+        const hh = (bounding && bounding.height) ? bounding.height : 100000;
+        return coordinates.map(c => ({
+          type: "line",
+          attrs: { coordinates: [{ x: c.x, y: 0 }, { x: c.x, y: hh }] },
+          styles: { style: "dashed", color: "rgba(232,182,76,0.75)", size: 1, dashedValue: [4, 4] },
+          ignoreEvent: true,
+        }));
+      }
+      if (coordinates.length < 2 || !overlay.points || overlay.points.length < 2) return [];
+      const getData = (typeof window !== "undefined" && window.__tvGetDataList) ? window.__tvGetDataList : null;
+      if (!getData) return [];
+      const dataList = getData();
+      if (!dataList || dataList.length === 0) return [];
+
+      const ext = overlay.extendData || {};
+      const p0 = overlay.points[0], p1 = overlay.points[1];
+      const srcStart = (ext.srcStart != null) ? ext.srcStart : Math.min(p0.timestamp, p1.timestamp);
+      const srcEnd   = (ext.srcEnd   != null) ? ext.srcEnd   : Math.max(p0.timestamp, p1.timestamp);
+      const slice = dataList.filter(d => d.timestamp >= srcStart && d.timestamp <= srcEnd);
+      if (slice.length < 1) return [];
+
+      const isLine    = !!ext.lineMode;
+      const colorUp   = ext.colorUp   || "rgba(63,182,139,0.95)";
+      const colorDown = ext.colorDown || "rgba(208,94,94,0.95)";
+      const colorLine = ext.colorLine || "#4c8ee8";
+      const colorFrame = "rgba(232,182,76,0.55)";
+
+      // Ziel-Box (zwei Ecken in Pixel)
+      const xL = Math.min(coordinates[0].x, coordinates[1].x);
+      const xR = Math.max(coordinates[0].x, coordinates[1].x);
+      const yT = Math.min(coordinates[0].y, coordinates[1].y);
+      const yB = Math.max(coordinates[0].y, coordinates[1].y);
+      const boxW = xR - xL, boxH = yB - yT;
+      if (boxW <= 1) return [];
+
+      // Preis-Range der Quell-Kerzen
+      let pMin = Infinity, pMax = -Infinity;
+      for (const d of slice) {
+        const lo = isLine ? d.close : d.low, hi = isLine ? d.close : d.high;
+        if (lo < pMin) pMin = lo;
+        if (hi > pMax) pMax = hi;
+      }
+      if (!(pMax > pMin)) pMax = pMin + Math.abs(pMin || 1) * 0.001 + 1;
+
+      // Flache Box -> natürliche Höhe (yAxis); aufgezogene Box -> in Box skalieren
+      const NATURAL = boxH < 12;
+      const priceToY = NATURAL
+        ? (p) => yAxis.convertToPixel(p)
+        : (p) => yB - ((p - pMin) / (pMax - pMin)) * boxH;
+
+      const n = slice.length;
+      const slot = boxW / n;
+      const bodyW = Math.max(1, slot * 0.6);
+      const figures = [];
+
+      // Verschiebe-Trefferzone (leichte Fläche, NICHT ignoreEvent)
+      const zoneTop = NATURAL ? priceToY(pMax) : yT;
+      const zoneBot = NATURAL ? priceToY(pMin) : yB;
+      figures.push({
+        type: "rect",
+        attrs: { x: xL, y: Math.min(zoneTop, zoneBot), width: boxW, height: Math.max(2, Math.abs(zoneBot - zoneTop)) },
+        styles: { style: "fill", color: "rgba(232,182,76,0.05)" },
+      });
+
+      if (isLine) {
+        const pts = slice.map((d, i) => ({ x: xL + (i + 0.5) * slot, y: priceToY(d.close) }));
+        figures.push({ type: "line", attrs: { coordinates: pts }, styles: { style: "solid", color: colorLine, size: 2, smooth: false }, ignoreEvent: true });
+      } else {
+        for (let i = 0; i < n; i++) {
+          const d = slice[i];
+          const up = d.close >= d.open;
+          const col = up ? colorUp : colorDown;
+          const cx = xL + (i + 0.5) * slot;
+          const yh = priceToY(d.high), yl = priceToY(d.low);
+          figures.push({ type: "line", attrs: { coordinates: [{ x: cx, y: yh }, { x: cx, y: yl }] }, styles: { style: "solid", color: col, size: 1, smooth: false }, ignoreEvent: true });
+          const yo = priceToY(d.open), yc = priceToY(d.close);
+          figures.push({ type: "rect", attrs: { x: cx - bodyW / 2, y: Math.min(yo, yc), width: bodyW, height: Math.max(1, Math.abs(yc - yo)) }, styles: { style: "fill", color: col }, ignoreEvent: true });
+        }
+      }
+
+      // gestrichelter Rahmen (nur wenn Box aufgezogen)
+      if (!NATURAL) {
+        figures.push({
+          type: "line",
+          attrs: { coordinates: [{ x: xL, y: yT }, { x: xR, y: yT }, { x: xR, y: yB }, { x: xL, y: yB }, { x: xL, y: yT }] },
+          styles: { style: "dashed", color: colorFrame, size: 1, dashedValue: [4, 4], smooth: false },
+          ignoreEvent: true,
+        });
+      }
+      return figures;
+    },
+  });
+
   const _registerOverlay = klinecharts.registerOverlay;
   klinecharts.registerOverlay = function (tpl) {
     if (tpl && !tpl.performEventMoveForDrawing) {
@@ -464,21 +573,6 @@
           type: "rect",
           attrs: { x: xLeft, y: Math.min(y1, y2), width: xRight - xLeft, height: Math.abs(y2 - y1) },
           styles: { style: "fill", color: hexA(visible[i + 1].color, fillAlpha) },
-        });
-      }
-    }
-
-    // 1b. Golden Pocket (Neu3): goldene Fläche zwischen 0.618 und 0.65,
-    //     Deckkraft = Regler + 10 % (max 100 %), damit sie sich abhebt.
-    //     Unabhängig vom Flächen-Schalter und den ausgeblendeten Levels —
-    //     die beiden Niveaus lassen sich immer per yAt berechnen.
-    if (ed.goldenPocket) {
-      const gy1 = yAt(0.618), gy2 = yAt(0.65);
-      if (gy1 != null && gy2 != null) {
-        figs.push({
-          type: "rect",
-          attrs: { x: xLeft, y: Math.min(gy1, gy2), width: xRight - xLeft, height: Math.abs(gy2 - gy1) },
-          styles: { style: "fill", color: hexA("#e8b64c", Math.min(1, fillAlpha + 0.10)) },
         });
       }
     }

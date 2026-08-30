@@ -51,7 +51,7 @@ const CONFIG = {
   // darunter, sortiert nach 24h-USD-Volumen (loadAllExchangeSymbols).
   // XAGUSD (Silber) wird von Punkt 5 ergaenzt.
   CURATED_IDS: [
-    "BTCUSDT", "BTCUSD_BS", "ETHUSDT", "ETHUSD_BS", "SOLUSDT",
+    "BTCUSDT", "BTCUSD_BS", "ETHUSDT", "ETHUSD_BS", "SOLUSDT", "BTCD", "USDTD",
     "XAUUSD", "XAGUSD", "^SPX", "^NDQ", "^DJI", "QQQ", "VTSAX",
   ],
 
@@ -70,6 +70,8 @@ const CONFIG = {
     // liefert das tatsaechliche Startdatum im Feld "from" mit.
     { id: "ETHUSD_BS", label: "ETH/USD (Bitstamp)", type: "bitstamp", bitstampPair: "ethusd" },
     { id: "SOLUSDT",  label: "SOL/USDT (Binance)",  type: "binance" },
+    { id: "BTCD",     label: "BTC.D (Dominanz)",    type: "dominance", domCoin: "btcd"  },
+    { id: "USDTD",    label: "USDT.D (Dominanz)",   type: "dominance", domCoin: "usdtd" },
     { id: "XAUUSD",   label: "Gold XAU/USD (ab 1968)", type: "worker" },
     // Silber XAG/USD (Punkt 5): LBMA-Fixing, ein Preis je Tag -> als Linie.
     // Eigener Worker-Endpunkt /silverhistory (Dispatch in app.js loadData).
@@ -138,7 +140,22 @@ const CONFIG = {
     },
     {
       key: "bmsb", name: "BMSB", pane: "main", label: "Bull Market Support Band",
-      inputs: [],
+      inputs: [
+        // Eigenes Intervall fuer das Band (20 SMA / 21 EMA). "auto" rechnet auf
+        // den Chartkerzen; ein groeberes Intervall aggregiert die Kerzen dorthin
+        // und rechnet das Band auf DIESEN Schlusskursen — unabhaengig vom
+        // Chart-Intervall des Assets.
+        { key: "tf", label: "Intervall", type: "select", default: "auto",
+          options: [
+            { value: "auto", label: "Chart-Intervall" },
+            { value: "15m",  label: "15 Minuten" },
+            { value: "1h",   label: "1 Stunde" },
+            { value: "4h",   label: "4 Stunden" },
+            { value: "1d",   label: "1 Tag" },
+            { value: "1w",   label: "1 Woche" },
+            { value: "1M",   label: "1 Monat" },
+          ] },
+      ],
       plots: [
         { key: "sma20", label: "20 SMA", color: "#3fb68b", opacity: 100, width: 2, visible: true },
         { key: "ema21", label: "21 EMA (= EMA p1)", color: "#d05e5e", opacity: 100, width: 2, visible: true },
@@ -496,4 +513,24 @@ function textOn(bgHex) {
 function contrastRatio(hexA, hexB) {
   const a = luminance(hexA), b = luminance(hexB);
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+// Für einen Indikator mit mehreren Linien: KLineCharts erlaubt nur EINE
+// Textfarbe je Indikator, der Balken übernimmt aber je Linie deren Farbe.
+//
+// Die Mehrheit zu fragen ("sind die meisten Linien hell?") ist das falsche
+// Kriterium: setzt man bei vier Linien nur EINE auf Weiss, ist die Mehrheit
+// dunkel, die Wahl fällt auf weissen Text — und genau die weisse Linie wird
+// unlesbar. Ein unlesbares Label ist schlimmer als vier mittelmässige.
+//
+// Deshalb: die Farbe wählen, deren SCHLECHTESTER Kontrast über alle Linien
+// am höchsten ist. Minimax statt Mehrheit.
+function textForLines(colors) {
+  if (!colors || !colors.length) return "#ffffff";
+  let best = "#ffffff", bestWorst = -1;
+  for (const cand of ["#0d1117", "#ffffff"]) {
+    const worst = Math.min(...colors.map(c => contrastRatio(c, cand)));
+    if (worst > bestWorst) { bestWorst = worst; best = cand; }
+  }
+  return best;
 }

@@ -404,7 +404,7 @@ function buildCreate(ind) {
     case "hull":     create.calcParams = [inp.mode||"HMA", inp.period||55, inp.lengthMult||1.0]; break;
     case "rvwap":    create.calcParams = [inp.days||365]; break;
     case "mnoodle":  create.calcParams = [inp.fastPeriod||12, inp.medPeriod||21, inp.slowPeriod||35, inp.atrLength||20, inp.bandMult||0.0125]; break;
-    case "bmsb":     create.calcParams = [20, 21]; break;
+    case "bmsb":     create.calcParams = [20, 21, inp.tf||"auto"]; break;
     case "myrsi":    create.calcParams = [inp.period||14, inp.maType||"None", inp.maLength||14, inp.bbMult||2.0]; break;
     case "stochrsi": create.calcParams = [inp.smoothK||3, inp.smoothD||3, inp.lengthRSI||14, inp.lengthStoch||14]; break;
     case "myvol":    create.calcParams = [inp.ma1||5, inp.ma2||10, inp.ma3||20]; break;
@@ -1051,6 +1051,12 @@ async function loadData() {
     } else if (state.symbol.type === "bybit") {
       candles = await DataLayer.fetchBybitKlines(state.symbol.bybitSymbol, state.timeframe.bybitInterval, CONFIG.CANDLE_LIMIT);
       if (!candles || candles.length === 0) throw new Error(`Bybit: keine Kerzen für ${state.symbol.bybitSymbol} / ${state.timeframe.bybitInterval}`);
+    } else if (state.symbol.type === "dominance") {
+      candles = await DataLayer.fetchDominance(state.symbol.domCoin);
+      if (!candles || candles.length === 0) throw new Error(`Dominanz: keine Daten für ${state.symbol.label}`);
+      if (state.timeframe.id === "1w" || state.timeframe.id === "1M") {
+        candles = aggregateCandles(candles, state.timeframe.id);
+      }
     } else if (state.symbol.id === "XAGUSD") {
       // Silber (Punkt 5): Momentaufnahme aus dem Repo + Zuwachs vom Worker,
       // eigener Endpunkt /silverhistory. Ansonsten wie Gold (Tageskerzen).
@@ -1707,7 +1713,7 @@ async function loadBinanceSymbols() {
 // ---------- Multi-Asset-Vergleich ----------
 // Indizes und Fonds als Vergleichsmassstab immer zulassen, unabhaengig
 // von der Quote-Waehrung des angezeigten Assets.
-const VERGLEICH_IMMER = new Set(["^SPX", "^NDQ", "^DJI", "QQQ", "VTSAX"]);
+const VERGLEICH_IMMER = new Set(["^SPX", "^NDQ", "^DJI", "QQQ", "VTSAX", "BTCD", "USDTD"]);
 
 // Quote-Waehrung eines Symbols.
 //
@@ -1926,6 +1932,8 @@ async function refreshCompareData(entry) {
       const raw = await DataLayer.fetchBitstampHistory(entry.bitstampPair, 86400);
       candles = (raw || []).map(k => Array.isArray(k)
         ? { timestamp: k[0], open: k[1], high: k[2], low: k[3], close: k[4], volume: k[5] } : k);
+    } else if (entry.type === "dominance") {
+      candles = await DataLayer.fetchDominance(entry.domCoin);
     } else {
       // Binance nutzt das reine Symbol. Sicherheitsnetz: sollte der Typ
       // einmal fehlen, wird nicht blind die interne id verschickt.
@@ -2868,7 +2876,7 @@ const SAVED_OVERLAYS = new Set([
   "segment", "horizontalStraightLine", "verticalStraightLine", "priceLine",
   "rectangle", "rayLine", "priceChannelLine", "parallelStraightLine",
   "frvp", "fibRetracement", "fibExtension", "priceRange", "dateRange", "priceDateRange",
-  "simpleAnnotation", "freehand", "positionTool", "polyline", "avwap",
+  "simpleAnnotation", "freehand", "positionTool", "polyline", "avwap", "barPattern",
   // m54: liefen bisher durch onDrawEnd -> captureDrawing wie die anderen,
   // fehlten aber in dieser Liste, deshalb wurden sie nie ins Layout
   // gesichert (Punkt 1a).
@@ -3112,6 +3120,19 @@ function findOverlayNear(x, y, lineTol, pointTol) {
     // fast nie treffen. Für FRVP zählt deshalb die horizontale Nähe zum
     // Zeitfenster, die Höhe spielt keine Rolle.
     if (ov.name === "frvp" && pts.length >= 2) {
+      const xs = pts.map(p => p.x);
+      const left = Math.min(...xs) - lineTol, right = Math.max(...xs) + lineTol;
+      if (x >= left && x <= right) {
+        const distX = Math.min(Math.abs(x - Math.min(...xs)), Math.abs(x - Math.max(...xs)));
+        if (!best || distX < best.dist) {
+          best = { overlay: ov, pointIndex: -1, dist: distX };
+        }
+      }
+      continue;
+    }
+
+    // barPattern: wie FRVP eine Fläche — horizontale Nähe zum Zeitfenster zählt.
+    if (ov.name === "barPattern" && pts.length >= 2) {
       const xs = pts.map(p => p.x);
       const left = Math.min(...xs) - lineTol, right = Math.max(...xs) + lineTol;
       if (x >= left && x <= right) {
@@ -3753,6 +3774,18 @@ function buildOverlayConfig(overlayName) {
           try { chart.removeOverlay(e.overlay.id); } catch (err) {}
         }
       }
+      // barPattern: Quell-Zeitbereich fixieren, damit das gerenderte Abbild
+      // unabhängig von der danach beweglichen/skalierbaren Box bleibt.
+      if (overlayName === "barPattern" && e?.overlay?.id && e?.overlay?.points?.length >= 2) {
+        const bp0 = e.overlay.points[0], bp1 = e.overlay.points[1];
+        try {
+          chart.overrideOverlay({ id: e.overlay.id, extendData: {
+            srcStart: Math.min(bp0.timestamp, bp1.timestamp),
+            srcEnd:   Math.max(bp0.timestamp, bp1.timestamp),
+            lineMode: state.chartType === "area",
+          } });
+        } catch (err) {}
+      }
       // Ins Register aufnehmen, damit Layouts die Zeichnung sichern können
       if (e?.overlay?.id) captureDrawing(e.overlay.id);
       // AVWAP: der generische onDrawEnd hier überschreibt den aus der
@@ -3837,7 +3870,7 @@ function startTool(overlayName) {
   // auf dem Handy nie die Chance, selbst zu reagieren. Die App sammelt die
   // Punkte komplett selbst (Fadenkreuz) und ruft createOverlay() erst am
   // Ende MIT fertigen points auf — das ist kein interaktiver Modus mehr.
-  if (tvIsMobile() && overlayName !== "frvp") {
+  if (tvIsMobile() && overlayName !== "frvp" && overlayName !== "barPattern") {
     startMobilePointTool(overlayName, overlayConfig);
     renderDrawbar();
     return;
@@ -4412,6 +4445,7 @@ const TOOL_ICONS = {
   fibRetracement:         dsSvg(dsLine("M4 6 H22 M4 11 H22 M4 16 H22 M4 21 H22") + dsDot(4,6) + dsDot(4,21)),
   fibExtension:           dsSvg(dsLine("M4 13 L11 6 L18 10") + dsLine("M4 17 H22 M4 21 H22") + dsDot(11,6) + dsDot(18,10)),
   frvp:                   dsSvg(dsLine("M4 5 H13 M4 10 H9 M4 15 H17 M4 20 H7") + dsLine("M21 4 V20")),
+  barPattern:             dsSvg(dsLine("M6 20 V8 M12 16 V5 M18 11 V3") + dsLine("M4 16 H8 M10 11 H14 M16 6 H20")),
   priceRange:             dsSvg(dsLine("M12 20 V5 M8 9 L12 5 L16 9") + dsLine("M6 20 H18") + dsDot(19,4) + dsDot(5,20)),
   priceDateRange:         dsSvg(dsLine("M12 20 V5 M8 9 L12 5 L16 9") + dsLine("M6 20 H18") + dsDot(19,4) + dsDot(5,20)),
   avwap:                  dsSvg(dsLine("M8 5 V19 M12 3 V21 M16 6 V18") + dsLine("M4 17 L20 7")),
@@ -4445,6 +4479,7 @@ const DRAW_CATEGORIES = [
     tools: [
       { overlay: "frvp",        label: "Fixed Range Vol.",  desc: "Volumen pro Preisstufe" },
       { overlay: "avwap",       label: "Anchored VWAP",     desc: "VWAP ab einem Klick-Punkt" },
+      { overlay: "barPattern",  label: "Kerzen-Muster",     desc: "Bereich als bewegliches, skalierbares Abbild" },
     ],
   },
   {
@@ -7532,7 +7567,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
 
-const TV_BUILD = "m73";
+const TV_BUILD = "m74";
 
 window.__tvBuild = TV_BUILD;
 
@@ -8281,8 +8316,13 @@ quiet(() => {
       if (!basePx) return;
       const moved = chart.convertFromPixel({ x: basePx.x, y: basePx.y + dy }, { paneId: "candle_pane" });
       if (!moved || moved.value == null) return;
+      // Magnet: verschobenen Griff auf O/H/L/C der eigenen Kerze rasten (nur der
+      // Wert, der Zeitstempel bleibt). Bei Magnet aus gibt snapEntryValue den
+      // Wert unverändert zurück -> Zero-Impact. Behebt "Magnet greift nicht beim
+      // Positionieren der Long/Short-Punkte" (Desktop).
+      const snapped = snapEntryValue({ timestamp: drag.startPts[drag.pointIndex].timestamp, value: moved.value });
       const pts = drag.startPts.map((p, i) => i === drag.pointIndex
-        ? { timestamp: p.timestamp, value: moved.value }
+        ? { timestamp: p.timestamp, value: snapped.value }
         : p);
       chart.overrideOverlay({ id: drag.id, points: pts });
     }, "desktop pos drag");
