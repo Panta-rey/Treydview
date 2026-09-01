@@ -921,6 +921,7 @@ klinecharts.registerIndicator({
   precision: 0,
   shouldOhlc: false,
   calcParams: [5, 10, 20],
+  minValue: 0,
   figures: [
     { key: "vol",  title: "VOL: ", type: "bar",
       styles: (d, ind) => {

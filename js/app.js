@@ -2746,6 +2746,10 @@ function scheduleTagDraw() {
   requestAnimationFrame(() => { _tagQueued = false; try { drawIndicatorTags(); } catch (e) {} });
 }
 
+// Live-Countdown: jede Sekunde die Tags neu zeichnen. drawIndicatorTags ist
+// billig und kehrt im Vergleichsmodus/ohne Daten früh zurück.
+setInterval(() => { scheduleTagDraw(); }, 1000);
+
 function formatTagValue(v, price) {
   if (v == null || !isFinite(v)) return null;
   if (price) {
@@ -2759,6 +2763,41 @@ function formatTagValue(v, price) {
     return Math.round(v).toLocaleString("de-CH", { maximumFractionDigits: 0 });
   }
   return v.toFixed(2);
+}
+
+// Zeitpunkt, zu dem die aktuelle (letzte) Kerze schliesst — je Intervall.
+function candleCloseMs(lastTs, tfId) {
+  const d = new Date(lastTs);
+  switch (tfId) {
+    case "15m": return lastTs + 15 * 60000;
+    case "1h":  return lastTs + 3600000;
+    case "4h":  return lastTs + 4 * 3600000;
+    case "1d":  return lastTs + 86400000;
+    case "1w":  return lastTs + 7 * 86400000;
+    case "1M":  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
+    default:    return null;
+  }
+}
+
+// Restzeit bis Kerzenschluss, Einheiten je Intervall (Punkt D+M5):
+// 1M→Wochen/Tage, 1W→Tage/Stunden, 1D & 4h→Stunden/Minuten, 1h & 15m→Minuten/Sekunden.
+function formatCountdown(remainMs, tfId) {
+  if (remainMs == null || remainMs <= 0) return null;
+  const s = Math.floor(remainMs / 1000);
+  const days = Math.floor(s / 86400);
+  const hours = Math.floor((s % 86400) / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+  const p = (n) => String(n).padStart(2, "0");
+  switch (tfId) {
+    case "1M": return Math.floor(days / 7) + "w " + (days % 7) + "d";
+    case "1w": return days + "d " + p(hours) + "h";
+    case "1d":
+    case "4h": return hours + "h " + p(mins) + "m";
+    case "1h":
+    case "15m": return mins + "m " + p(secs) + "s";
+    default: return null;
+  }
 }
 
 function drawIndicatorTags() {
@@ -2862,7 +2901,14 @@ function drawIndicatorTags() {
     const bg = up ? cs.upColor : cs.downColor;
     let y = null;
     try { y = chart.convertToPixel({ timestamp: lastTs, value: k.close }, { paneId: "candle_pane", absolute: true }).y; } catch (e) {}
-    drawTag(y, formatTagValue(k.close, true), bg, cs.lastSize || 12, "candle_pane");
+    const lsize = cs.lastSize || 12;
+    drawTag(y, formatTagValue(k.close, true), bg, lsize, "candle_pane");
+    // Zweite Zeile: Countdown bis Kerzenschluss, direkt unter dem Preis-Tag.
+    const closeMs = candleCloseMs(lastTs, state.timeframe.id);
+    const cd = closeMs != null ? formatCountdown(closeMs - Date.now(), state.timeframe.id) : null;
+    if (cd && y != null && isFinite(y)) {
+      drawTag(y + (lsize + 6), cd, "#1e2028", lsize - 1, "candle_pane");
+    }
   }
 }
 
@@ -3402,7 +3448,7 @@ function restoreDrawings(list) {
         onMouseEnter: () => { setChartCursor("pointer"); return false; },
         onMouseLeave: () => { setChartCursor(""); return false; },
         onRightClick: (e) => {
-          if (d.name === "frvp") openFrvpMenu(e.overlay, e); else openOverlayMenu(e.overlay, e);
+          if (d.name === "frvp") openFrvpMenu(e.overlay, e); else if (d.name === "barPattern") openBarPatternMenu(e.overlay, e); else openOverlayMenu(e.overlay, e);
           return true;
         },
         onRemoved: (e) => {
@@ -3819,6 +3865,8 @@ function buildOverlayConfig(overlayName) {
     onRightClick: (e) => {
       if (overlayName === "frvp") {
         openFrvpMenu(e.overlay, e);
+      } else if (overlayName === "barPattern") {
+        openBarPatternMenu(e.overlay, e);
       } else if (overlayName === "fibRetracement" || overlayName === "fibExtension") {
         // Fib bekommt sein eigenes Menü (Level-Auswahl, Erweitern, Deckkraft),
         // NICHT das generische Linien-Menü (Farbe/Dicke/gestrichelt wirken bei
@@ -4323,6 +4371,53 @@ document.addEventListener("click", (e) => {
     syncMenuOpen();
   }
 });
+function openBarPatternMenu(overlay, event) {
+  const menu = document.getElementById("barPatternMenu");
+  if (!menu) return;
+  const ext = overlay.extendData || {};
+  document.getElementById("bpColorUp").value   = ext.colorUp   ? rgbToHex(ext.colorUp)   : "#3fb68b";
+  document.getElementById("bpColorDown").value = ext.colorDown ? rgbToHex(ext.colorDown) : "#d05e5e";
+  document.getElementById("bpColorLine").value = ext.colorLine ? rgbToHex(ext.colorLine) : "#4c8ee8";
+  const opac = ext.opacity != null ? ext.opacity : 95;
+  document.getElementById("bpOpacity").value = opac;
+  document.getElementById("bpOpacityVal").textContent = opac + "%";
+  document.getElementById("bpOpacity").oninput = (e) => {
+    document.getElementById("bpOpacityVal").textContent = (parseInt(e.target.value, 10) || 95) + "%";
+  };
+  document.getElementById("bpDashed").checked = ext.dashed === true;
+
+  const p = menuPosition(event, 240, 320);
+  menu.classList.remove("hidden");
+  placeMenu(menu, p.x, p.y);
+  document.body.classList.add("menu-open");
+
+  document.getElementById("bpApply").onclick = () => {
+    const op = parseInt(document.getElementById("bpOpacity").value, 10) || 95;
+    const cur = chart.getOverlayById(overlay.id);
+    const base = (cur && cur.extendData) ? cur.extendData : ext;
+    // Deckkraft wird direkt in die Farben eingerechnet (wie bei FRVP), damit
+    // das Overlay sie ohne Sonderfeld anwendet.
+    const newExt = { ...base,
+      opacity:   op,
+      dashed:    document.getElementById("bpDashed").checked,
+      colorUp:   hexToRgba(document.getElementById("bpColorUp").value,   op),
+      colorDown: hexToRgba(document.getElementById("bpColorDown").value, op),
+      colorLine: hexToRgba(document.getElementById("bpColorLine").value, op),
+    };
+    chart.overrideOverlay({ id: overlay.id, extendData: newExt });
+    const rec = state.drawings.find(d => d.id === overlay.id);
+    if (rec) rec.extendData = newExt;
+    saveWorkspace();
+    menu.classList.add("hidden");
+    syncMenuOpen();
+  };
+  document.getElementById("bpDelete").onclick = () => {
+    chart.removeOverlay(overlay.id);
+    menu.classList.add("hidden");
+    syncMenuOpen();
+  };
+}
+
 function openFrvpMenu(overlay, event) {
   const menu = document.getElementById("frvpMenu");
   if (!menu) return;
@@ -7567,7 +7662,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
 
-const TV_BUILD = "m74";
+const TV_BUILD = "m75";
 
 window.__tvBuild = TV_BUILD;
 
@@ -7911,6 +8006,8 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
     host.removeEventListener("touchmove",  onMove,  true);
     host.removeEventListener("touchend",   onEnd,   true);
     host.removeEventListener("touchcancel",onCancel,true);
+    host.removeEventListener("mousemove", onMouseMove, true);
+    host.removeEventListener("mousedown", onMouseDown, true);
   }
 
   function commitPoint() {
@@ -8037,10 +8134,39 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
   }
   function onCancel() { touchStart = null; touchMoved = false; }
 
+  // Desktop-Maus: dasselbe Fadenkreuz + Magnet wie am Finger. mousemove
+  // bewegt das Fadenkreuz mit Live-Snap-Vorschau (grün, wenn auf O/H/L/C
+  // eingerastet), mousedown setzt den Punkt. Kein CROSSHAIR_LIFT — die Maus
+  // ist präzise, das Fadenkreuz sitzt direkt am Zeiger.
+  function mousePos(e) {
+    const r = host.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+  function onMouseMove(e) {
+    const { x, y } = mousePos(e);
+    if (x > host.clientWidth - AXIS_W) return;   // Preisachse nicht bemalen
+    const snap = overlayName === "positionTool" ? snapPositionEntryPx(x, y) : magnetSnap(x, y);
+    crosshair = snap ? { x: snap.x, y: snap.y, snapped: true } : { x, y, snapped: false };
+    draw();
+    updatePreview();
+    if (need === Infinity && points.length >= 2) showConfirmBar();
+  }
+  function onMouseDown(e) {
+    if (e.button !== 0) return;
+    const { x, y } = mousePos(e);
+    if (x > host.clientWidth - AXIS_W) return;
+    e.preventDefault(); e.stopPropagation();
+    const snap = overlayName === "positionTool" ? snapPositionEntryPx(x, y) : magnetSnap(x, y);
+    crosshair = snap ? { x: snap.x, y: snap.y, snapped: true } : { x, y, snapped: false };
+    commitPoint();
+  }
+
   host.addEventListener("touchstart",  onStart,  { capture: true, passive: false });
   host.addEventListener("touchmove",   onMove,   { capture: true, passive: false });
   host.addEventListener("touchend",    onEnd,    { capture: true, passive: false });
   host.addEventListener("touchcancel", onCancel, { capture: true, passive: false });
+  host.addEventListener("mousemove", onMouseMove, true);
+  host.addEventListener("mousedown", onMouseDown, true);
 
   // Bestätigungs-Knöpfe. touchend statt click, damit ein Tap genügt —
   // sonst käme der Chart-Handler dazwischen (gleicher Grund wie beim
@@ -8198,7 +8324,9 @@ quiet(() => {
     // mitlaufen und die Chart-Sperre nicht greifen.
     state.activeTool = "positionTool";
     renderDrawbar();
-    if (!tvIsMobile()) { placePositionByClick(dir, cfg); return; }
+    // Desktop wie mobil: Fadenkreuz mit Magnet-Vorschau (startMobilePointTool
+    // beherrscht jetzt auch die Maus). Der frühere direkte placePositionByClick
+    // rastete nur die Zeitachse, nicht O/H/L/C — deshalb ersetzt.
     startMobilePointTool("positionTool", cfg, {
       needPoints: 1,
       hint: dir === "long"
@@ -8316,13 +8444,8 @@ quiet(() => {
       if (!basePx) return;
       const moved = chart.convertFromPixel({ x: basePx.x, y: basePx.y + dy }, { paneId: "candle_pane" });
       if (!moved || moved.value == null) return;
-      // Magnet: verschobenen Griff auf O/H/L/C der eigenen Kerze rasten (nur der
-      // Wert, der Zeitstempel bleibt). Bei Magnet aus gibt snapEntryValue den
-      // Wert unverändert zurück -> Zero-Impact. Behebt "Magnet greift nicht beim
-      // Positionieren der Long/Short-Punkte" (Desktop).
-      const snapped = snapEntryValue({ timestamp: drag.startPts[drag.pointIndex].timestamp, value: moved.value });
       const pts = drag.startPts.map((p, i) => i === drag.pointIndex
-        ? { timestamp: p.timestamp, value: snapped.value }
+        ? { timestamp: p.timestamp, value: moved.value }
         : p);
       chart.overrideOverlay({ id: drag.id, points: pts });
     }, "desktop pos drag");

@@ -815,10 +815,19 @@ const DOMINANCE_TTL_MS = 24 * 60 * 60 * 1000;
 const DOMINANCE_TOP_N = 40;
 
 async function cgFetch(path, env) {
-  const headers = { "Accept": "application/json" };
   const key = env.COINGECKO_KEY || env.COINGECKO_API_KEY;
+  // CoinGecko blockt Server-IPs (Cloudflare-Worker) bei keyless-Zugriff mit 403.
+  // Der Demo-Key umgeht das — hier sowohl als Header ALS AUCH als Query-Param,
+  // plus ein User-Agent, den Cloudflare bei fehlendem UA teils verlangt.
+  const headers = {
+    "Accept": "application/json",
+    "User-Agent": "TreydView/1.0 (+https://panta-rey.github.io/Treydview)",
+  };
   if (key) headers["x-cg-demo-api-key"] = key;
-  const r = await fetch("https://api.coingecko.com/api/v3" + path, { headers });
+  const sep = path.includes("?") ? "&" : "?";
+  const url = "https://api.coingecko.com/api/v3" + path
+    + (key ? sep + "x_cg_demo_api_key=" + encodeURIComponent(key) : "");
+  const r = await fetch(url, { headers });
   if (!r.ok) throw new Error("CoinGecko " + r.status + " fuer " + path);
   return r.json();
 }

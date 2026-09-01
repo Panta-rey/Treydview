@@ -1,77 +1,62 @@
-# HANDOFF — Build m74 (an bestehendes HANDOFF.md anhängen, NIE committen)
+# HANDOFF — Build m75 (an HANDOFF.md anhängen, NIE committen)
 
-## Übersicht
-Fünf Features in einem Paket, aufbauend auf Reys manuell editierter m73-Basis.
-Geänderte Dateien (8): `app.js`, `indicators.js`, `config.js`, `data.js`,
-`overlays.js`, `worker-komplett.js`, `style.css` (nur Build-Tag), `index.html`
-(nur `?v=`-Bumps). `gridbot.js` unverändert. Build m73 → **m74**.
+Basis: m74 (live). Geänderte Dateien (7): `app.js`, `settings.js`,
+`worker-komplett.js`, `overlays.js`, `indicators.js`, `index.html`
+(barPatternMenu additiv + `?v=`), `style.css` (nur Build-Tag). Build m74 → **m75**.
 
-## Basis-Hinweis
-Reys deployte `indicators.js` enthielt `wmaAt` + `smaSeries`-Alias wieder — die
-m72-Tote-Code-Entfernung war dort nicht drin. Auf Reys Version aufgebaut, die
-zwei toten Helfer belassen (harmlos).
+## 1a — Magnet Zug-Handler zurückgebaut
+Der m74-Fix (snapEntryValue auf Stop/Ziel-Griffe) entfernt; Griffe nehmen wieder
+rohen `moved.value`.
 
-## Feature 1 — Magnet Long/Short (Desktop)
-**Ursache:** Nicht der Einstiegsklick (der rastet korrekt via `snapEntryValue`),
-sondern der Desktop-**Zug-Handler** (Griffe verschieben, „4b4. Desktop") nahm
-`moved.value` roh. **Fix:** `snapEntryValue({timestamp: startPts[pointIndex].
-timestamp, value: moved.value})` — rastet nur den Wert auf O/H/L/C, Zeitstempel
-bleibt. Bei Magnet aus (`magnetMode==="normal"`) gibt snapEntryValue unverändert
-zurück → Zero-Impact. Verifiziert: node -c.
+## 1b — Einstieg-Magnet Desktop (Live-Fadenkreuz)
+`startMobilePointTool` um Maus-Handler erweitert (`onMouseMove` = Fadenkreuz +
+Live-Snap-Vorschau via `snapPositionEntryPx`/`magnetSnap`, grün wenn auf O/H/L/C
+eingerastet; `onMouseDown` = commit). `placePosition` nutzt jetzt auch auf Desktop
+`startMobilePointTool` statt `placePositionByClick` (Letzteres rastete nur die
+Zeitachse). `placePositionByClick` bleibt als toter Code stehen.
+**Gerätetest:** KLineCharts zeigt auf Desktop evtl. sein eigenes Fadenkreuz
+zusätzlich — falls störend, KLC-crosshair beim Zeichnen ausblenden (Nachzug).
 
-## Feature 2a — EMA/SMA-Intervall
-**Ursache:** `MYSMA.calc` schnitt den 5. calcParam (tf) ab, `EMA.calc` mappte
-blind über alle Params (rechnete sinnlos `emaSeries(closes,"auto")`). tf wurde
-nie zum Resampling genutzt. **Fix:** neue Helfer in `indicators.js` (`_TF_MS`,
-`chartIntervalMs`, `resampleCloses`, `maContext`). `maContext(dataList, tf)`
-liefert `{closes, project}`: bei „auto"/zu feinem tf Identität auf Chart-Closes,
-sonst aggregierte Bucket-Closes + Rückprojektion (forward-fill, stufig). MYSMA/EMA
-nutzen jetzt tf. **5 Unit-Tests grün**, u.a. auto == Referenz (bit-genau,
-Zero-Impact) und 1w == manuell aggregierter Wochen-MA.
+## D+M 1 — Indikator-Intervall „[object Object]"
+settings.js-Renderer verstand nur String-`options`. Jetzt beide Formate:
+`{value,label}`-Objekt → `o.value=opt.value`, `o.textContent=opt.label`; String
+unverändert. Behebt EMA/SMA/BMSB (Anzeige **und** gespeicherter Wert). Test grün.
 
-## Feature 2b — BMSB-Intervall
-Neues `tf`-Select in `config.js` (bmsb inputs, Optionen auto/15m/1h/4h/1d/1w/1M),
-`app.js` calcParams `[20,21,inp.tf||"auto"]`, `BMSB.calc` nutzt `maContext`.
-BMSB-auto == Referenz (Test grün).
+## D+M 2 — Dominanz 403
+`cgFetch` robuster: User-Agent-Header + Demo-Key zusätzlich als Query-Param
+(`x_cg_demo_api_key`). **Live-Voraussetzung:** `wrangler secret put COINGECKO_KEY`
+(Wert CG-T18…) MUSS gesetzt sein — sonst keyless → CoinGecko blockt Server-IP (403).
 
-## Feature 3 — Dominanz BTC.D / USDT.D (Variante A)
-**Worker** (`worker-komplett.js`): neuer `/dominance`-Endpunkt. CoinGecko
-Demo-API, Top-40-Coins-Summe → BTC.D/USDT.D, 1 Jahr täglich, 24h-KV-Cache,
-41 Subrequests (< 50er-Limit), Einzelausfälle toleriert. Liest
-`env.COINGECKO_KEY` (Header `x-cg-demo-api-key`), keyless-Fallback.
-**Frontend** (5 Berührungspunkte): `config.js` — BTCD/USDTD-Symbole nach
-SOLUSDT + CURATED_IDS; `app.js` — VERGLEICH_IMMER + loadData-Zweig +
-refreshCompareData-Zweig; `data.js` — `fetchDominance(domCoin)` (flache Kerzen
-o=h=l=c). Statisch verifiziert (node -c, VM-Ladetest, Symbol-Struktur).
-**OFFEN / Live-Test nötig:** (1) `wrangler secret put COINGECKO_KEY` setzen
-(Key: CG-T18… — im Chat geteilt, ggf. rotieren). (2) Worker deployen. (3)
-`curl …/dominance` prüfen. (4) In App BTC.D wählen. Der Worker ist vom
-Container nicht testbar (CoinGecko nicht erreichbar).
+## D+M 3a — Muster-Fenster ohne Füllung
+Trefferzone-Fläche auf `rgba(0,0,0,0)` (voll transparent, bleibt Trefferzone).
 
-## Feature 4 — Kerzen-Muster-Tool (Bars Pattern)
-Neues `barPattern`-Overlay (`overlays.js`, vor dem Magnet-Wrapper, `totalStep:3`,
-`needDefaultPointFigure:true`). Zwei-Punkt-Auswahl → Ziel-Box; onDrawEnd
-(`app.js`) fixiert `srcStart/srcEnd` + `lineMode` (Kerze/Linie je `chartType`)
-in extendData; `createPointFigures` rendert die Quellkerzen als bewegliches
-Abbild. Flache Box → natürliche Höhe (yAxis); aufgezogene Box → skaliert in X/Y.
-app.js-Integrationen (6): TOOL_ICONS.barPattern, Tool-Eintrag „zones",
-SAVED_OVERLAYS, onDrawEnd, Hit-Test (wie FRVP), Mobile-Ausnahme.
-**Render-Logik: 4 Overlay-Testfälle grün.** **Interaktion (Zeichnen, Verschieben,
-X/Y-Skalieren, Touch) NUR am Gerät prüfbar** — erwartete Iterationsstelle.
+## D+M 3b — Style-Menü Muster-Tool
+Neues `barPatternMenu` (index.html, `.frvp-menu`-Klassen, additiv), `openBarPatternMenu`
+(Kerze Up/Down + Linienfarbe, Deckkraft, Gestrichelt), Dispatch an beiden onRightClick-
+Stellen. Overlay liest `dashed` (Linie + Docht), Deckkraft via `hexToRgba` in die
+Farben eingerechnet. Test grün. **Gerätetest:** Rechtsklick aufs Muster → Menü.
 
-## Offener Punkt: tote Duplikate
-Reys manuell wieder eingefügte `gbRenderTiers`/`gbRenderData` in `app.js` sind
-weiter toter Code (nie aufgerufen; die app.js-`gbRenderTiers` ruft ein in app.js
-nicht existentes `gbDrawBands` → latenter, nie feuernder ReferenceError). In m74
-**belassen** (kein ungefragtes Entfernen von Reys Code). Auf ein „ja" hin in
-einem Nachgang entfernbar.
+## D+M 4 — Volumen-Pane 0-Untergrenze
+MYVOL bekommt `minValue: 0` (Balken bei 0 verankert, nicht mehr schwebend/„ewig
+lang"). yDrag-Geste bewusst **unangetastet** — Hochschieben/Zoomen bleibt möglich
+(unterhalb dann schwarz), wie gewünscht.
 
-## Prüfungen bestanden
-node -c alle · MA-Unit-Tests (5) · barPattern-Overlay-Test (4) · VM-Ladetest
-(kein neuer TDZ/ReferenceError) · CSS-Braces 727/727 · style.css nur Build-Tag
-(Desktop unberührt) · index.html nur ?v= · WORKER_BASE_URL erhalten.
+## D+M 5 — Countdown auf Preisskala
+Zweite Tag-Zeile unter dem Preis-Tag mit Restzeit bis Kerzenschluss.
+`candleCloseMs` (je Intervall, 1M kalendarisch) + `formatCountdown`
+(1M→w/d, 1W→d/h, 1D & 4h→h/m, 1h & 15m→m/s). Sekunden-`setInterval` → `scheduleTagDraw`.
+Format-Test grün. **Gerätetest:** live runterzählen prüfen.
 
-## Restrisiko transparent
-Feature 1/2 vollständig verifiziert. Feature 3-Worker (externe API) und Feature 4
-(interaktives Overlay) sind statisch/funktional geprüft, aber End-to-End nur am
-Live-System bzw. Gerät — dort testen.
+## Prüfungen
+node -c alle · D+M-1-Renderer-Test · barPattern solid/dashed + transp. Trefferzone ·
+Countdown-Format (alle Intervalle) · VM-Ladetest (nur bekanntes Stub-Artefakt) ·
+style.css nur Build-Tag · index.html additiv + ?v=.
+
+## Restrisiko
+1b (Desktop-Fadenkreuz-Interaktion), 3b (Menü-Interaktion), 5 (Live-Countdown) und
+der Worker (D+M 2) sind statisch/funktional geprüft, aber End-to-End nur am Gerät
+bzw. Live-Worker verifizierbar.
+
+## Weiter offen (aus m74)
+Tote Duplikate `gbRenderTiers`/`gbRenderData` in app.js weiterhin drin (nicht
+angetastet). Auf „ja" entfernbar.

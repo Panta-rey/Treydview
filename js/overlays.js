@@ -445,6 +445,8 @@
       const colorDown = ext.colorDown || "rgba(208,94,94,0.95)";
       const colorLine = ext.colorLine || "#4c8ee8";
       const colorFrame = "rgba(232,182,76,0.55)";
+      const lstyle = ext.dashed ? "dashed" : "solid";
+      const ldash = ext.dashed ? [5, 4] : undefined;
 
       // Ziel-Box (zwei Ecken in Pixel)
       const xL = Math.min(coordinates[0].x, coordinates[1].x);
@@ -480,12 +482,12 @@
       figures.push({
         type: "rect",
         attrs: { x: xL, y: Math.min(zoneTop, zoneBot), width: boxW, height: Math.max(2, Math.abs(zoneBot - zoneTop)) },
-        styles: { style: "fill", color: "rgba(232,182,76,0.05)" },
+        styles: { style: "fill", color: "rgba(0,0,0,0)" },
       });
 
       if (isLine) {
         const pts = slice.map((d, i) => ({ x: xL + (i + 0.5) * slot, y: priceToY(d.close) }));
-        figures.push({ type: "line", attrs: { coordinates: pts }, styles: { style: "solid", color: colorLine, size: 2, smooth: false }, ignoreEvent: true });
+        figures.push({ type: "line", attrs: { coordinates: pts }, styles: { style: lstyle, color: colorLine, size: 2, smooth: false, dashedValue: ldash }, ignoreEvent: true });
       } else {
         for (let i = 0; i < n; i++) {
           const d = slice[i];
@@ -493,7 +495,7 @@
           const col = up ? colorUp : colorDown;
           const cx = xL + (i + 0.5) * slot;
           const yh = priceToY(d.high), yl = priceToY(d.low);
-          figures.push({ type: "line", attrs: { coordinates: [{ x: cx, y: yh }, { x: cx, y: yl }] }, styles: { style: "solid", color: col, size: 1, smooth: false }, ignoreEvent: true });
+          figures.push({ type: "line", attrs: { coordinates: [{ x: cx, y: yh }, { x: cx, y: yl }] }, styles: { style: lstyle, color: col, size: 1, smooth: false, dashedValue: ldash }, ignoreEvent: true });
           const yo = priceToY(d.open), yc = priceToY(d.close);
           figures.push({ type: "rect", attrs: { x: cx - bodyW / 2, y: Math.min(yo, yc), width: bodyW, height: Math.max(1, Math.abs(yc - yo)) }, styles: { style: "fill", color: col }, ignoreEvent: true });
         }

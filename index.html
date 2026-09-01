@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m74">
-  <link rel="stylesheet" href="css/style.css?v=m74">
+  <link rel="manifest" href="manifest.webmanifest?v=m75">
+  <link rel="stylesheet" href="css/style.css?v=m75">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m74"></script>
+  <script src="js/lib/klinecharts.min.js?v=m75"></script>
 </head>
 <body>
 
@@ -1440,17 +1440,47 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m74"></script>
-<script src="js/indicators.js?v=m74"></script>
-<script src="js/overlays.js?v=m74"></script>
-<script src="js/data.js?v=m74"></script>
-<script src="js/settings.js?v=m74"></script>
-<script src="js/derivatives.js?v=m74"></script>
-<script src="js/gridbot.js?v=m74"></script>
-<script src="js/patterns.js?v=m74"></script>
-<script src="js/smc.js?v=m74"></script>
-<script src="js/ewt.js?v=m74"></script>
-<script src="js/app.js?v=m74"></script>
+<div class="frvp-menu hidden" id="barPatternMenu">
+  <div class="frvp-menu-header">Muster-Stil</div>
+  <div class="frvp-row">
+    <label>Kerze Up</label>
+    <input type="color" id="bpColorUp" value="#3fb68b">
+  </div>
+  <div class="frvp-row">
+    <label>Kerze Down</label>
+    <input type="color" id="bpColorDown" value="#d05e5e">
+  </div>
+  <div class="frvp-row">
+    <label>Linie</label>
+    <input type="color" id="bpColorLine" value="#4c8ee8">
+  </div>
+  <div class="frvp-row">
+    <label>Deckkraft</label>
+    <div class="frvp-opacity">
+      <input type="range" id="bpOpacity" min="10" max="100" step="5" value="95">
+      <span id="bpOpacityVal">95%</span>
+    </div>
+  </div>
+  <div class="frvp-row">
+    <label><input type="checkbox" id="bpDashed"> Gestrichelt</label>
+  </div>
+  <div class="frvp-menu-actions">
+    <button id="bpDelete" class="frvp-del">Löschen</button>
+    <button id="bpApply" class="frvp-ok">Übernehmen</button>
+  </div>
+</div>
+
+<script src="js/config.js?v=m75"></script>
+<script src="js/indicators.js?v=m75"></script>
+<script src="js/overlays.js?v=m75"></script>
+<script src="js/data.js?v=m75"></script>
+<script src="js/settings.js?v=m75"></script>
+<script src="js/derivatives.js?v=m75"></script>
+<script src="js/gridbot.js?v=m75"></script>
+<script src="js/patterns.js?v=m75"></script>
+<script src="js/smc.js?v=m75"></script>
+<script src="js/ewt.js?v=m75"></script>
+<script src="js/app.js?v=m75"></script>
 
 </body>
 </html>
