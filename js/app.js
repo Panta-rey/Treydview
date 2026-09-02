@@ -253,6 +253,30 @@ const COMPARE_COLORS = [
 const chartEl = document.getElementById("mainChart");
 const chart = klinecharts.init("mainChart");
 
+// VOL-Pane nie unter 0: nach jeder Y-Achsen-Interaktion (auch KLCs Desktop-Zoom)
+// die Untergrenze auf 0 klemmen. Reaktiv per mouseup/touchend (Punkt VOL).
+function clampVolAxis() {
+  const pid = state.subPaneIds && state.subPaneIds["myvol"];
+  if (!pid) return;
+  try {
+    const pane = chart.getDrawPaneById(pid);
+    const ax = pane && pane.getAxisComponent();
+    if (!ax || typeof ax.getRange !== "function") return;
+    const r = ax.getRange();
+    if (r && r.from < 0) {
+      ax.setRange({ from: 0, to: r.to, range: r.to, realFrom: 0, realTo: r.to, realRange: r.to });
+      chart.adjustPaneViewport(false, true, true, true);
+    }
+  } catch (e) {}
+}
+(() => {
+  const mc = document.getElementById("mainChart");
+  if (!mc) return;
+  const h = () => setTimeout(clampVolAxis, 0);
+  mc.addEventListener("mouseup", h, true);
+  mc.addEventListener("touchend", h, true);
+})();
+
 // ---- Grid-Bot-UI-Bridge (m73) ----
 // Die Grid-Bot-Bedienoberfläche wurde nach gridbot.js ausgelagert (GridBot.initUI).
 // Ihre app.js-Abhängigkeiten werden hier explizit übergeben. Platzierung direkt nach
@@ -5054,7 +5078,7 @@ quiet(() => {
         // sonst driftet er bei jedem Frame weiter.
         const b = Object.assign({}, r);
         b.__cmpScale = state.compareScale > 0 ? state.compareScale : 1;
-        yDrag = { startY: t.pageY, base: b, yAxis, isMain };
+        yDrag = { startY: t.pageY, base: b, yAxis, isMain, paneId };
       }, "yDrag start");
       return;
     }
@@ -5071,7 +5095,7 @@ quiet(() => {
     // --- Y-Achsen-Zoom aktiv ---
     if (yDrag) {
       quiet(() => {
-        const { startY, base, yAxis, isMain } = yDrag;
+        const { startY, base, yAxis, isMain, paneId } = yDrag;
         if (!startY) return;
         // Identische Formel wie KLineCharts Desktop:
         //   scale    = aktuelleY / startY
@@ -5080,10 +5104,14 @@ quiet(() => {
         // Nach unten ziehen -> scale > 1 -> Range grösser -> rauszoomen.
         const scale = t.pageY / startY;
         if (!isFinite(scale) || scale <= 0) return;
-        const newRange = base.range * scale;
+        let newRange = base.range * scale;
         const w = (newRange - base.range) / 2;
-        const from = base.from - w;
-        const to   = base.to   + w;
+        let from = base.from - w;
+        let to   = base.to   + w;
+        // VOL-Pane: 0 ist die feste Untergrenze — nie ins Negative (Punkt VOL).
+        if (paneId === (state.subPaneIds && state.subPaneIds["myvol"]) && from < 0) {
+          from = 0; newRange = to - from;
+        }
         // WICHTIG: setRange braucht ALLE Felder (from/to/range/realFrom/
         // realTo/realRange). Ein unvollständiges Objekt setzt zwar den State,
         // führt aber zu falschem bzw. gar keinem Rendering.
@@ -7669,7 +7697,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
 
-const TV_BUILD = "m76";
+const TV_BUILD = "m77";
 
 window.__tvBuild = TV_BUILD;
 
@@ -7876,12 +7904,6 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
   let offAccept = () => {}, offCancel = () => {};
 
   canvas.classList.remove("hidden");
-  // Desktop: das Canvas ist im Basis-CSS display:none (nur mobil sichtbar).
-  // Inline überschreibt das, sonst wäre das Magnet-Fadenkreuz unsichtbar und
-  // man sähe nur KLCs eigenes (das die Preisachse nicht rastet). KLCs
-  // Fadenkreuz während des Zeichnens ausblenden, damit nicht zwei erscheinen.
-  canvas.style.display = "block";
-  try { chart.setStyles({ crosshair: { show: false } }); } catch (e) {}
   const resize = () => {
     canvas.width  = host.offsetWidth  * devicePixelRatio;
     canvas.height = host.offsetHeight * devicePixelRatio;
@@ -8011,8 +8033,6 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
 
   function cleanup() {
     canvas.classList.add("hidden");
-    canvas.style.display = "";
-    try { chart.setStyles({ crosshair: { show: true } }); } catch (e) {}
     confirmBar?.classList.add("hidden");
     offAccept(); offCancel();
     ro.disconnect();
@@ -8021,8 +8041,6 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
     host.removeEventListener("touchmove",  onMove,  true);
     host.removeEventListener("touchend",   onEnd,   true);
     host.removeEventListener("touchcancel",onCancel,true);
-    host.removeEventListener("mousemove", onMouseMove, true);
-    host.removeEventListener("mousedown", onMouseDown, true);
   }
 
   function commitPoint() {
@@ -8149,39 +8167,10 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
   }
   function onCancel() { touchStart = null; touchMoved = false; }
 
-  // Desktop-Maus: dasselbe Fadenkreuz + Magnet wie am Finger. mousemove
-  // bewegt das Fadenkreuz mit Live-Snap-Vorschau (grün, wenn auf O/H/L/C
-  // eingerastet), mousedown setzt den Punkt. Kein CROSSHAIR_LIFT — die Maus
-  // ist präzise, das Fadenkreuz sitzt direkt am Zeiger.
-  function mousePos(e) {
-    const r = host.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
-  }
-  function onMouseMove(e) {
-    const { x, y } = mousePos(e);
-    if (x > host.clientWidth - AXIS_W) return;   // Preisachse nicht bemalen
-    const snap = overlayName === "positionTool" ? snapPositionEntryPx(x, y) : magnetSnap(x, y);
-    crosshair = snap ? { x: snap.x, y: snap.y, snapped: true } : { x, y, snapped: false };
-    draw();
-    updatePreview();
-    if (need === Infinity && points.length >= 2) showConfirmBar();
-  }
-  function onMouseDown(e) {
-    if (e.button !== 0) return;
-    const { x, y } = mousePos(e);
-    if (x > host.clientWidth - AXIS_W) return;
-    e.preventDefault(); e.stopPropagation();
-    const snap = overlayName === "positionTool" ? snapPositionEntryPx(x, y) : magnetSnap(x, y);
-    crosshair = snap ? { x: snap.x, y: snap.y, snapped: true } : { x, y, snapped: false };
-    commitPoint();
-  }
-
   host.addEventListener("touchstart",  onStart,  { capture: true, passive: false });
   host.addEventListener("touchmove",   onMove,   { capture: true, passive: false });
   host.addEventListener("touchend",    onEnd,    { capture: true, passive: false });
   host.addEventListener("touchcancel", onCancel, { capture: true, passive: false });
-  host.addEventListener("mousemove", onMouseMove, true);
-  host.addEventListener("mousedown", onMouseDown, true);
 
   // Bestätigungs-Knöpfe. touchend statt click, damit ein Tap genügt —
   // sonst käme der Chart-Handler dazwischen (gleicher Grund wie beim
@@ -8339,9 +8328,9 @@ quiet(() => {
     // mitlaufen und die Chart-Sperre nicht greifen.
     state.activeTool = "positionTool";
     renderDrawbar();
-    // Desktop wie mobil: Fadenkreuz mit Magnet-Vorschau (startMobilePointTool
-    // beherrscht jetzt auch die Maus). Der frühere direkte placePositionByClick
-    // rastete nur die Zeitachse, nicht O/H/L/C — deshalb ersetzt.
+    // Desktop: einfacher Klick. Der Einstieg rastet via snapEntryValue auf
+    // O/H/L/C (bei aktivem Magnet); KLineCharts' Fadenkreuz bleibt normal.
+    if (!tvIsMobile()) { placePositionByClick(dir, cfg); return; }
     startMobilePointTool("positionTool", cfg, {
       needPoints: 1,
       hint: dir === "long"

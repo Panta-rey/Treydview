@@ -833,6 +833,8 @@ async function cgFetch(path, env) {
 }
 
 async function getDominance(env) {
+  const key = env.COINGECKO_KEY || env.COINGECKO_API_KEY;
+  if (!key) return err("COINGECKO_KEY nicht gesetzt — im Worker als Secret hinterlegen, sonst blockt CoinGecko Server-IPs (403)", 500);
   const domKey = `dominance_${CACHE_VERSION}`;
   let cached = null;
   try { cached = JSON.parse(await env.PANTA.get(domKey)); } catch (_) {}

@@ -1,55 +1,44 @@
-# HANDOFF — Build m76 (an HANDOFF.md anhängen, NIE committen)
+# HANDOFF — Build m77 (an HANDOFF.md anhängen, NIE committen)
 
-Basis: m75 (live). Geänderte Dateien (7): `app.js`, `indicators.js`, `overlays.js`,
-`worker-komplett.js`, `config.js`, `style.css` (nur Build-Tag), `index.html`
-(nur `?v=`). Build m75 → **m76**.
+Basis: m76. Geänderte Dateien (5): `app.js`, `overlays.js`, `worker-komplett.js`,
+`style.css` (nur Build-Tag), `index.html` (nur `?v=`). Build m76 → **m77**.
 
-## 1b — Fadenkreuz-Magnet Desktop (Niedrig)
-Ursache: `.crosshair-canvas` ist im Basis-CSS `display:none` (nur mobil sichtbar)
-→ das Magnet-Fadenkreuz war auf Desktop unsichtbar. Fix: `startMobilePointTool`
-setzt beim Anzeigen `canvas.style.display="block"` (inline, überschreibt Basis-CSS)
-und blendet KLCs eigenes Fadenkreuz aus (`crosshair.show=false`), cleanup stellt
-beides zurück. **Gerätetest.**
+## 1b — Einstieg-Magnet Desktop (Rückbau + echte Ursache)
+Der ganze m75/m76-Umbau (Extra-Fadenkreuz via startMobilePointTool-Maus,
+crosshairCanvas sichtbar, KLC-Fadenkreuz aus) war unnötig und **komplett
+zurückgebaut**. Desktop nutzt wieder `placePositionByClick` (ein Klick, KLC-
+Fadenkreuz normal). **Echte Ursache** war `magnetSnapValue` in overlays.js: ein
+Fangbereich `tol = span*0.45` liess den Magnet nur direkt an einem Level greifen
+→ in der Praxis "tot". Jetzt rastet er **bedingungslos** auf den nächsten
+O/H/L/C (respektiert `__tvLineMagnet` = nur close bei Linien-Assets). Damit rastet
+der Einstieg beim Setzen zuverlässig; der Fix gilt für alle Overlays. Test grün.
 
-## D+M 5 — Countdown-Farbe (Niedrig)
-Zweite Tag-Zeile jetzt mit Preis-Farbe (up/down `bg`) hinterlegt statt dunkelgrau.
+## Dominanz — Key-Check (Ursache bleibt der Secret)
+`getDominance` gibt jetzt eine klare Meldung, wenn `COINGECKO_KEY` fehlt. **Das
+btcd=100/usdtd=null kommt daher, dass der Key nicht als Worker-Secret gesetzt ist**
+— ohne Key blockt CoinGecko Server-IPs (403), nur der erste Call (BTC) kommt durch.
+Code ist korrekt; es fehlt nur der Secret + der Worker-Deploy.
 
-## D+M 1 — MA-Glättung (Hoch)
-`maContext.project` interpoliert jetzt linear zwischen aktuellem und nächstem
-Bucket-MA (je Bar-Position im Bucket) statt forward-fill → glatte statt stufige
-Linie. Greift nur im gröberen-Intervall-Fall; auto-Fall bit-genau unverändert
-(Test grün). Look-ahead innerhalb des Buckets ist bewusst (Darstellung).
+## Muster-Linie folgt beim Verschieben (Punkt 2)
+barPattern NATURAL-Modus: `priceToY` zentriert die natürliche Höhe jetzt um die
+Box-MITTE statt an der absoluten Preisposition. Damit folgt das Abbild (v.a. im
+flachen Linien-Modus) dem Verschieben der Box statt hängen zu bleiben. Test grün
+(Linie folgt Box-Versatz 1:1).
 
-## D+M 2 — Dominanz-Worker (Hoch)
-Zwei Fixes: (1) pro Coin/Tag nur letzter MC (Doppelpunkt am aktuellen Tag behoben
-→ kein 49.5%-Artefakt); (2) `interval=daily` entfernt (Enterprise-only; ohne
-liefert Demo bei days=365 Tagesdaten) + 120ms-Drosselung gegen Rate-Limit-Bursts.
-**Kritisch:** `COINGECKO_KEY` MUSS als Worker-Secret gesetzt sein, sonst keyless →
-403 → nur BTC kommt durch (das war die btcd=100/usdtd=null-Ursache).
-**Snapshot-404:** BTCUSDT/ETHUSDT aus `HISTORY_SNAPSHOTS` entfernt (Files fehlen
-bewusst im Repo, voller Binance-Abruf lief eh) → kein 404 mehr.
-
-## D+M 3 — Muster-Linie vertikal verschiebbar (Hoch)
-Trefferzone bekommt Mindesthöhe 44px (vorher = Close-Spanne, im Linien-Modus zu
-dünn zum vertikalen Greifen). Test grün. **Gerätetest** der Interaktion.
-
-## D+M 4 — VOL 0-Verankerung (Hoch)
-Bundle-Analyse: `minValue:0` zieht die Datengrenze auf 0, aber der Pane-Default
-`gap.bottom:0.1` erzeugt den Negativpuffer. Fix: `setPaneOptions({id:"pane_myvol",
-gap:{top:0.2,bottom:0}})` nach createIndicator → Balken sitzen auf 0, oberer Puffer
-bleibt, yDrag (Schieben/Zoomen) unberührt. **Gerätetest** (KLC-Achse nicht
-container-testbar).
+## VOL 0-Untergrenze beim Zoom (Punkt 3)
+Zwei Ebenen: (a) Mobile-yDrag klemmt `from>=0` für die VOL-Pane direkt; (b) ein
+`clampVolAxis`-Listener (mouseup/touchend) fängt auch KLCs Desktop-Y-Zoom ab und
+setzt `from` bei Negativwerten auf 0 (Range nach oben bleibt, darunter schwarz).
+Zusammen mit dem m76-`gap.bottom:0` bleibt 0 die feste Untergrenze.
 
 ## Prüfungen
-node -c alle · D+M1 auto=Referenz + Glättung · D+M3 Trefferzone 44px · D+M2
-Doppelpunkt-Logik · VM-Ladetest (Stub-Artefakt) · style.css nur Build-Tag.
+node -c alle · magnetSnapValue bedingungslos (rastet auch fern, kein Snap bei
+normal) · barPattern folgt Box · 1b-Rückbau vollständig (keine Maus-Handler mehr,
+placePositionByClick wieder aktiv) · VM-Ladetest (Stub-Artefakt) · style.css nur Tag.
 
-## Deploy-Reihenfolge
-1. Frontend: Git-Push (js/, css/, index.html).
-2. Worker: `worker-komplett.js` deployen **+** `COINGECKO_KEY` als Secret setzen —
-   sonst bleibt die Dominanz bei btcd=100.
-3. Gerät: 1b (Fadenkreuz grün auf O/H/L/C), Muster-Linie vertikal, VOL auf 0,
-   Countdown-Farbe, Dominanz nach Key.
-
-## Weiter offen
-Tote `gbRenderTiers`/`gbRenderData` in app.js (aus m74) weiter unangetastet.
+## Deploy
+1. Frontend Git-Push (js/app.js, js/overlays.js, css/style.css, index.html).
+2. **Worker deployen + `COINGECKO_KEY` als Secret setzen** — sonst bleibt die
+   Dominanz kaputt (das ist die alleinige verbleibende Ursache).
+3. Gerät: Long/Short-Einstieg rastet auf O/H/L/C (KLC-Fadenkreuz, kein extra),
+   Muster-Linie vertikal verschiebbar, VOL nie unter 0.

@@ -390,9 +390,14 @@
     if (!candle || performPoint.value == null) return;
     const span = Math.abs(candle.high - candle.low);
     if (!(span > 0)) return;
-    const tol = span * (mode === "strong_magnet" ? 0.45 : 0.18);
-    let best = null, bestD = tol;
-    for (const v of [candle.open, candle.high, candle.low, candle.close]) {
+    // Bedingungslos auf den nächsten O/H/L/C rasten (KEIN Pixel-/Spannen-
+    // Fangbereich) — der frühere tol-Deckel liess den Magnet nur direkt an
+    // einem Level greifen und wirkte in der Praxis "tot".
+    const levels = window.__tvLineMagnet
+      ? [candle.close]
+      : [candle.open, candle.high, candle.low, candle.close];
+    let best = null, bestD = Infinity;
+    for (const v of levels) {
       if (v == null) continue;
       const d = Math.abs(v - performPoint.value);
       if (d < bestD) { bestD = d; best = v; }
@@ -467,9 +472,19 @@
 
       // Flache Box -> natürliche Höhe (yAxis); aufgezogene Box -> in Box skalieren
       const NATURAL = boxH < 12;
-      const priceToY = NATURAL
-        ? (p) => yAxis.convertToPixel(p)
-        : (p) => yB - ((p - pMin) / (pMax - pMin)) * boxH;
+      let priceToY;
+      if (NATURAL) {
+        // Natürliche Höhe, aber um die Box-MITTE zentriert — sonst klebt das
+        // Abbild (v.a. im Linien-Modus) an der absoluten Preisposition und
+        // folgt dem Verschieben nicht.
+        const nH = Math.abs(yAxis.convertToPixel(pMin) - yAxis.convertToPixel(pMax)) || 2;
+        const midY = (yT + yB) / 2;
+        const midP = (pMin + pMax) / 2;
+        const sp = (pMax - pMin) || 1;
+        priceToY = (p) => midY - ((p - midP) / sp) * nH;
+      } else {
+        priceToY = (p) => yB - ((p - pMin) / (pMax - pMin)) * boxH;
+      }
 
       const n = slice.length;
       const slot = boxW / n;
