@@ -191,9 +191,29 @@ function maContext(dataList, tf) {
   if (!(cMs > 0) || _TF_MS[tf] <= cMs) return { closes, project: (s) => s };
   const agg = resampleCloses(dataList, tf);
   if (!agg) return { closes, project: (s) => s };
+  // Erster Bar-Index je Bucket — für die Glättung (Punkt D+M1).
+  const bucketStart = [];
+  for (let i = 0; i < dataList.length; i++) {
+    const b = agg.bucketOf[i];
+    if (bucketStart[b] === undefined) bucketStart[b] = i;
+  }
+  const lastBucket = agg.aggClose.length - 1;
   return {
     closes: agg.aggClose,
-    project: (series) => dataList.map((_, i) => series[agg.bucketOf[i]] ?? null),
+    // Glätten: linear zwischen dem MA des aktuellen und des nächsten Buckets
+    // interpolieren, je nach Position des Bars im Bucket. Ergibt eine glatte
+    // statt stufige Linie. Greift nur im gröberen-Intervall-Fall.
+    project: (series) => dataList.map((_, i) => {
+      const b = agg.bucketOf[i];
+      const cur = series[b];
+      if (cur == null) return null;
+      const nxt = (b < lastBucket) ? series[b + 1] : null;
+      if (nxt == null) return cur;
+      const start = bucketStart[b];
+      const end = (bucketStart[b + 1] !== undefined) ? bucketStart[b + 1] : dataList.length;
+      const frac = (end > start) ? (i - start) / (end - start) : 0;
+      return cur + (nxt - cur) * frac;
+    }),
   };
 }
 

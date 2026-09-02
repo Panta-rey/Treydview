@@ -477,8 +477,14 @@
       const figures = [];
 
       // Verschiebe-Trefferzone (leichte Fläche, NICHT ignoreEvent)
-      const zoneTop = NATURAL ? priceToY(pMax) : yT;
-      const zoneBot = NATURAL ? priceToY(pMin) : yB;
+      let zoneTop = NATURAL ? priceToY(pMax) : yT;
+      let zoneBot = NATURAL ? priceToY(pMin) : yB;
+      // Mindesthöhe der Trefferzone, damit das Muster (v.a. im flachen
+      // Linien-Modus) auch vertikal greif- und verschiebbar ist (Punkt D+M3).
+      if (Math.abs(zoneBot - zoneTop) < 44) {
+        const mid = (zoneTop + zoneBot) / 2;
+        zoneTop = mid - 22; zoneBot = mid + 22;
+      }
       figures.push({
         type: "rect",
         attrs: { x: xL, y: Math.min(zoneTop, zoneBot), width: boxW, height: Math.max(2, Math.abs(zoneBot - zoneTop)) },

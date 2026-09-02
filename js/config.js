@@ -29,8 +29,8 @@ const CONFIG = {
   HISTORY_SNAPSHOTS: {
     BTCUSD_BS: "data/btcusd-bitstamp.json",
     ETHUSD_BS: "data/ethusd-bitstamp.json",
-    BTCUSDT:   "data/btcusdt-binance.json",
-    ETHUSDT:   "data/ethusdt-binance.json",
+    // BTCUSDT/ETHUSDT-Snapshots liegen bewusst nicht im Repo -> der fetch gab 404
+    // in der Konsole. Entfernt; diese Paare laufen über den vollen Binance-Abruf.
     XAUUSD:    "data/gold-lbma.json",
   },
   // Allgemeine Stooq-Zeitreihe ueber denselben Worker. Erwartet

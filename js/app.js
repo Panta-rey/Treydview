@@ -471,6 +471,12 @@ function applyIndicator(ind) {
     // Eigenes Pane im Hauptchart — KLineCharts synchronisiert Zeitachse automatisch
     const paneId = chart.createIndicator(create, false, { id: "pane_" + ind.key });
     state.subPaneIds[ind.key] = paneId || ("pane_" + ind.key);
+    // VOL-Pane bei 0 verankern: unteren Gap-Puffer (Standard 0.1) entfernen,
+    // sonst zeigt die Achse trotz minValue:0 einen Negativbereich. Oberer Puffer
+    // bleibt; Schieben/Zoomen (yDrag) bleibt unberührt (Punkt D+M4).
+    if (ind.key === "myvol") {
+      try { chart.setPaneOptions({ id: paneId || "pane_myvol", gap: { top: 0.2, bottom: 0 } }); } catch (e) {}
+    }
   } else {
     chart.createIndicator(create, true, { id: "candle_pane" });
   }
@@ -2907,7 +2913,8 @@ function drawIndicatorTags() {
     const closeMs = candleCloseMs(lastTs, state.timeframe.id);
     const cd = closeMs != null ? formatCountdown(closeMs - Date.now(), state.timeframe.id) : null;
     if (cd && y != null && isFinite(y)) {
-      drawTag(y + (lsize + 6), cd, "#1e2028", lsize - 1, "candle_pane");
+      // Hinterlegt wie der Preis-Tag: gleiche Up/Down-Farbe (bg).
+      drawTag(y + (lsize + 6), cd, bg, lsize - 1, "candle_pane");
     }
   }
 }
@@ -7662,7 +7669,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
 
-const TV_BUILD = "m75";
+const TV_BUILD = "m76";
 
 window.__tvBuild = TV_BUILD;
 
@@ -7869,6 +7876,12 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
   let offAccept = () => {}, offCancel = () => {};
 
   canvas.classList.remove("hidden");
+  // Desktop: das Canvas ist im Basis-CSS display:none (nur mobil sichtbar).
+  // Inline überschreibt das, sonst wäre das Magnet-Fadenkreuz unsichtbar und
+  // man sähe nur KLCs eigenes (das die Preisachse nicht rastet). KLCs
+  // Fadenkreuz während des Zeichnens ausblenden, damit nicht zwei erscheinen.
+  canvas.style.display = "block";
+  try { chart.setStyles({ crosshair: { show: false } }); } catch (e) {}
   const resize = () => {
     canvas.width  = host.offsetWidth  * devicePixelRatio;
     canvas.height = host.offsetHeight * devicePixelRatio;
@@ -7998,6 +8011,8 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
 
   function cleanup() {
     canvas.classList.add("hidden");
+    canvas.style.display = "";
+    try { chart.setStyles({ crosshair: { show: true } }); } catch (e) {}
     confirmBar?.classList.add("hidden");
     offAccept(); offCancel();
     ro.disconnect();
