@@ -1,62 +1,55 @@
-# HANDOFF — Build m75 (an HANDOFF.md anhängen, NIE committen)
+# HANDOFF — Build m76 (an HANDOFF.md anhängen, NIE committen)
 
-Basis: m74 (live). Geänderte Dateien (7): `app.js`, `settings.js`,
-`worker-komplett.js`, `overlays.js`, `indicators.js`, `index.html`
-(barPatternMenu additiv + `?v=`), `style.css` (nur Build-Tag). Build m74 → **m75**.
+Basis: m75 (live). Geänderte Dateien (7): `app.js`, `indicators.js`, `overlays.js`,
+`worker-komplett.js`, `config.js`, `style.css` (nur Build-Tag), `index.html`
+(nur `?v=`). Build m75 → **m76**.
 
-## 1a — Magnet Zug-Handler zurückgebaut
-Der m74-Fix (snapEntryValue auf Stop/Ziel-Griffe) entfernt; Griffe nehmen wieder
-rohen `moved.value`.
+## 1b — Fadenkreuz-Magnet Desktop (Niedrig)
+Ursache: `.crosshair-canvas` ist im Basis-CSS `display:none` (nur mobil sichtbar)
+→ das Magnet-Fadenkreuz war auf Desktop unsichtbar. Fix: `startMobilePointTool`
+setzt beim Anzeigen `canvas.style.display="block"` (inline, überschreibt Basis-CSS)
+und blendet KLCs eigenes Fadenkreuz aus (`crosshair.show=false`), cleanup stellt
+beides zurück. **Gerätetest.**
 
-## 1b — Einstieg-Magnet Desktop (Live-Fadenkreuz)
-`startMobilePointTool` um Maus-Handler erweitert (`onMouseMove` = Fadenkreuz +
-Live-Snap-Vorschau via `snapPositionEntryPx`/`magnetSnap`, grün wenn auf O/H/L/C
-eingerastet; `onMouseDown` = commit). `placePosition` nutzt jetzt auch auf Desktop
-`startMobilePointTool` statt `placePositionByClick` (Letzteres rastete nur die
-Zeitachse). `placePositionByClick` bleibt als toter Code stehen.
-**Gerätetest:** KLineCharts zeigt auf Desktop evtl. sein eigenes Fadenkreuz
-zusätzlich — falls störend, KLC-crosshair beim Zeichnen ausblenden (Nachzug).
+## D+M 5 — Countdown-Farbe (Niedrig)
+Zweite Tag-Zeile jetzt mit Preis-Farbe (up/down `bg`) hinterlegt statt dunkelgrau.
 
-## D+M 1 — Indikator-Intervall „[object Object]"
-settings.js-Renderer verstand nur String-`options`. Jetzt beide Formate:
-`{value,label}`-Objekt → `o.value=opt.value`, `o.textContent=opt.label`; String
-unverändert. Behebt EMA/SMA/BMSB (Anzeige **und** gespeicherter Wert). Test grün.
+## D+M 1 — MA-Glättung (Hoch)
+`maContext.project` interpoliert jetzt linear zwischen aktuellem und nächstem
+Bucket-MA (je Bar-Position im Bucket) statt forward-fill → glatte statt stufige
+Linie. Greift nur im gröberen-Intervall-Fall; auto-Fall bit-genau unverändert
+(Test grün). Look-ahead innerhalb des Buckets ist bewusst (Darstellung).
 
-## D+M 2 — Dominanz 403
-`cgFetch` robuster: User-Agent-Header + Demo-Key zusätzlich als Query-Param
-(`x_cg_demo_api_key`). **Live-Voraussetzung:** `wrangler secret put COINGECKO_KEY`
-(Wert CG-T18…) MUSS gesetzt sein — sonst keyless → CoinGecko blockt Server-IP (403).
+## D+M 2 — Dominanz-Worker (Hoch)
+Zwei Fixes: (1) pro Coin/Tag nur letzter MC (Doppelpunkt am aktuellen Tag behoben
+→ kein 49.5%-Artefakt); (2) `interval=daily` entfernt (Enterprise-only; ohne
+liefert Demo bei days=365 Tagesdaten) + 120ms-Drosselung gegen Rate-Limit-Bursts.
+**Kritisch:** `COINGECKO_KEY` MUSS als Worker-Secret gesetzt sein, sonst keyless →
+403 → nur BTC kommt durch (das war die btcd=100/usdtd=null-Ursache).
+**Snapshot-404:** BTCUSDT/ETHUSDT aus `HISTORY_SNAPSHOTS` entfernt (Files fehlen
+bewusst im Repo, voller Binance-Abruf lief eh) → kein 404 mehr.
 
-## D+M 3a — Muster-Fenster ohne Füllung
-Trefferzone-Fläche auf `rgba(0,0,0,0)` (voll transparent, bleibt Trefferzone).
+## D+M 3 — Muster-Linie vertikal verschiebbar (Hoch)
+Trefferzone bekommt Mindesthöhe 44px (vorher = Close-Spanne, im Linien-Modus zu
+dünn zum vertikalen Greifen). Test grün. **Gerätetest** der Interaktion.
 
-## D+M 3b — Style-Menü Muster-Tool
-Neues `barPatternMenu` (index.html, `.frvp-menu`-Klassen, additiv), `openBarPatternMenu`
-(Kerze Up/Down + Linienfarbe, Deckkraft, Gestrichelt), Dispatch an beiden onRightClick-
-Stellen. Overlay liest `dashed` (Linie + Docht), Deckkraft via `hexToRgba` in die
-Farben eingerechnet. Test grün. **Gerätetest:** Rechtsklick aufs Muster → Menü.
-
-## D+M 4 — Volumen-Pane 0-Untergrenze
-MYVOL bekommt `minValue: 0` (Balken bei 0 verankert, nicht mehr schwebend/„ewig
-lang"). yDrag-Geste bewusst **unangetastet** — Hochschieben/Zoomen bleibt möglich
-(unterhalb dann schwarz), wie gewünscht.
-
-## D+M 5 — Countdown auf Preisskala
-Zweite Tag-Zeile unter dem Preis-Tag mit Restzeit bis Kerzenschluss.
-`candleCloseMs` (je Intervall, 1M kalendarisch) + `formatCountdown`
-(1M→w/d, 1W→d/h, 1D & 4h→h/m, 1h & 15m→m/s). Sekunden-`setInterval` → `scheduleTagDraw`.
-Format-Test grün. **Gerätetest:** live runterzählen prüfen.
+## D+M 4 — VOL 0-Verankerung (Hoch)
+Bundle-Analyse: `minValue:0` zieht die Datengrenze auf 0, aber der Pane-Default
+`gap.bottom:0.1` erzeugt den Negativpuffer. Fix: `setPaneOptions({id:"pane_myvol",
+gap:{top:0.2,bottom:0}})` nach createIndicator → Balken sitzen auf 0, oberer Puffer
+bleibt, yDrag (Schieben/Zoomen) unberührt. **Gerätetest** (KLC-Achse nicht
+container-testbar).
 
 ## Prüfungen
-node -c alle · D+M-1-Renderer-Test · barPattern solid/dashed + transp. Trefferzone ·
-Countdown-Format (alle Intervalle) · VM-Ladetest (nur bekanntes Stub-Artefakt) ·
-style.css nur Build-Tag · index.html additiv + ?v=.
+node -c alle · D+M1 auto=Referenz + Glättung · D+M3 Trefferzone 44px · D+M2
+Doppelpunkt-Logik · VM-Ladetest (Stub-Artefakt) · style.css nur Build-Tag.
 
-## Restrisiko
-1b (Desktop-Fadenkreuz-Interaktion), 3b (Menü-Interaktion), 5 (Live-Countdown) und
-der Worker (D+M 2) sind statisch/funktional geprüft, aber End-to-End nur am Gerät
-bzw. Live-Worker verifizierbar.
+## Deploy-Reihenfolge
+1. Frontend: Git-Push (js/, css/, index.html).
+2. Worker: `worker-komplett.js` deployen **+** `COINGECKO_KEY` als Secret setzen —
+   sonst bleibt die Dominanz bei btcd=100.
+3. Gerät: 1b (Fadenkreuz grün auf O/H/L/C), Muster-Linie vertikal, VOL auf 0,
+   Countdown-Farbe, Dominanz nach Key.
 
-## Weiter offen (aus m74)
-Tote Duplikate `gbRenderTiers`/`gbRenderData` in app.js weiterhin drin (nicht
-angetastet). Auf „ja" entfernbar.
+## Weiter offen
+Tote `gbRenderTiers`/`gbRenderData` in app.js (aus m74) weiter unangetastet.
