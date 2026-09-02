@@ -847,20 +847,30 @@ async function getDominance(env) {
 
   // 2) Pro Coin die 365-Tage-Marktkapitalisierung; pro Tag summieren.
   const totalByDay = new Map(), btcByDay = new Map(), usdtByDay = new Map();
-  for (const id of ids) {
+  for (let ci = 0; ci < ids.length; ci++) {
+    const id = ids[ci];
     let chart;
     try {
-      chart = await cgFetch(`/coins/${id}/market_chart?vs_currency=usd&days=365&interval=daily`, env);
+      // interval=daily ist Enterprise-only; ohne interval liefert der Demo-Plan
+      // bei days=365 automatisch Tagesdaten.
+      chart = await cgFetch(`/coins/${id}/market_chart?vs_currency=usd&days=365`, env);
     } catch (_) { continue; }  // Einzelausfall tolerieren, Rest summiert weiter
     const caps = (chart && chart.market_caps) ? chart.market_caps : [];
+    // Pro Coin pro Tag NUR den letzten MC (der aktuelle Tag hat oft zwei Punkte
+    // — Mitternacht + jetzt —, die sonst doppelt gezählt würden).
+    const byDay = new Map();
     for (const pt of caps) {
-      const ts = pt[0], mc = pt[1];
+      const mc = pt[1];
       if (mc == null) continue;
-      const day = Math.floor(ts / 864e5) * 864e5;
+      byDay.set(Math.floor(pt[0] / 864e5) * 864e5, mc);
+    }
+    for (const [day, mc] of byDay) {
       totalByDay.set(day, (totalByDay.get(day) || 0) + mc);
       if (id === "bitcoin") btcByDay.set(day, mc);
       if (id === "tether")  usdtByDay.set(day, mc);
     }
+    // sanfte Drosselung gegen Rate-Limit-Bursts (auch mit Key sicherer)
+    if (ci < ids.length - 1) await new Promise(r => setTimeout(r, 120));
   }
 
   // 3) Serie bauen: [{ t, btcd, usdtd }] in %
