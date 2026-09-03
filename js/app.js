@@ -396,11 +396,11 @@ function baseStyles() {
     crosshair: {
       horizontal: { 
         line: { color: "rgba(232,182,76,0.4)", style: "dashed", dashedValue: [4, 4] }, 
-        text: { backgroundColor: "#2a2f3a", size: 12 } 
+        text: { backgroundColor: "#2a2f3a", size: 12, family: "'IBM Plex Mono',monospace" } 
       },
       vertical: { 
         line: { color: "rgba(232,182,76,0.4)", style: "dashed", dashedValue: [4, 4] }, 
-        text: { backgroundColor: "#2a2f3a", size: 12 } 
+        text: { backgroundColor: "#2a2f3a", size: 12, family: "'IBM Plex Mono',monospace" } 
       },
     },
     overlay: {
@@ -7697,7 +7697,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
 
-const TV_BUILD = "m79";
+const TV_BUILD = "m80";
 
 window.__tvBuild = TV_BUILD;
 
@@ -8347,7 +8347,6 @@ quiet(() => {
             if (oid) captureDrawing(oid);
           }, "positionTool expand");
           state.activeTool = null;
-          if (window.__tvPosMagCleanup) { try { window.__tvPosMagCleanup(); } catch (e3) {} window.__tvPosMagCleanup = null; }
           renderDrawbar();
           state.selectedOverlayId = null;
           document.getElementById("posToolTopBtn")?.classList.remove("active");
@@ -8359,26 +8358,6 @@ quiet(() => {
         if (baseEnd) baseEnd(e);
       };
       chart.createOverlay(cfg);
-      // Punkt 1: KLCs Overlay-Magnet rastet nur den GESETZTEN Punkt, nicht das
-      // Fadenkreuz. Hier ziehen wir das Fadenkreuz beim Bewegen aktiv auf die
-      // gerastete O/H/L/C-Y-Position, damit die Vorschau visuell einrastet.
-      if (window.__tvPosMagCleanup) { try { window.__tvPosMagCleanup(); } catch (e2) {} }
-      const _magHost = document.getElementById("mainChart");
-      const _onMagMove = (ev) => {
-        if (state.magnetMode === "normal" || state.activeTool !== "positionTool") return;
-        const rct = _magHost.getBoundingClientRect();
-        const mx = ev.clientX - rct.left, my = ev.clientY - rct.top;
-        if (mx > _magHost.clientWidth - 70) return;
-        let v; try { v = chart.convertFromPixel({ x: mx, y: my }, { paneId: "candle_pane" }); } catch (e2) { return; }
-        if (!v || v.value == null) return;
-        const sp = snapEntryValue(v);
-        if (sp.value == null) return;
-        let py; try { py = chart.convertToPixel({ timestamp: sp.timestamp, value: sp.value }, { paneId: "candle_pane" }); } catch (e2) { return; }
-        if (!py || py.y == null || Math.abs(py.y - my) < 0.5) return;
-        try { chart.setCrosshair({ x: mx, y: py.y, paneId: "candle_pane" }); } catch (e2) {}
-      };
-      _magHost.addEventListener("mousemove", _onMagMove, true);
-      window.__tvPosMagCleanup = () => { try { _magHost.removeEventListener("mousemove", _onMagMove, true); } catch (e2) {} };
       document.getElementById("posToolTopBtn")?.classList.add("active");
       return;
     }

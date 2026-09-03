@@ -1004,6 +1004,17 @@
   // Benannt statt inline, damit der Pruefstand den Renderer ohne echten
   // Chart aufrufen und Ruhe- gegen Auswahlzustand vergleichen kann.
   function renderPosition({ coordinates, overlay }) {
+      // Zeichenphase: den (via magnetSnapValue gerasteten) Einstiegspunkt als
+      // Punkt zeigen — wie bei den Linien-Tools, damit das O/H/L/C-Rasten
+      // sichtbar ist, bevor man klickt.
+      if (overlay.currentStep !== -1 && coordinates.length >= 1) {
+        const cp = coordinates[coordinates.length - 1];
+        return [{
+          type: "circle",
+          attrs: { x: cp.x, y: cp.y, r: 4 },
+          styles: { style: "fill", color: "#e8b64c" },
+        }];
+      }
       if (coordinates.length < 2) return [];
       const pts = overlay.points || [];
       if (pts.length < 2 || pts[0].value == null) return [];
