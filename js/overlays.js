@@ -537,7 +537,11 @@
 
   const _registerOverlay = klinecharts.registerOverlay;
   klinecharts.registerOverlay = function (tpl) {
-    if (tpl && !tpl.performEventMoveForDrawing) {
+    // positionTool NICHT mit magnetSnapValue belegen: das ersetzt KLCs nativen
+    // Magnet (der bei den Linien-Tools zuverlässig auf O/H/L/C rastet) durch
+    // eine Variante, die in der Praxis nicht greift. Ohne Zuweisung nutzt
+    // positionTool — wie segment/rayLine — KLCs eingebauten StrongMagnet.
+    if (tpl && !tpl.performEventMoveForDrawing && tpl.name !== "positionTool") {
       tpl.performEventMoveForDrawing = magnetSnapValue;
     }
     return _registerOverlay.call(klinecharts, tpl);

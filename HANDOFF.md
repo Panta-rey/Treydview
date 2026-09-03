@@ -1,28 +1,35 @@
-# HANDOFF — Build m80 (an HANDOFF.md anhängen, NIE committen)
+# HANDOFF — Build m81 (an HANDOFF.md anhängen, NIE committen)
 
-Basis: m79. Geänderte Dateien (4): `app.js`, `overlays.js`, `style.css`
-(nur Build-Tag), `index.html` (nur `?v=`). Build m79 → **m80**.
+Basis: m80. Geänderte Dateien (4): `overlays.js` (der eigentliche Fix), `app.js`
++ `style.css` (nur Build-Tag), `index.html` (nur `?v=`). Build m80 → **m81**.
 
-## Punkt 1 — Fadenkreuz-Rasten wie bei Linien-Tools
-Reys Hinweis war der Schlüssel: Linien-Tools zeigen Fadenkreuz + einen Punkt, der
-magnetisch rastet. positionTool gab in der Zeichenphase (renderPosition,
-coordinates<2) nichts zurück → kein sichtbarer Punkt. Der setCrosshair-Umweg (m79)
-ist **zurückgebaut**. Jetzt: `renderPosition` zeichnet in der Zeichenphase
-(currentStep!==-1) einen Punkt am letzten (via magnetSnapValue gerasteten)
-Koordinatenpunkt — genau wie die Linien-Tools. Test grün (Kreis erscheint).
-**Gerätetest** der Rast-Vorschau.
+## DER Magnet-Fix (endlich mit Beweis)
+Beweis durch direkten Vergleich der registrierten Overlays:
+- `segment` (Linie, funktioniert bei Rey): `performEventMoveForDrawing = undefined`
+  → nutzt KLineCharts' NATIVEN StrongMagnet.
+- `positionTool` (funktionierte nicht): der registerOverlay-Wrapper hatte ihm
+  `magnetSnapValue` aufgezwungen — das ERSETZT KLCs nativen Magnet durch eine
+  Variante, die in der Praxis nicht griff.
 
-## Punkt 3 — Fadenkreuz-Preis gleich gross wie Preisskala
-Ursache war nicht die Grösse (beide 12), sondern die **Schriftart**: die Preisskala
-nutzt `IBM Plex Mono` (monospace, wirkt breiter), der Fadenkreuz-Text den
-KLC-Default (Helvetica). Fix: `crosshair.text.family: IBM Plex Mono` (+ size 12) →
-gleiche Schrift + Grösse wie die Preisskala.
+Die Linien-Tools rasten also gerade *weil* sie magnetSnapValue NICHT haben.
+**Fix:** den Wrapper um `&& tpl.name !== "positionTool"` erweitert → positionTool
+bekommt kein magnetSnapValue mehr und nutzt, wie die Linien-Tools, KLCs nativen
+Magnet (mode = state.magnetMode = strong_magnet wird bereits gesetzt). Fib etc.
+behalten magnetSnapValue unverändert.
+
+Verifiziert: positionTool.performEventMoveForDrawing === undefined (wie segment);
+fibRetracement unverändert.
+
+## Warum die 20 Runden
+Ich habe wiederholt AN magnetSnapValue gearbeitet (Fangbereich, bedingungslos,
+setCrosshair, renderPosition-Punkt), statt zu erkennen, dass magnetSnapValue
+SELBST das Problem war — die funktionierenden Tools benutzen es gar nicht. Der
+Vergleich „hat Overlay X performEventMoveForDrawing?" hätte das sofort gezeigt.
 
 ## Prüfungen
-node -c alle · renderPosition-Zeichenphasen-Punkt · setCrosshair-Rückbau vollständig
-· crosshair family gesetzt · VM-Ladetest (Stub) · style.css nur Tag.
+node -c alle · positionTool ohne magnetSnapValue (Vergleich mit segment/fib) ·
+style.css nur Build-Tag.
 
 ## Deploy
-Git-Push (js/app.js, js/overlays.js, css/style.css, index.html). Worker unverändert.
-Gerät: Long/Short — beim Bewegen erscheint der Magnet-Punkt und rastet sichtbar auf
-O/H/L/C (wie bei Linien); Fadenkreuz-Preis so gross wie die Preisskala-Zahlen.
+Git-Push (js/overlays.js, js/app.js, css/style.css, index.html). Worker unverändert.
+Gerät: Long/Short — der Punkt sollte jetzt auf O/H/L/C rasten wie bei den Linien.
