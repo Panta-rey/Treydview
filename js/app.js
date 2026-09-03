@@ -3855,12 +3855,54 @@ function buildOverlayConfig(overlayName) {
       // unabhängig von der danach beweglichen/skalierbaren Box bleibt.
       if (overlayName === "barPattern" && e?.overlay?.id && e?.overlay?.points?.length >= 2) {
         const bp0 = e.overlay.points[0], bp1 = e.overlay.points[1];
+        const srcStart = Math.min(bp0.timestamp, bp1.timestamp);
+        const srcEnd   = Math.max(bp0.timestamp, bp1.timestamp);
+        const isLine   = state.chartType === "area";
+        // 1:1-Kopie: die Box-Höhe auf die natürliche Preisspanne der Quell-Kerzen
+        // setzen (Kerzen: low/high, Linie: close), sonst staucht der Box-
+        // Skaliermodus das Abbild. Box-Mitte + X bleiben, wo gezeichnet — danach
+        // weiterhin frei skalierbar. overrideOverlay ändert Punkte nicht, daher
+        // Overlay neu erstellen (analog positionTool-Expand).
+        let dl = []; try { dl = chart.getDataList() || []; } catch (er) {}
+        const slice = dl.filter(d => d.timestamp >= srcStart && d.timestamp <= srcEnd);
+        let corrected = null;
+        if (slice.length >= 2) {
+          let pMin = Infinity, pMax = -Infinity;
+          for (const d of slice) {
+            const lo = isLine ? d.close : d.low, hi = isLine ? d.close : d.high;
+            if (lo < pMin) pMin = lo;
+            if (hi > pMax) pMax = hi;
+          }
+          if (pMax > pMin && bp0.value != null && bp1.value != null) {
+            const midV = (bp0.value + bp1.value) / 2, half = (pMax - pMin) / 2;
+            corrected = [
+              { timestamp: bp0.timestamp, value: midV + half },
+              { timestamp: bp1.timestamp, value: midV - half },
+            ];
+          }
+        }
+        if (corrected) {
+          const extOld = e.overlay.extendData || {};
+          quiet(() => {
+            try { chart.removeOverlay(e.overlay.id); } catch (er) {}
+            const cfg2 = buildOverlayConfig("barPattern");
+            cfg2.extendData = { ...extOld, srcStart, srcEnd, lineMode: isLine };
+            const nid = chart.createOverlay({ ...cfg2, points: corrected });
+            const noid = Array.isArray(nid) ? nid[0] : nid;
+            if (noid) captureDrawing(noid);
+          }, "barPattern 1:1 Kopie");
+          state.drawingId = null;
+          if (state.pinTool) { setTimeout(() => startTool(overlayName), 0); }
+          else {
+            state.activeTool = null;
+            document.getElementById("posToolTopBtn")?.classList.remove("active");
+            renderDrawbar();
+          }
+          return false;
+        }
+        // Fallback (kein Slice ermittelbar): nur den Quell-Zeitbereich fixieren.
         try {
-          chart.overrideOverlay({ id: e.overlay.id, extendData: {
-            srcStart: Math.min(bp0.timestamp, bp1.timestamp),
-            srcEnd:   Math.max(bp0.timestamp, bp1.timestamp),
-            lineMode: state.chartType === "area",
-          } });
+          chart.overrideOverlay({ id: e.overlay.id, extendData: { srcStart, srcEnd, lineMode: isLine } });
         } catch (err) {}
       }
       // Ins Register aufnehmen, damit Layouts die Zeichnung sichern können
@@ -7701,7 +7743,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
 
-const TV_BUILD = "m82";
+const TV_BUILD = "m83";
 
 window.__tvBuild = TV_BUILD;
 

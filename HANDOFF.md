@@ -1,32 +1,27 @@
-# HANDOFF — Build m82 (an HANDOFF.md anhängen, NIE committen)
+# HANDOFF — Build m83 (an HANDOFF.md anhängen, NIE committen)
 
-Basis: m81. Geänderte Dateien (4): `app.js`, `overlays.js`, `style.css`
-(nur Build-Tag), `index.html` (nur `?v=`). Build m81 → **m82**.
+Basis: m82. Geänderte Dateien (3): `app.js` (Fix), `style.css` (nur Build-Tag),
+`index.html` (nur `?v=`). Build m82 → **m83**.
 
-## Punkt 1.2 — Magnet greift auch bei Reihenfolge „erst Long/Short, dann Magnet"
-Der positionTool-Desktop-Zweig rief `chart.createOverlay(cfg)` direkt auf, ohne
-`state.drawingId` zu setzen (das macht sonst startTool). Damit lief
-`applyMagnetToActiveDrawing()` beim Magnet-Klick ins Leere (`if (!state.drawingId)
-return`) → der laufende Zeichenvorgang blieb auf mode „normal". Fix: `state.drawingId`
-wird jetzt aus dem createOverlay-Ergebnis gesetzt (und im onDrawEnd wieder auf null).
-Damit zieht der Magnet-Button den mode des laufenden Long/Short-Overlays nach —
-selber Mechanismus wie bei den Linien-Tools (overrideOverlay({id, mode})).
+## barPattern — 1:1-Höhen-Kopie (Kerzen + Linien)
+Ursache der Stauchung: sobald die gezeichnete Box ≥12px hoch ist, skaliert das
+Overlay das Abbild in die Box-Höhe (`priceToY = yB − ((p−pMin)/(pMax−pMin))×boxH`)
+statt die natürliche Preisspanne zu behalten. Da man die Box fast nie exakt auf
+die natürliche Spanne zieht, wurde das Muster gestaucht.
 
-## Punkt 2 — Long/Short-Auswahl-Dropout bündig neben der Leiste
-Der Desktop-Zweig zentrierte das lsChoice-Menü unter dem Knopf → es ragte nach
-links über die schmale Werkzeugleiste. Jetzt: linke Kante = rechte Kante der
-`#drawbar` (getBoundingClientRect().right), top auf Knopfhöhe → Menü sitzt bündig
-rechts neben der Leiste.
+Fix im barPattern-onDrawEnd: aus den Quell-Kerzen (srcStart–srcEnd) die natürliche
+Preisspanne bestimmen (Kerzen: low/high, Linie: close) und die Box-Höhe darauf
+setzen — Box-Mitte + X-Position bleiben, wo gezeichnet. Da overrideOverlay Punkte
+nicht ändert, wird das Overlay mit korrigierten Y-Punkten neu erstellt (analog
+positionTool-Expand). Danach ist die Kopie massstabsgetreu, aber weiterhin frei
+skalierbar. Fallback (kein Slice ermittelbar): altes Verhalten (nur extendData).
 
-## Punkt 3 — Golden Pocket +20%
-Deckkraft-Aufschlag des 0.618–0.65-Bandes von +0.10 auf **+0.20** erhöht (z.B.
-0.05 → 0.25) — hebt sich deutlicher ab.
+Test: korrigierte Box-Höhe == natürliche Höhe (45px == 45px, 1:1).
 
 ## Prüfungen
-node -c alle · drawingId gesetzt + cleanup · lsChoice barRight · Golden Pocket 0.25
-· style.css nur Build-Tag · VM-Ladetest (Stub).
+node -c alle · 1:1-Höhen-Test · style.css nur Build-Tag · VM-Ladetest (Stub).
 
 ## Deploy
-Git-Push (js/app.js, js/overlays.js, css/style.css, index.html). Worker unverändert.
-Gerät: (a) Long/Short wählen, DANN Magnet an → Punkt rastet; (b) Auswahl-Menü sitzt
-bündig rechts neben der Leiste; (c) Golden-Pocket-Band deutlicher.
+Git-Push (js/app.js, css/style.css, index.html). Worker unverändert.
+Gerät: Kerzen- und Linien-Muster kopieren → Abbild jetzt in Original-Höhe statt
+gestaucht; danach weiterhin per Box skalierbar.
