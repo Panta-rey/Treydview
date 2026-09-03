@@ -599,10 +599,14 @@
       for (let i = 0; i < visible.length - 1; i++) {
         const y1 = yAt(visible[i].v), y2 = yAt(visible[i + 1].v);
         if (y1 == null || y2 == null) continue;
+        // Golden Pocket (0.618–0.65) hebt sich ab: 10% stärkere Deckkraft + Goldton.
+        const isGP = ed.goldenPocket && visible[i].v === 0.618 && visible[i + 1].v === 0.65;
+        const fa  = isGP ? Math.min(1, fillAlpha + 0.10) : fillAlpha;
+        const fc  = isGP ? "#e8b64c" : visible[i + 1].color;
         figs.push({
           type: "rect",
           attrs: { x: xLeft, y: Math.min(y1, y2), width: xRight - xLeft, height: Math.abs(y2 - y1) },
-          styles: { style: "fill", color: hexA(visible[i + 1].color, fillAlpha) },
+          styles: { style: "fill", color: hexA(fc, fa) },
         });
       }
     }
