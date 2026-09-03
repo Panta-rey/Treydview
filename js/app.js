@@ -7265,8 +7265,12 @@ document.getElementById("posToolTopBtn").addEventListener("click", () => {
       left = r.left + r.width / 2 - w / 2;
       top = r.top - h - 10;
     } else {
-      left = r.left + r.width / 2 - w / 2;   // Desktop: darunter
-      top = r.bottom + 6;
+      // Desktop: rechts neben der Werkzeugleiste, linke Kante bündig mit deren
+      // rechter Kante (vorher zentriert unter dem Knopf → ragte nach links über
+      // die Leiste hinaus).
+      const _bar = document.getElementById("drawbar");
+      left = _bar ? _bar.getBoundingClientRect().right : r.right;
+      top = r.top;
     }
     // Immer vollständig im sichtbaren Bereich halten.
     left = Math.max(M, Math.min(left, window.innerWidth - w - M));
@@ -7697,7 +7701,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
 
-const TV_BUILD = "m81";
+const TV_BUILD = "m82";
 
 window.__tvBuild = TV_BUILD;
 
@@ -8347,6 +8351,7 @@ quiet(() => {
             if (oid) captureDrawing(oid);
           }, "positionTool expand");
           state.activeTool = null;
+          state.drawingId = null;
           renderDrawbar();
           state.selectedOverlayId = null;
           document.getElementById("posToolTopBtn")?.classList.remove("active");
@@ -8357,7 +8362,11 @@ quiet(() => {
         }
         if (baseEnd) baseEnd(e);
       };
-      chart.createOverlay(cfg);
+      const _pid = chart.createOverlay(cfg);
+      // drawingId setzen, damit der Magnet-Button den mode des laufenden
+      // Zeichenvorgangs nachziehen kann (Reihenfolge: erst Long/Short, dann
+      // Magnet einschalten). Ohne das blieb das Overlay auf "normal".
+      state.drawingId = Array.isArray(_pid) ? _pid[0] : _pid;
       document.getElementById("posToolTopBtn")?.classList.add("active");
       return;
     }

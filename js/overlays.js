@@ -605,7 +605,7 @@
         if (y1 == null || y2 == null) continue;
         // Golden Pocket (0.618–0.65) hebt sich ab: 10% stärkere Deckkraft + Goldton.
         const isGP = ed.goldenPocket && visible[i].v === 0.618 && visible[i + 1].v === 0.65;
-        const fa  = isGP ? Math.min(1, fillAlpha + 0.10) : fillAlpha;
+        const fa  = isGP ? Math.min(1, fillAlpha + 0.20) : fillAlpha;
         const fc  = isGP ? "#e8b64c" : visible[i + 1].color;
         figs.push({
           type: "rect",
