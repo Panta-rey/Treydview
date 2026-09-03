@@ -1,35 +1,28 @@
-# HANDOFF — Build m79 (an HANDOFF.md anhängen, NIE committen)
+# HANDOFF — Build m80 (an HANDOFF.md anhängen, NIE committen)
 
-Basis: m78. Geänderte Dateien (4): `app.js`, `overlays.js`, `style.css`
-(Build-Tag + Punkt-4-Regel), `index.html` (nur `?v=`). Build m78 → **m79**.
+Basis: m79. Geänderte Dateien (4): `app.js`, `overlays.js`, `style.css`
+(nur Build-Tag), `index.html` (nur `?v=`). Build m79 → **m80**.
 
-## Punkt 1 — Fadenkreuz visuell magnetisch (Desktop Long/Short)
-Missverständnis geklärt: KLCs Overlay-Magnet rastet nur den GESETZTEN Punkt, nicht
-den Cursor — das Fadenkreuz folgte weiter der Maus. Fix: ein mousemove-Handler
-während des positionTool-Zeichnens zieht das Fadenkreuz per `chart.setCrosshair`
-aktiv auf die gerastete O/H/L/C-Y-Position (nur bei aktivem Magnet, Preisachse
-ausgenommen). Cleanup im onDrawEnd + beim nächsten Tool-Start. **Gerätetest** — die
-setCrosshair-Interaktion ist nur im Browser final prüfbar.
+## Punkt 1 — Fadenkreuz-Rasten wie bei Linien-Tools
+Reys Hinweis war der Schlüssel: Linien-Tools zeigen Fadenkreuz + einen Punkt, der
+magnetisch rastet. positionTool gab in der Zeichenphase (renderPosition,
+coordinates<2) nichts zurück → kein sichtbarer Punkt. Der setCrosshair-Umweg (m79)
+ist **zurückgebaut**. Jetzt: `renderPosition` zeichnet in der Zeichenphase
+(currentStep!==-1) einen Punkt am letzten (via magnetSnapValue gerasteten)
+Koordinatenpunkt — genau wie die Linien-Tools. Test grün (Kreis erscheint).
+**Gerätetest** der Rast-Vorschau.
 
-## Punkt 2 — Golden Pocket hebt sich ab
-Die Fläche 0.618–0.65 wird jetzt mit **+10% Deckkraft** (fillAlpha+0.10) und
-Goldton (#e8b64c) gefüllt statt mit dem normalen Level-Alpha. Gilt für Retracement
-+ Extension, nur wenn die Option aktiv ist. Test grün.
-
-## Punkt 3 — Fadenkreuz-Preisanzeige gleich gross wie Preisskala
-`crosshair.horizontal/vertical.text.size: 12` (= yAxis-Standard). Vorher war der
-Fadenkreuz-Text kleiner. **Gerätetest** der Grösse.
-
-## Punkt 4 — Indikatoren-Dropdown 50% länger (Desktop)
-Neue Regel `#indDropdown .dd-list { max-height: 420px }` (280×1.5). Additiv,
-Prüfung 1 zeigt nur diese eine Zeile.
+## Punkt 3 — Fadenkreuz-Preis gleich gross wie Preisskala
+Ursache war nicht die Grösse (beide 12), sondern die **Schriftart**: die Preisskala
+nutzt `IBM Plex Mono` (monospace, wirkt breiter), der Fadenkreuz-Text den
+KLC-Default (Helvetica). Fix: `crosshair.text.family: IBM Plex Mono` (+ size 12) →
+gleiche Schrift + Grösse wie die Preisskala.
 
 ## Prüfungen
-node -c alle · Golden Pocket +10%/Gold · Dropdown 420px · CSS 728/728 · style.css
-nur Build-Tag + Punkt-4-Regel · VM-Ladetest (Stub).
+node -c alle · renderPosition-Zeichenphasen-Punkt · setCrosshair-Rückbau vollständig
+· crosshair family gesetzt · VM-Ladetest (Stub) · style.css nur Tag.
 
 ## Deploy
 Git-Push (js/app.js, js/overlays.js, css/style.css, index.html). Worker unverändert.
-Gerät prüfen: Fadenkreuz rastet beim Long/Short-Positionieren visuell auf O/H/L/C;
-Golden-Pocket-Band deutlich abgehoben; Fadenkreuz-Preis so gross wie Preisskala;
-Indikatoren-Dropdown länger.
+Gerät: Long/Short — beim Bewegen erscheint der Magnet-Punkt und rastet sichtbar auf
+O/H/L/C (wie bei Linien); Fadenkreuz-Preis so gross wie die Preisskala-Zahlen.
