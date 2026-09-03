@@ -41,7 +41,7 @@ const Settings = {
     return out;
   },
 
-  open(indKey, onApply) {
+  open(indKey, onApply, onDelete) {
     const ind = CONFIG.INDICATORS.find(i => i.key === indKey);
     if (!ind) return;
     const hasInputs = (ind.inputs || []).length > 0;
@@ -92,11 +92,8 @@ const Settings = {
         input.className = "settings-input";
         (inp.options || []).forEach(opt => {
           const o = document.createElement("option");
-          // Optionen koennen einfache Strings ODER { value, label }-Objekte sein.
-          const val = (opt && typeof opt === "object") ? opt.value : opt;
-          const lbl = (opt && typeof opt === "object") ? opt.label : opt;
-          o.value = val; o.textContent = lbl;
-          if (val === current.inputs[inp.key]) o.selected = true;
+          o.value = opt; o.textContent = opt;
+          if (opt === current.inputs[inp.key]) o.selected = true;
           input.appendChild(o);
         });
       } else {
@@ -246,6 +243,19 @@ const Settings = {
       overlay.classList.add("hidden");
       if (onApply) onApply(indKey);
     };
+
+    // Löschen: schliesst das Lower-Pane und wählt den Indikator ab (Button
+    // #settingsDelete). Sichtbar nur, wenn ein Delete-Callback übergeben wurde.
+    const _delBtn = document.getElementById("settingsDelete");
+    if (_delBtn) {
+      if (typeof onDelete === "function") {
+        _delBtn.style.display = "";
+        _delBtn.onclick = () => { overlay.classList.add("hidden"); onDelete(indKey); };
+      } else {
+        _delBtn.style.display = "none";
+        _delBtn.onclick = null;
+      }
+    }
 
     document.getElementById("settingsClose").onclick = () => overlay.classList.add("hidden");
     overlay.onclick = (e) => { if (e.target === overlay) overlay.classList.add("hidden"); };

@@ -7697,7 +7697,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
 
-const TV_BUILD = "m77";
+const TV_BUILD = "m78";
 
 window.__tvBuild = TV_BUILD;
 
@@ -8328,9 +8328,39 @@ quiet(() => {
     // mitlaufen und die Chart-Sperre nicht greifen.
     state.activeTool = "positionTool";
     renderDrawbar();
-    // Desktop: einfacher Klick. Der Einstieg rastet via snapEntryValue auf
-    // O/H/L/C (bei aktivem Magnet); KLineCharts' Fadenkreuz bleibt normal.
-    if (!tvIsMobile()) { placePositionByClick(dir, cfg); return; }
+    if (!tvIsMobile()) {
+      // Desktop: über KLineCharts' Klickfluss zeichnen — dann rastet das
+      // Fadenkreuz via magnetSnapValue auf O/H/L/C wie bei den Linien-Tools.
+      // Nach dem EINEN Klick (totalStep:2) expandiert onDrawEnd den Einstieg
+      // zu [Einstieg, Stop, Ziel].
+      const baseEnd = cfg.onDrawEnd;
+      cfg.onDrawEnd = (e) => {
+        const ov = e && e.overlay;
+        if (ov && ov.points && ov.points[0] && ov.points[0].value != null) {
+          const entry = { timestamp: ov.points[0].timestamp, value: ov.points[0].value };
+          quiet(() => {
+            try { chart.removeOverlay(ov.id); } catch (err) {}
+            const cfg2 = buildOverlayConfig("positionTool");
+            cfg2.extendData = { widthBars: (window.__tvPositionBars || {}).DEFAULT || 20 };
+            const id = chart.createOverlay({ ...cfg2, points: expandPositionPoints(dir, entry) });
+            const oid = Array.isArray(id) ? id[0] : id;
+            if (oid) captureDrawing(oid);
+          }, "positionTool expand");
+          state.activeTool = null;
+          renderDrawbar();
+          state.selectedOverlayId = null;
+          document.getElementById("posToolTopBtn")?.classList.remove("active");
+          setStatus(dir === "long"
+            ? "Long gesetzt — Position anklicken, dann Stop oder Ziel ziehen"
+            : "Short gesetzt — Position anklicken, dann Stop oder Ziel ziehen");
+          return;
+        }
+        if (baseEnd) baseEnd(e);
+      };
+      chart.createOverlay(cfg);
+      document.getElementById("posToolTopBtn")?.classList.add("active");
+      return;
+    }
     startMobilePointTool("positionTool", cfg, {
       needPoints: 1,
       hint: dir === "long"

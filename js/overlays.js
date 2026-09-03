@@ -569,6 +569,13 @@
   // yAt(level) -> Pixel-Y, priceAt(level) -> Preis
   function buildFibFigures(levels, coords, yAt, priceAt, extendData) {
     const ed = extendData || {};
+    // Golden Pocket (0.618–0.65): zusätzliches 0.65-Level einfügen, wenn aktiv.
+    // Die Fläche zwischen 0.618 und 0.65 wird dann als Band gefüllt.
+    if (ed.goldenPocket && !levels.some(l => l.v === 0.65)) {
+      levels = levels.slice();
+      const gi = levels.findIndex(l => l.v === 0.618);
+      if (gi >= 0) levels.splice(gi + 1, 0, { v: 0.65, color: "#e8b64c" });
+    }
     const figs = [];
     const xLeft   = Math.min(...coords.map(c => c.x));
     let   xRight  = Math.max(...coords.map(c => c.x));
@@ -1138,7 +1145,7 @@
 
   klinecharts.registerOverlay({
     name: "positionTool",
-    totalStep: 4,
+    totalStep: 2,
     needDefaultPointFigure: false,
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: true,

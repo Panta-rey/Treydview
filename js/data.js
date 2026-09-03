@@ -214,13 +214,18 @@ const DataLayer = {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const series = await r.json();
     if (!Array.isArray(series)) throw new Error("Dominanz: unerwartetes Format");
-    return series
-      .map(p => {
-        const v = p[domCoin];
-        if (v == null || !isFinite(v)) return null;
-        return { timestamp: p.t, open: v, high: v, low: v, close: v, volume: 0 };
-      })
-      .filter(Boolean);
+    // Echte Kerzen: open = Schlusskurs des Vortages, high/low = Spanne,
+    // close = Tageswert. Sonst waeren alle Kerzen flach (o=h=l=c).
+    const out = [];
+    let prev = null;
+    for (const p of series) {
+      const v = p[domCoin];
+      if (v == null || !isFinite(v)) continue;
+      const o = prev == null ? v : prev;
+      out.push({ timestamp: p.t, open: o, high: Math.max(o, v), low: Math.min(o, v), close: v, volume: 0 });
+      prev = v;
+    }
+    return out;
   },
 
   async fetchKrakenKlines(pair, intervalMin, limit) {
