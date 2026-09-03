@@ -48,6 +48,8 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 .dd-search{width:100%;padding:8px 10px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;}
 .dd-search::placeholder{color:var(--text-dim);}
 .dd-list{max-height:280px;overflow-y:auto;}
+/* Punkt 4: Indikatoren-Dropdown auf Desktop 50% länger. */
+#indDropdown .dd-list{max-height:420px;}
 /* Asset-Dropdown (Punkt 6): hoch genug, dass die 12 kuratierten Vorschläge
    ohne Scrollen sichtbar sind; der Rest (nach Volumen sortiert) folgt
    darunter und wird durch Scrollen erreicht. ~12 Zeilen à ~30px. */
@@ -862,7 +864,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m78"; }
+:root { --tv-build: "m79"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
