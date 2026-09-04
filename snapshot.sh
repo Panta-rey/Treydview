@@ -23,6 +23,28 @@
 # ============================================================
 set -uo pipefail
 
+# ---- Python-Interpreter finden (verifiziert, nicht nur Name-Existenz) ----
+# Wichtig auf Windows/Git-Bash: dort ist "python3" oft nur der Microsoft-
+# Store-Alias-Stub, der nichts tut und mit Fehler abbricht. Darum jeden
+# Kandidaten mit einem echten Mini-Aufruf pruefen und den ERSTEN nehmen,
+# der wirklich laeuft. So funktioniert das Skript unabhaengig davon, ob
+# Python bei dir "python3", "python" oder "py" heisst.
+PY=""
+for _cand in python3 python py; do
+  if command -v "$_cand" >/dev/null 2>&1 \
+     && [ "$("$_cand" -c 'print(1)' 2>/dev/null)" = "1" ]; then
+    PY="$_cand"; break
+  fi
+done
+if [ -z "$PY" ]; then
+  echo "FEHLER: kein funktionierendes Python 3 gefunden (getestet: python3, python, py)."
+  echo "Auf Windows ist 'python3' meist nur der Microsoft-Store-Platzhalter."
+  echo "Abhilfe: Python von python.org installieren (Haken 'Add python.exe to PATH'),"
+  echo "oder sicherstellen, dass 'python' ein echtes Python 3 startet."
+  exit 1
+fi
+echo "Python: $PY ($("$PY" --version 2>&1))"
+
 WORKER="https://pantarey.rey-gafner.workers.dev"
 OUT="data"
 mkdir -p "$OUT"
@@ -33,7 +55,7 @@ fehler=0
 # ist auch gueltiges JSON und wuerde sonst als Momentaufnahme im Repo
 # landen.
 pruefen() {
-  python3 - "$1" "$2" <<'PYEOF'
+  "$PY" - "$1" "$2" <<'PYEOF'
 import json, sys, datetime
 pfad, mindest = sys.argv[1], int(sys.argv[2])
 try:
@@ -52,8 +74,9 @@ if ts != sorted(ts):
     print("ERR:Kerzen nicht aufsteigend sortiert"); sys.exit(0)
 if len(set(ts)) != len(ts):
     print("ERR:doppelte Zeitstempel"); sys.exit(0)
-f = datetime.datetime.utcfromtimestamp(ts[0] / 1000).date()
-t = datetime.datetime.utcfromtimestamp(ts[-1] / 1000).date()
+_epoch = datetime.datetime(1970, 1, 1)   # naive UTC-Basis; plattformunabhaengig auch fuer ts<0
+f = (_epoch + datetime.timedelta(milliseconds=ts[0])).date()
+t = (_epoch + datetime.timedelta(milliseconds=ts[-1])).date()
 print("OK:%d:%s:%s" % (len(c), f, t))
 PYEOF
 }
@@ -62,7 +85,10 @@ ablegen() {
   local tmp="$1" ziel="$2" mindest="$3"
   local ergebnis; ergebnis="$(pruefen "$tmp" "$mindest")"
   case "$ergebnis" in
+    OK:*)  : ;;                                          # erwartetes Format
     ERR:*) echo "   FEHLER: ${ergebnis#ERR:}"; rm -f "$tmp"; fehler=1; return 1 ;;
+    *)     echo "   FEHLER: unerwartete Pruefantwort (leer/kein OK:) -- Datei NICHT abgelegt"
+           rm -f "$tmp"; fehler=1; return 1 ;;
   esac
   local anzahl von bis
   IFS=: read -r _ anzahl von bis <<<"$ergebnis"
@@ -91,15 +117,16 @@ via_binance() {
   local name="$1" symbol="$2" ziel="$3" mindest="$4"
   echo "-- $name"
   local tmp; tmp="$(mktemp)"
-  if ! python3 - "$symbol" "$tmp" <<'PYEOF'
+  if ! "$PY" - "$symbol" "$tmp" <<'PYEOF'
 import json, sys, urllib.request, time
 symbol, ziel = sys.argv[1], sys.argv[2]
 BASE = "https://api.binance.com/api/v3/klines"
 start, alle = 0, {}
 for _ in range(12):
-    url = "%s?symbol=%s&interval=1d&limit=1000" % (BASE, symbol)
-    if start:
-        url += "&startTime=%d" % start
+    # startTime IMMER setzen (auch 0): sonst liefert Binance die NEUESTEN
+    # 1000 Kerzen, die Schleife springt in die Zukunft und bricht nach
+    # einer Seite ab. Mit startTime=0 wird ab der aeltesten vorwaerts paginiert.
+    url = "%s?symbol=%s&interval=1d&limit=1000&startTime=%d" % (BASE, symbol, start)
     try:
         with urllib.request.urlopen(url, timeout=60) as r:
             raw = json.load(r)
