@@ -23,16 +23,29 @@
     needDefaultPointFigure: true,
     needDefaultXAxisFigure: true,
     needDefaultYAxisFigure: true,
-    createPointFigures: ({ coordinates }) => {
+    // Stil aus extendData (vom Menue gesetzt), sonst greift das generische
+    // Linien-Menue nicht (Punkt 5/6). Fuellung = Farbe mit Deckkraft
+    // (fillColor), Rand = dieselbe Farbe voll (borderColor). Fallback = die
+    // frueheren hartkodierten Werte, damit frisch gezeichnete Rechtecke gleich
+    // aussehen wie bisher.
+    createPointFigures: ({ coordinates, overlay }) => {
       if (coordinates.length < 2) return [];
+      const ed = (overlay && overlay.extendData) || {};
+      const fill   = ed.fillColor   || "rgba(232,182,76,0.12)";
+      const border = ed.borderColor || "#e8b64c";
+      const bsize  = ed.size  || 1;
+      const bstyle = ed.style || "solid";
+      const bdash  = ed.dashedValue || [6, 4];
       return [{
         type: "rect",
         attrs: rectAttrs(coordinates[0], coordinates[1]),
         styles: {
           style: "stroke_fill",
-          color: "rgba(232,182,76,0.12)",
-          borderColor: "#e8b64c",
-          borderSize: 1,
+          color: fill,
+          borderColor: border,
+          borderSize: bsize,
+          borderStyle: bstyle,
+          borderDashedValue: bdash,
         },
       }];
     },
@@ -1894,6 +1907,40 @@
         });
       }
       return figs;
+    },
+  });
+
+
+  // ---------- Preislinie: Preis nur auf der Y-Achse, nicht am Klickpunkt ----------
+  // Das eingebaute priceLine von KLineCharts zeichnet den Preis als Text direkt
+  // am gesetzten Punkt UND (via needDefaultYAxisFigure) als Tag auf der Achse.
+  // Hier ueberschreiben wir das Bordmittel: nur die waagrechte Linie, KEIN Text
+  // am Punkt - der Preis erscheint dadurch ausschliesslich auf der Y-Achse
+  // (TradingView-Verhalten). Der registerOverlay-Wrapper oben belegt
+  // performEventMoveForDrawing mit dem Magnet, damit die Linie beim Zeichnen auf
+  // O/H/L/C rastet wie die anderen waagrechten Linien.
+  klinecharts.registerOverlay({
+    name: "priceLine",
+    totalStep: 2,
+    needDefaultPointFigure: true,
+    needDefaultXAxisFigure: true,
+    needDefaultYAxisFigure: true,
+    createPointFigures: ({ coordinates, bounding, overlay }) => {
+      if (!coordinates.length) return [];
+      // Stil aus dem Menue (styles.line) uebernehmen, damit Farbe/Dicke/
+      // gestrichelt auch bei dieser eigenen priceLine greifen. Ohne gesetzte
+      // Werte bleibt das figure leer -> KLineCharts-Default wie beim Bordmittel.
+      const ls = (overlay && overlay.styles && overlay.styles.line) || {};
+      const st = {};
+      if (ls.color != null) st.color = ls.color;
+      if (ls.size != null) st.size = ls.size;
+      if (ls.style != null) st.style = ls.style;
+      if (ls.dashedValue != null) st.dashedValue = ls.dashedValue;
+      return [{
+        type: "line",
+        attrs: { coordinates: [coordinates[0], { x: bounding.width, y: coordinates[0].y }] },
+        styles: st,
+      }];
     },
   });
 

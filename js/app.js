@@ -557,7 +557,8 @@ function togglePaneCollapse(ind) {
     } else {
       chart.setPaneOptions({ id: paneId, height: st.prevHeight || 100, minHeight: 30 });
       st.collapsed = false;
-      try { chart.setPaneOptions({ id: paneId, gap: { top: PANE_HEADER_H + 2, bottom: 4 } }); } catch (e) {}
+      const _gapBottom = (ind.key === "myvol") ? 0 : 4;
+      try { chart.setPaneOptions({ id: paneId, gap: { top: PANE_HEADER_H + 2, bottom: _gapBottom } }); } catch (e) {}
     }
   } catch (e) {}
   state.paneCollapsed[ind.key] = st;
@@ -707,7 +708,11 @@ function applyPaneTopGap() {
     if (st && st.collapsed) return;
     const paneId = state.subPaneIds[key];
     if (!paneId) return;
-    try { chart.setPaneOptions({ id: paneId, gap: { top: PANE_HEADER_H + 2, bottom: 4 } }); } catch (e) {}
+    // myvol verankert die 0 am unteren Rand (gap.bottom 0); die anderen
+    // Sub-Panes behalten den kleinen Puffer. Ohne diese Ausnahme ueber-
+    // schreibt der generische bottom:4 das bottom:0 aus createIndicator.
+    const _gapBottom = (key === "myvol") ? 0 : 4;
+    try { chart.setPaneOptions({ id: paneId, gap: { top: PANE_HEADER_H + 2, bottom: _gapBottom } }); } catch (e) {}
   });
 }
 
@@ -4183,6 +4188,12 @@ function openOverlayMenu(overlay, event) {
         const cur = chart.getOverlayById(overlay.id);
         const curEd = (cur && typeof cur.extendData === "object" && cur.extendData) ? cur.extendData : {};
         patch.extendData = { ...curEd, color: line.color, size: line.size, style: line.style, dashedValue: line.dashedValue };
+      } else if (overlay.name === "rectangle") {
+        // Rechteck zeichnet aus extendData: Fuellung = Farbe mit Menue-Deckkraft,
+        // Rand = dieselbe Farbe voll (hex). Punkt 5/6.
+        const cur = chart.getOverlayById(overlay.id);
+        const curEd = (cur && typeof cur.extendData === "object" && cur.extendData) ? cur.extendData : {};
+        patch.extendData = { ...curEd, fillColor: hexToRgba(hex, alpha), borderColor: hex, size: line.size, style: line.style, dashedValue: line.dashedValue };
       }
       chart.overrideOverlay(patch);
       // Ins Zeichnungs-Register spiegeln, damit Layouts den Stil behalten
@@ -4199,13 +4210,18 @@ function openOverlayMenu(overlay, event) {
   // genaue Platzierung per Eingabe statt nur per Ziehen.
   const priceRow = document.getElementById("omPriceRow");
   const dateRow  = document.getElementById("omDateRow");
+  const rectRow  = document.getElementById("omRectRow");
   const priceEl  = document.getElementById("omPrice");
   const dateEl   = document.getElementById("omDate");
+  const topEl    = document.getElementById("omTop");
+  const botEl    = document.getElementById("omBottom");
   const isHoriz  = overlay.name === "horizontalStraightLine" || overlay.name === "priceLine";
   const isVert   = overlay.name === "verticalStraightLine";
+  const isRect   = overlay.name === "rectangle";
   const p0 = (overlay.points && overlay.points[0]) || {};
   if (priceRow) priceRow.style.display = isHoriz ? "" : "none";
   if (dateRow)  dateRow.style.display  = isVert  ? "" : "none";
+  if (rectRow)  rectRow.style.display  = isRect  ? "" : "none";
 
   if (isHoriz && priceEl && p0.value != null) {
     priceEl.value = p0.value;
@@ -4237,6 +4253,34 @@ function openOverlayMenu(overlay, event) {
         if (rec) { rec.points = serializeDrawPoints(pts); saveWorkspace(); }
       } catch (e) {}
     };
+  }
+
+  if (isRect && topEl && botEl) {
+    // Oberer/unterer Preis des Rechtecks. Punkt 0 = groesserer Wert (oben),
+    // Punkt 1 = kleinerer (unten); X/Zeit der Ecken bleibt unveraendert.
+    const pv0 = (overlay.points[0] || {}).value;
+    const pv1 = (overlay.points[1] || {}).value;
+    if (pv0 != null && pv1 != null) {
+      topEl.value = Math.max(pv0, pv1);
+      botEl.value = Math.min(pv0, pv1);
+    }
+    const applyRect = () => {
+      const t = parseFloat(topEl.value), b = parseFloat(botEl.value);
+      if (!isFinite(t) || !isFinite(b)) return;
+      const hi = Math.max(t, b), lo = Math.min(t, b);
+      try {
+        const cur = chart.getOverlayById(overlay.id);
+        const pts = (cur && cur.points ? cur.points : overlay.points).map(p => ({ ...p }));
+        if (pts.length < 2) return;
+        const iTop = pts[0].value >= pts[1].value ? 0 : 1;
+        pts[iTop].value = hi; pts[1 - iTop].value = lo;
+        chart.overrideOverlay({ id: overlay.id, points: pts });
+        const rec = state.drawings.find(d => d.id === overlay.id);
+        if (rec) { rec.points = serializeDrawPoints(pts); saveWorkspace(); }
+      } catch (e) {}
+    };
+    topEl.onchange = applyRect;
+    botEl.onchange = applyRect;
   }
 
   menu.classList.remove("hidden");
@@ -7743,7 +7787,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
 
-const TV_BUILD = "m83";
+const TV_BUILD = "m84";
 
 window.__tvBuild = TV_BUILD;
 
@@ -8153,7 +8197,11 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
   }
 
   function finishDrawing() {
-    const minPts = opts.needPoints || 2;
+    // need ist die tatsaechliche Punktzahl des Werkzeugs (1 bei Horizontal/
+    // Preis/Vertikal). Frueher stand hier hart || 2, wodurch Ein-Punkt-Linien
+    // nach dem Setzen sofort wieder verworfen wurden. Infinity (Polylinie)
+    // wird ueber den Bestaetigungs-Balken abgeschlossen und braucht min. 2.
+    const minPts = opts.needPoints || (need === Infinity ? 2 : need);
     if (points.length < minPts) { abortDrawing(); return; }
     cleanup();
     const finalPts = opts.expandPoints ? opts.expandPoints(points) : points;

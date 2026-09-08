@@ -18,11 +18,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
-  <link rel="manifest" href="manifest.webmanifest?v=m83">
-  <link rel="stylesheet" href="css/style.css?v=m83">
+  <link rel="manifest" href="manifest.webmanifest?v=m84">
+  <link rel="stylesheet" href="css/style.css?v=m84">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
        Bewusst kein CDN: die App darf nicht ausfallen, wenn unpkg ausfällt. -->
-  <script src="js/lib/klinecharts.min.js?v=m83"></script>
+  <script src="js/lib/klinecharts.min.js?v=m84"></script>
 </head>
 <body>
 
@@ -1297,6 +1297,13 @@
     <label>Datum</label>
     <input type="datetime-local" id="omDate" class="om-numfield">
   </div>
+  <div class="om-row" id="omRectRow" style="display:none">
+    <label>Bereich</label>
+    <div class="om-rect-prices">
+      <input type="number" id="omTop" step="any" class="om-numfield" title="oberer Preis" placeholder="oben">
+      <input type="number" id="omBottom" step="any" class="om-numfield" title="unterer Preis" placeholder="unten">
+    </div>
+  </div>
   <div class="om-row">
     <label>Farbe</label>
     <input type="color" id="omColor" value="#e8b64c">
@@ -1470,17 +1477,17 @@
   </div>
 </div>
 
-<script src="js/config.js?v=m83"></script>
-<script src="js/indicators.js?v=m83"></script>
-<script src="js/overlays.js?v=m83"></script>
-<script src="js/data.js?v=m83"></script>
-<script src="js/settings.js?v=m83"></script>
-<script src="js/derivatives.js?v=m83"></script>
-<script src="js/gridbot.js?v=m83"></script>
-<script src="js/patterns.js?v=m83"></script>
-<script src="js/smc.js?v=m83"></script>
-<script src="js/ewt.js?v=m83"></script>
-<script src="js/app.js?v=m83"></script>
+<script src="js/config.js?v=m84"></script>
+<script src="js/indicators.js?v=m84"></script>
+<script src="js/overlays.js?v=m84"></script>
+<script src="js/data.js?v=m84"></script>
+<script src="js/settings.js?v=m84"></script>
+<script src="js/derivatives.js?v=m84"></script>
+<script src="js/gridbot.js?v=m84"></script>
+<script src="js/patterns.js?v=m84"></script>
+<script src="js/smc.js?v=m84"></script>
+<script src="js/ewt.js?v=m84"></script>
+<script src="js/app.js?v=m84"></script>
 
 </body>
 </html>

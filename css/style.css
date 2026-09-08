@@ -814,6 +814,9 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .om-opacity{display:flex;align-items:center;gap:7px;flex:1;justify-content:flex-end;}
 .om-opacity input[type=range]{width:80px;}
 .om-opacity span{font-size:11px;min-width:34px;text-align:right;}
+/* Rechteck: oberer/unterer Preis nebeneinander (Punkt 5/6) */
+.om-rect-prices{display:flex;gap:7px;flex:1;justify-content:flex-end;}
+.om-rect-prices input[type=number]{flex:1;width:auto;min-width:0;text-align:right;}
 .om-check{display:flex;align-items:center;gap:6px;cursor:pointer;}
 .om-divider{height:1px;background:var(--border);margin:7px 0;}
 .overlay-menu-del{width:100%;}
@@ -864,7 +867,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m83"; }
+:root { --tv-build: "m84"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
