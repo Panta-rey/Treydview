@@ -4285,7 +4285,10 @@ function openOverlayMenu(overlay, event) {
 
   menu.classList.remove("hidden");
   document.body.classList.add("menu-open");
-  clampMenuToViewport(menu);
+  // Auf Touch ist das Menue ein zentriertes Bottom-Sheet (as-sheet, per CSS
+  // positioniert). clampMenuToViewport wuerde dessen left/top ueberschreiben
+  // und die Zentrierung zerstoeren — daher nur im Desktop-Fall klemmen.
+  if (!menu.classList.contains("as-sheet")) clampMenuToViewport(menu);
   document.getElementById("overlayDelete").onclick = () => {
     chart.removeOverlay(overlay.id);
     menu.classList.add("hidden");
@@ -7787,7 +7790,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
 
-const TV_BUILD = "m84";
+const TV_BUILD = "m85";
 
 window.__tvBuild = TV_BUILD;
 
@@ -7871,6 +7874,40 @@ quiet(() => {
   const closeMenu = () => { m.classList.add("hidden"); syncMenuOpen(); };
   x.addEventListener("click", (e) => { e.stopPropagation(); closeMenu(); });
 }, "om close");
+
+// ── Bar-Ebenen exklusiv (nur Touch) ───────────────────────────────────
+// Beim Oeffnen eines Bar-Panels alle ANDEREN Ebenen schliessen, damit sich
+// Dropdown (.dd-panel), Zeichen-Sheet (#drawSheet), GridBot-Bar und das
+// Long/Short-Auswahlfenster (#lsChoice) nicht uebereinander stapeln. Ein
+// Capture-Listener laeuft VOR den Element-Handlern und schliesst die fremden
+// Ebenen zuerst; der jeweils eigene Handler oeffnet danach sein Panel. Kein
+// Eingriff in die bestehenden Oeffner -> keine Regressionsflaeche dort.
+quiet(() => {
+  if (!window.matchMedia("(max-width: 720px), (pointer: coarse)").matches) return;
+  const closeBarLayers = (except) => {
+    if (except !== "dd") {
+      document.querySelectorAll(".dd-panel.open").forEach(pl => {
+        pl.classList.remove("open"); try { resetAnchor(pl); } catch (e) {}
+      });
+      try { hideDdGrip(); } catch (e) {}
+    }
+    if (except !== "sheet") {
+      document.getElementById("drawSheet")?.classList.add("hidden");
+      document.getElementById("drawSheetBackdrop")?.classList.add("hidden");
+    }
+    if (except !== "gridbot") { try { if (state.gbOpen) gbUI.toggleBar(false); } catch (e) {} }
+    if (except !== "postool") { document.getElementById("lsChoice")?.classList.add("hidden"); }
+  };
+  document.addEventListener("click", (e) => {
+    const t = e.target;
+    if (!t || !t.closest) return;
+    if      (t.closest("#drawSheetBtn"))   closeBarLayers("sheet");
+    else if (t.closest("#gridBotBtn"))     closeBarLayers("gridbot");
+    else if (t.closest("#posToolTopBtn"))  closeBarLayers("postool");
+    else if (t.closest("#assetDropdown, #tfDropdown, #compareDropdown, #typeDropdown, #indDropdown, #patternDropdown, #smcDropdown, #ewtDropdown, #layoutDropdown"))
+      closeBarLayers("dd");
+  }, true);
+}, "bar layer exclusivity");
 
 // ── 4b. Chart feststellen, solange ein Werkzeug aktiv ist ─────────────
 // Ein früherer Versuch rief nur preventDefault(). Das unterbindet aber

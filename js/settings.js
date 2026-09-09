@@ -92,8 +92,15 @@ const Settings = {
         input.className = "settings-input";
         (inp.options || []).forEach(opt => {
           const o = document.createElement("option");
-          o.value = opt; o.textContent = opt;
-          if (opt === current.inputs[inp.key]) o.selected = true;
+          // Optionen sind entweder Strings ODER {value,label}-Objekte (z. B.
+          // das Intervall bei BMSB/EMA/SMA). Beide Formen sicher behandeln,
+          // sonst rendert ein Objekt als "[object Object]" und die
+          // Vorauswahl (opt === Wert) trifft nie zu.
+          const val = (opt && typeof opt === "object") ? opt.value : opt;
+          const lab = (opt && typeof opt === "object")
+            ? (opt.label != null ? opt.label : opt.value) : opt;
+          o.value = val; o.textContent = lab;
+          if (val === current.inputs[inp.key]) o.selected = true;
           input.appendChild(o);
         });
       } else {
