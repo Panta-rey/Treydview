@@ -7790,7 +7790,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
 
-const TV_BUILD = "m85";
+const TV_BUILD = "m86";
 
 window.__tvBuild = TV_BUILD;
 

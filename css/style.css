@@ -867,7 +867,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m85"; }
+:root { --tv-build: "m86"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
@@ -1283,6 +1283,20 @@ input, textarea, select, [contenteditable="true"] {
     pointer-events: none; z-index: 25;
   }
   .crosshair-canvas.hidden { display: none; }
+
+  /* iOS/Brave: native Vergroesserungs-Lupe unterdruecken. Beim Positionieren
+     des Fadenkreuzes ruht der Finger kurz auf dem Chart — iOS/Brave startet
+     dann eine Long-Press-Selektionsgeste (die kurz sichtbare Lupe), die die
+     Touch-Sequenz unterbricht: der naechste Tap (zweiter Punkt) kommt nicht
+     mehr als sauberes touchend an. Der crosshairCanvas hat pointer-events:
+     none, also empfaengt #mainChart die Touches — die Eigenschaften darum
+     hier explizit auf das beruehrte Element setzen (die globale Vererbung von
+     html/body greift auf Brave/iOS nicht zuverlaessig fuer die Lupe). */
+  #mainChart, #mainChart canvas {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
 
   /* Schwebender Aktionsbalken über einer ausgewählten Zeichnung */
   .draw-action-bar {
