@@ -1039,6 +1039,31 @@ klinecharts.registerIndicator({
   },
 });
 
+// ---------- ATR% (Average True Range in Prozent) ----------
+// TradingView-Vorlage: sma(tr * 100 / close[1], length).
+// True Range als Prozent des VORHERIGEN Close, dann SMA ueber length.
+klinecharts.registerIndicator({
+  name: "ATRP",
+  shortName: "ATR%",
+  precision: 2,
+  calcParams: [14],
+  figures: [
+    { key: "atrp", title: "ATR%: ", type: "line", styles: (d, ind) => plotStyle(ind, "atrp", "#e05555", 2) },
+  ],
+  calc: (dataList, indicator) => {
+    const [period] = indicator.calcParams;
+    const tr = trSeries(dataList);
+    // tr * 100 / close[1]: Prozent des vorherigen Close (i=0 hat keinen).
+    const pct = dataList.map((d, i) => {
+      if (i === 0) return null;
+      const prev = dataList[i - 1].close;
+      return prev ? (tr[i] * 100 / prev) : null;
+    });
+    const atrp = smaSeries2(pct, period);
+    return dataList.map((_, i) => ({ atrp: atrp[i] ?? undefined }));
+  },
+});
+
 // ---------- BOLLINGER BAND WIDTH (mit Squeeze) ----------
 // Pine-Referenz (vom Nutzer geliefert), Formel Standard und verlaesslich:
 //   basis = SMA(close, length)

@@ -383,6 +383,18 @@ const CONFIG = {
       ],
     },
     {
+      // ATR% (Average True Range in Prozent). Pine-Vorlage:
+      //   sma(tr * 100 / close[1], length)  -> True Range als Prozent des
+      // VORHERIGEN Close, dann einfacher gleitender Durchschnitt. Nur Laenge.
+      key: "atrp", name: "ATRP", pane: "sub", label: "ATR%",
+      inputs: [
+        { key: "period", label: "Length", default: 14 },
+      ],
+      plots: [
+        { key: "atrp", label: "ATR%-Linie", color: "#e05555", opacity: 100, width: 2, visible: true },
+      ],
+    },
+    {
       // Bollinger Band Width: relative Bandbreite (oberes−unteres)/Basis,
       // eigenes Fenster unterhalb. Squeeze = die Bandbreite ist das Minimum
       // ueber das Vergleichsfenster (Volatilitaets-Kompression). Rechenweg

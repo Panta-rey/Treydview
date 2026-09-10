@@ -1368,6 +1368,26 @@
   <button id="rangeDelete" class="overlay-menu-del">✕ Löschen</button>
 </div>
 
+<!-- Textfeld-Kontextmenü (simpleAnnotation): Text, Farbe, Grösse, Löschen -->
+<div class="overlay-menu hidden" id="textMenu">
+  <button class="om-close" id="tmClose" title="Schliessen">✕</button>
+  <label class="om-text-label">Text</label>
+  <input type="text" id="tmText" class="om-text-input" placeholder="Notiz…">
+  <div class="om-row">
+    <label>Farbe</label>
+    <input type="color" id="tmColor" value="#e8b64c">
+  </div>
+  <div class="om-row">
+    <label>Grösse</label>
+    <div class="om-opacity">
+      <input type="range" id="tmSize" min="10" max="28" step="1" value="14">
+      <span id="tmSizeVal">14</span>
+    </div>
+  </div>
+  <div class="om-divider"></div>
+  <button id="textDelete" class="overlay-menu-del">✕ Löschen</button>
+</div>
+
 <!-- FRVP-Kontextmenü -->
 <!-- Eigenes Stilmenü für Long/Short. Bewusst NICHT das gemeinsame
      #overlayMenu: das ist auf Linien zugeschnitten (Farbe, Breite,

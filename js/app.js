@@ -450,6 +450,7 @@ function buildCreate(ind) {
     case "myvol":    create.calcParams = [inp.ma1||5, inp.ma2||10, inp.ma3||20]; break;
     case "macd":     create.calcParams = [inp.fast||12, inp.slow||26, inp.signal||9, inp.oscType||"EMA", inp.sigType||"EMA"]; break;
     case "atr":      create.calcParams = [inp.period||14, inp.smoothing||"RMA"]; break;
+    case "atrp":     create.calcParams = [inp.period||14]; break;
     case "bbw":      create.calcParams = [inp.length||20, inp.mult||2.0, inp.compLen||125]; break;
     default:         if (ind.calcParams) create.calcParams = ind.calcParams;
   }
@@ -4052,6 +4053,10 @@ function buildOverlayConfig(overlayName) {
         // zusätzlich Farbe) — das generische styles.line greift bei diesen
         // gefüllten Overlays nicht (Punkt 4/5).
         openRangeMenu(e.overlay, e);
+      } else if (overlayName === "simpleAnnotation") {
+        // Textfeld: eigenes schlankes Menü (Text ändern, Farbe, Grösse,
+        // Löschen) — das Linien-Menü passt für eine Notiz nicht.
+        openTextMenu(e.overlay, e);
       } else {
         openOverlayMenu(e.overlay, e);
       }
@@ -4116,7 +4121,7 @@ function startTool(overlayName) {
 // Darum nie blind entfernen, sondern immer aus dem tatsaechlichen Zustand
 // ALLER Menues ableiten — sonst reisst das Schliessen eines Menues den
 // Abdunkler weg, waehrend ein anderes noch offen ist.
-const TV_MENU_IDS = ["overlayMenu", "frvpMenu", "fibMenu", "posMenu", "compareStyleMenu", "rangeMenu"];
+const TV_MENU_IDS = ["overlayMenu", "frvpMenu", "fibMenu", "posMenu", "compareStyleMenu", "rangeMenu", "textMenu"];
 function syncMenuOpen() {
   const anyOpen = TV_MENU_IDS.some((id) => {
     const el = document.getElementById(id);
@@ -4455,6 +4460,64 @@ document.addEventListener("click", (e) => {
   }
 });
 
+// ---- Textfeld-Menü (simpleAnnotation): Text, Farbe, Grösse, Löschen ----
+// Eigenes schlankes Menü statt des Linien-Menüs. Der Notiztext liegt in
+// extendData (String), Farbe/Grösse in styles.text.
+let _textTargetId = null;
+function openTextMenu(overlay, event) {
+  if (!overlay) return;
+  const menu = document.getElementById("textMenu");
+  if (!menu) return;
+  _textTargetId = overlay.id;
+  const curText = (typeof overlay.extendData === "string")
+    ? overlay.extendData
+    : (overlay.extendData && overlay.extendData.text) || "";
+  const txtEl  = document.getElementById("tmText");
+  const colEl  = document.getElementById("tmColor");
+  const sizeEl = document.getElementById("tmSize");
+  const sizeVal = document.getElementById("tmSizeVal");
+  txtEl.value = curText;
+  const ts = (overlay.styles && overlay.styles.text) || {};
+  colEl.value = parseColor(ts.color || "#e8b64c").hex;
+  const sz = ts.size || 14;
+  sizeEl.value = sz;
+  sizeVal.textContent = sz;
+
+  const apply = () => {
+    const ov = chart.getOverlayById(_textTargetId);
+    if (!ov) return;
+    sizeVal.textContent = sizeEl.value;
+    const text = { color: colEl.value, size: parseInt(sizeEl.value, 10) || 14 };
+    try {
+      chart.overrideOverlay({ id: _textTargetId, extendData: txtEl.value, styles: { text } });
+      const rec = state.drawings.find(d => d.id === _textTargetId);
+      if (rec) { rec.extendData = txtEl.value; rec.styles = { ...(rec.styles || {}), text }; saveWorkspace(); }
+    } catch (e) {}
+  };
+  txtEl.oninput = apply;
+  colEl.oninput = apply;
+  sizeEl.oninput = apply;
+
+  const { x, y } = menuPosition(event, 210, 210);
+  placeMenu(menu, x, y);
+  menu.classList.remove("hidden");
+  syncMenuOpen();
+
+  document.getElementById("tmClose").onclick = () => {
+    menu.classList.add("hidden"); _textTargetId = null; syncMenuOpen();
+  };
+  document.getElementById("textDelete").onclick = () => {
+    if (_textTargetId) { try { chart.removeOverlay(_textTargetId); } catch (e) {} }
+    menu.classList.add("hidden"); _textTargetId = null; syncMenuOpen();
+  };
+}
+document.addEventListener("click", (e) => {
+  const tm = document.getElementById("textMenu");
+  if (tm && !tm.classList.contains("hidden") && !tm.contains(e.target)) {
+    tm.classList.add("hidden"); _textTargetId = null; syncMenuOpen();
+  }
+});
+
 // Menü für eine Vergleichslinie (Punkt 5a): Farbe, Deckkraft, Linienstärke.
 // Live-Apply auf das Asset + Neuzeichnen; Werte werden im Asset gespeichert und
 // überleben so das Layout.
@@ -4564,6 +4627,7 @@ function makeMenuDraggableByHead(menuId, headSelector) {
   ["overlayMenu", "Linie"],
   ["fibMenu", "Fibonacci"],
   ["rangeMenu", "Bereich"],
+  ["textMenu", "Textfeld"],
   ["frvpMenu", "Volumen-Profil"],
   ["compareStyleMenu", "Vergleichslinie"],
 ].forEach(([id, t]) => { try { makeMenuDraggable(id, t); } catch (e) {} });

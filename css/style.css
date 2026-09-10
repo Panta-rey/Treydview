@@ -48,6 +48,9 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 .dd-search{width:100%;padding:8px 10px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-family:var(--font-mono);font-size:12px;outline:none;}
 .dd-search::placeholder{color:var(--text-dim);}
 .dd-list{max-height:280px;overflow-y:auto;}
+/* Vergleich: Vorschlagsliste auf ~3 Zeilen kuerzen, damit unten mehr Platz
+   fuer die hinzugefuegten Assets bleibt. Bleibt scrollbar. */
+#compareList{max-height:96px;}
 /* Punkt 4: Indikatoren-Dropdown auf Desktop 50% länger. */
 #indDropdown .dd-list{max-height:420px;}
 /* Asset-Dropdown (Punkt 6): hoch genug, dass die 12 kuratierten Vorschläge
@@ -487,11 +490,11 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .cc-remove:hover{color:var(--down);}
 
 /* ---- FRVP-Kontextmenü ---- */
-.frvp-menu{position:fixed;z-index:600;background:var(--bg-raised);border:1px solid var(--border);border-radius:6px;padding:10px;width:210px;box-shadow:0 8px 32px rgba(0,0,0,.6);display:flex;flex-direction:column;gap:8px;}
+.frvp-menu{position:fixed;z-index:600;background:var(--bg-raised);border:1px solid var(--border);border-radius:6px;padding:10px;width:252px;box-shadow:0 8px 32px rgba(0,0,0,.6);display:flex;flex-direction:column;gap:8px;}
 .frvp-menu.hidden{display:none;}
 .frvp-menu-header{font-size:12px;font-weight:600;color:var(--text);border-bottom:1px solid var(--border);padding-bottom:6px;}
 .frvp-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
-.frvp-row label{font-size:12px;color:var(--text-dim);}
+.frvp-row label{font-size:12px;color:var(--text-dim);white-space:nowrap;}
 .frvp-row input{width:70px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:4px 6px;outline:none;}
 .frvp-row input:focus{border-color:var(--accent);}
 .frvp-menu-actions{display:flex;justify-content:space-between;gap:6px;margin-top:2px;}
@@ -506,6 +509,10 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .overlay-menu{position:fixed;z-index:601;background:var(--bg-raised);border:1px solid var(--border);border-radius:5px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.6);}
 .overlay-menu.hidden{display:none;}
 .overlay-menu-del{display:block;width:100%;padding:8px 16px;background:transparent;border:none;color:var(--down);font-family:var(--font-mono);font-size:12px;cursor:pointer;text-align:left;white-space:nowrap;}
+/* Textfeld-Menü: Notiz-Eingabefeld über volle Breite */
+.om-text-label{font-size:12px;color:var(--text-dim);}
+.om-text-input{width:100%;box-sizing:border-box;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 7px;font-size:12px;font-family:inherit;}
+.om-text-input:focus{outline:none;border-color:var(--accent);}
 .overlay-menu-del:hover{background:rgba(208,94,94,.12);}
 
 /* ---- Watchlist ---- */
