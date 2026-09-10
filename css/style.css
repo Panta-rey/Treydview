@@ -57,6 +57,14 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 .dd-item{padding:7px 12px;cursor:pointer;font-size:12px;color:var(--text-dim);transition:background .1s,color .1s;}
 .dd-item:hover{background:var(--bg-hover);color:var(--text);}
 .dd-item.active{color:var(--accent);background:rgba(232,182,76,.08);}
+/* Freies Intervall (ganze Tage) im Intervall-Panel */
+.tf-custom-row{display:flex;align-items:center;gap:6px;cursor:default;}
+.tf-custom-row:hover{background:transparent;color:var(--text-dim);}
+.tf-custom-row.active{color:var(--accent);background:rgba(232,182,76,.08);}
+.tf-custom-label{flex:0 0 auto;}
+.tf-custom-unit{flex:0 0 auto;color:var(--text-dim);}
+.tf-custom-input{width:46px;flex:0 0 auto;text-align:right;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 5px;font-size:12px;font-family:inherit;}
+.tf-custom-input:focus{outline:none;border-color:var(--accent);}
 .dd-item.disabled{opacity:.35;cursor:not-allowed;pointer-events:none;}
 .dd-empty{padding:10px 12px;font-size:12px;color:var(--text-dim);}
 
@@ -867,7 +875,7 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m86"; }
+:root { --tv-build: "m88"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */

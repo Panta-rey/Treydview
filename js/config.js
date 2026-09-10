@@ -101,6 +101,7 @@ const CONFIG = {
     { id: "4h",  label: "4h",  binanceInterval: "4h",  krakenInterval: "240",   coinbaseInterval: 21600, bybitInterval: "240" },
     { id: "1d",  label: "1D",  binanceInterval: "1d",  krakenInterval: "1440",  coinbaseInterval: 86400, bybitInterval: "D"   },
     { id: "1w",  label: "1W",  binanceInterval: "1w",  krakenInterval: "10080",                          bybitInterval: "W"   },
+    { id: "12d", label: "12D", aggDays: 12 },
     { id: "1M",  label: "1M",  binanceInterval: "1M",  krakenInterval: "21600",                          bybitInterval: "M"   },
   ],
 

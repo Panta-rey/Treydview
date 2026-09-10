@@ -21,6 +21,22 @@ function loadWorkspace() {
 
 const _ws = loadWorkspace();
 
+// Loest eine timeframe-id in ihr Objekt auf. Feste Intervalle stehen in
+// CONFIG.TIMEFRAMES; frei gewaehlte ("<n>d", z. B. "15d") sind dort nicht
+// gelistet und werden hier rekonstruiert. So ueberlebt ein freies Intervall
+// Workspace, Layout und Sync-Code, obwohl nur die id gespeichert wird.
+// aggDays markiert ein aus Tageskerzen aggregiertes Intervall (12D + freie).
+function resolveTimeframe(id) {
+  const fixed = CONFIG.TIMEFRAMES.find(t => t.id === id);
+  if (fixed) return fixed;
+  const m = /^(\d+)d$/.exec(id || "");
+  if (m) {
+    const n = parseInt(m[1], 10);
+    if (n >= 1 && n <= 365) return { id: n + "d", label: n + "D", aggDays: n, custom: true };
+  }
+  return null;
+}
+
 // Das gespeicherte Symbol ist ein ganzes OBJEKT, kein blosser Bezeichner.
 // Wurde es einmal gespeichert, blieben Aenderungen an CONFIG.DEFAULT_SYMBOLS
 // wirkungslos — der Browser lud weiter die eingefrorene alte Fassung, mit
@@ -40,7 +56,7 @@ function _symbolAbgleichen(gespeichert) {
 
 const state = {
   symbol:      _symbolAbgleichen(_ws?.symbol),
-  timeframe:   CONFIG.TIMEFRAMES.find(t => t.id === (_ws?.timeframeId || "1d")) || CONFIG.TIMEFRAMES.find(t => t.id === "1d"),
+  timeframe:   resolveTimeframe(_ws?.timeframeId || "1d") || resolveTimeframe("1d"),
   active:      new Set(_ws?.active || CONFIG.DEFAULT_ACTIVE),
   closeStream: null,
   allSymbols:  [...CONFIG.DEFAULT_SYMBOLS],
@@ -997,18 +1013,25 @@ let _loadSeq = 0;
 // Noetig fuer Quellen, die nur Tagesdaten liefern (Bitstamp, LBMA-Gold).
 // Wochen beginnen Montag 00:00 UTC — der Unix-Epochenstart war ein
 // Donnerstag, daher der Versatz von vier Tagen. Monate nach Kalender.
-function aggregateCandles(candles, tfId) {
+function aggregateCandles(candles, tf) {
   if (!Array.isArray(candles) || candles.length === 0) return candles;
   const D = 86400000;
+  const tfId = (tf && tf.id) || tf;   // toleriert altes id-Argument
+  const aggN = tf && tf.aggDays;      // 12D + freie nD-Intervalle
   // Der 1. Januar 1970 war ein DONNERSTAG. Montage liegen damit bei
   // Tagesindex ≡ 4 (mod 7). Der Versatz muss deshalb ABGEZOGEN werden —
   // mit +4 landen die Wochengrenzen auf Sonntag.
+  // n-Tage-Intervalle (aggN) rastern auf einem festen Raster ab Unix-Epoch
+  // (Anker-Variante a): konsistent ueber alle Assets, unabhaengig vom ersten
+  // Datenpunkt.
   const bucket = (ts) => {
+    if (aggN) return Math.floor(ts / (aggN * D));
     if (tfId === "1w") return Math.floor((ts - 4 * D) / (7 * D));
     const d = new Date(ts);
     return d.getUTCFullYear() * 12 + d.getUTCMonth();
   };
   const start = (ts) => {
+    if (aggN) return Math.floor(ts / (aggN * D)) * (aggN * D);
     if (tfId === "1w") return Math.floor((ts - 4 * D) / (7 * D)) * (7 * D) + 4 * D;
     const d = new Date(ts);
     return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
@@ -1040,6 +1063,11 @@ async function loadData() {
   applyDefaultChartTypeFor(state.symbol);
   setStatus(`Lade ${state.symbol.label} (${state.timeframe.label}) …`);
   let candles;
+  // Aggregierte Intervalle (12D + freie nD) haben kein natives Boersen-
+  // Intervall: bei ALLEN Quellen wird 1d geladen und danach zu n-Tage-Kerzen
+  // zusammengefasst. oneDay liefert die 1d-Codes der jeweiligen Boerse.
+  const aggN = state.timeframe.aggDays;
+  const oneDay = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
   try {
     if (state.symbol.type === "binance") {
       // Momentaufnahme aus dem Repo + Zuwachs direkt von Binance.
@@ -1051,46 +1079,52 @@ async function loadData() {
       // erreichbar ist und keinen Worker braucht.
       //
       // Nur fuer Tageskerzen: die gespeicherte Datei enthaelt Tagesdaten.
-      const snapBn = state.timeframe.id === "1d"
+      const bnInterval = aggN ? oneDay.binanceInterval : state.timeframe.binanceInterval;
+      const snapBn = (aggN || state.timeframe.id === "1d")
         ? (CONFIG.HISTORY_SNAPSHOTS || {})[state.symbol.id] : null;
       if (snapBn) {
         candles = await DataLayer.fetchHistoryCached(snapBn,
           (from) => DataLayer.fetchBinanceKlinesSince(
-            state.symbol.id, state.timeframe.binanceInterval, from));
+            state.symbol.id, bnInterval, from));
       } else {
-        candles = await DataLayer.fetchBinanceKlines(state.symbol.id, state.timeframe.binanceInterval, CONFIG.CANDLE_LIMIT);
+        candles = await DataLayer.fetchBinanceKlines(state.symbol.id, bnInterval, CONFIG.CANDLE_LIMIT);
       }
+      if (aggN) candles = aggregateCandles(candles, state.timeframe);
     } else if (state.symbol.type === "kraken") {
-      candles = await DataLayer.fetchKrakenKlines(state.symbol.krakenPair, state.timeframe.krakenInterval, CONFIG.CANDLE_LIMIT);
+      candles = await DataLayer.fetchKrakenKlines(state.symbol.krakenPair, aggN ? oneDay.krakenInterval : state.timeframe.krakenInterval, CONFIG.CANDLE_LIMIT);
+      if (aggN) candles = aggregateCandles(candles, state.timeframe);
     } else if (state.symbol.type === "coinbase") {
-      candles = await DataLayer.fetchCoinbaseKlines(state.symbol.coinbaseProduct, state.timeframe.coinbaseInterval, CONFIG.CANDLE_LIMIT);
+      candles = await DataLayer.fetchCoinbaseKlines(state.symbol.coinbaseProduct, aggN ? oneDay.coinbaseInterval : state.timeframe.coinbaseInterval, CONFIG.CANDLE_LIMIT);
+      if (aggN) candles = aggregateCandles(candles, state.timeframe);
     } else if (state.symbol.type === "stooq") {
       // Indizes kommen als Tageskerzen ueber den Worker (Stooq erlaubt
       // keinen Direktabruf aus dem Browser).
       candles = await DataLayer.fetchStooqHistory(state.symbol.stooqSymbol);
+      if (aggN) candles = aggregateCandles(candles, state.timeframe);
     } else if (state.symbol.type === "bitstamp") {
       // Bitstamp liefert nur 1h, 4h und 1d. Groebere Intervalle entstehen
       // aus Tageskerzen: Wochen- und Monatskerzen liessen sich zwar
       // anfragen, waeren aber je Boerse anders geschnitten.
       const stepMap = { "15m": 3600, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 86400, "1M": 86400 };
-      const step = stepMap[state.timeframe.id] || 86400;
+      const step = aggN ? 86400 : (stepMap[state.timeframe.id] || 86400);
       // Momentaufnahme aus dem Repo + Zuwachs vom Worker. Nur fuer
       // Tageskerzen — die gespeicherte Datei enthaelt Tagesdaten.
       const snapBs = step === 86400 ? (CONFIG.HISTORY_SNAPSHOTS || {})[state.symbol.id] : null;
       candles = await DataLayer.fetchHistoryCached(snapBs,
         (from) => DataLayer.fetchBitstampHistory(state.symbol.bitstampPair, step, from));
-      if (state.timeframe.id === "1w" || state.timeframe.id === "1M") {
-        candles = aggregateCandles(candles, state.timeframe.id);
+      if (aggN || state.timeframe.id === "1w" || state.timeframe.id === "1M") {
+        candles = aggregateCandles(candles, state.timeframe);
       }
       if (!candles || candles.length === 0) throw new Error(`Bitstamp: keine Kerzen für ${state.symbol.bitstampPair}`);
     } else if (state.symbol.type === "bybit") {
-      candles = await DataLayer.fetchBybitKlines(state.symbol.bybitSymbol, state.timeframe.bybitInterval, CONFIG.CANDLE_LIMIT);
+      candles = await DataLayer.fetchBybitKlines(state.symbol.bybitSymbol, aggN ? oneDay.bybitInterval : state.timeframe.bybitInterval, CONFIG.CANDLE_LIMIT);
       if (!candles || candles.length === 0) throw new Error(`Bybit: keine Kerzen für ${state.symbol.bybitSymbol} / ${state.timeframe.bybitInterval}`);
+      if (aggN) candles = aggregateCandles(candles, state.timeframe);
     } else if (state.symbol.type === "dominance") {
       candles = await DataLayer.fetchDominance(state.symbol.domCoin);
       if (!candles || candles.length === 0) throw new Error(`Dominanz: keine Daten für ${state.symbol.label}`);
-      if (state.timeframe.id === "1w" || state.timeframe.id === "1M") {
-        candles = aggregateCandles(candles, state.timeframe.id);
+      if (aggN || state.timeframe.id === "1w" || state.timeframe.id === "1M") {
+        candles = aggregateCandles(candles, state.timeframe);
       }
     } else if (state.symbol.id === "XAGUSD") {
       // Silber (Punkt 5): Momentaufnahme aus dem Repo + Zuwachs vom Worker,
@@ -1098,16 +1132,16 @@ async function loadData() {
       const snapAg = (CONFIG.HISTORY_SNAPSHOTS || {})[state.symbol.id];
       candles = await DataLayer.fetchHistoryCached(snapAg,
         (from) => DataLayer.fetchSilverHistory(from));
-      if (state.timeframe.id === "1w" || state.timeframe.id === "1M") {
-        candles = aggregateCandles(candles, state.timeframe.id);
+      if (aggN || state.timeframe.id === "1w" || state.timeframe.id === "1M") {
+        candles = aggregateCandles(candles, state.timeframe);
       }
     } else {
       // Gold: Momentaufnahme ab 1968 aus dem Repo, Zuwachs vom Worker.
       const snapAu = (CONFIG.HISTORY_SNAPSHOTS || {})[state.symbol.id];
       candles = await DataLayer.fetchHistoryCached(snapAu,
         (from) => DataLayer.fetchGoldHistory(from));
-      if (state.timeframe.id === "1w" || state.timeframe.id === "1M") {
-        candles = aggregateCandles(candles, state.timeframe.id);
+      if (aggN || state.timeframe.id === "1w" || state.timeframe.id === "1M") {
+        candles = aggregateCandles(candles, state.timeframe);
       }
     }
   } catch (err) {
@@ -1141,6 +1175,7 @@ async function loadData() {
   try {
     const last = (candles.at(-1) && candles.at(-1).close) || 0;
     const p = last >= 100 ? 0 : last >= 1 ? 2 : 4;
+    state.pricePrecision = p;
     chart.setPriceVolumePrecision(p, 0);
   } catch (e) {}
   scheduleTagDraw();
@@ -1181,7 +1216,7 @@ async function loadData() {
     // Anzeige ohne Live-Update.
     const lbl = state.symbol.type === "kraken" ? "Kraken" : state.symbol.type === "coinbase" ? "Coinbase" : "Bybit";
     setLive("offline", lbl);
-  } else if (state.symbol.type === "binance") {
+  } else if (state.symbol.type === "binance" && !state.timeframe.aggDays) {
     state.closeStream = DataLayer.openBinanceStream(
       state.symbol.id, state.timeframe.binanceInterval,
       (candle) => {
@@ -1205,7 +1240,10 @@ async function loadData() {
       }
     );
   } else {
-    setLive("offline", "Daily");
+    // Aggregierte Binance-Intervalle (12D/nD) und alle uebrigen Quellen ohne
+    // Kerzenstream: statische Anzeige. Bei aggregierten Intervallen zeigt das
+    // Statuslabel das Intervall (z. B. "12D") statt "Daily".
+    setLive("offline", state.timeframe.aggDays ? state.timeframe.label : "Daily");
   }
 }
 
@@ -1952,12 +1990,15 @@ async function refreshCompareData(entry) {
   try {
     let candles;
     const tf = state.timeframe;
+    // Aggregierte Intervalle: Vergleiche ebenfalls aus 1d holen (native Codes
+    // gibt es nicht) und weiter unten zu n-Tage-Kerzen zusammenfassen.
+    const aggN = tf.aggDays;
     if (entry.type === "coinbase") {
-      candles = await DataLayer.fetchCoinbaseKlines(entry.coinbaseProduct, tf.coinbaseInterval || 86400, CONFIG.CANDLE_LIMIT);
+      candles = await DataLayer.fetchCoinbaseKlines(entry.coinbaseProduct, aggN ? 86400 : (tf.coinbaseInterval || 86400), CONFIG.CANDLE_LIMIT);
     } else if (entry.type === "kraken") {
-      candles = await DataLayer.fetchKrakenKlines(entry.krakenPair, tf.krakenInterval || "1440", CONFIG.CANDLE_LIMIT);
+      candles = await DataLayer.fetchKrakenKlines(entry.krakenPair, aggN ? "1440" : (tf.krakenInterval || "1440"), CONFIG.CANDLE_LIMIT);
     } else if (entry.type === "bybit") {
-      candles = await DataLayer.fetchBybitKlines(entry.bybitSymbol, tf.bybitInterval || "D", CONFIG.CANDLE_LIMIT);
+      candles = await DataLayer.fetchBybitKlines(entry.bybitSymbol, aggN ? "D" : (tf.bybitInterval || "D"), CONFIG.CANDLE_LIMIT);
     } else if (entry.type === "stooq") {
       // Indizes und Fonds sind als Vergleich ausdruecklich erlaubt (siehe
       // renderCompareList). Ohne diesen Zweig landeten sie im
@@ -1973,9 +2014,12 @@ async function refreshCompareData(entry) {
       // Binance nutzt das reine Symbol. Sicherheitsnetz: sollte der Typ
       // einmal fehlen, wird nicht blind die interne id verschickt.
       const sym = entry.binanceSymbol || entry.id;
-      candles = await DataLayer.fetchBinanceKlines(sym, tf.binanceInterval, CONFIG.CANDLE_LIMIT);
+      candles = await DataLayer.fetchBinanceKlines(sym, aggN ? "1d" : tf.binanceInterval, CONFIG.CANDLE_LIMIT);
     }
     if (!candles || !candles.length) throw new Error("keine Kerzen erhalten");
+    // Vergleichsdaten an das aggregierte Hauptasset angleichen, sonst passen
+    // die Zeitstempel nicht zusammen (Ausrichtung in alignCompareSeries).
+    if (aggN) candles = aggregateCandles(candles, tf);
     entry.data = candles.map(c => ({ timestamp: c.timestamp, close: c.close }));
     window.__tvCompareAssets = state.compareAssets;
   } catch (e) {
@@ -2511,37 +2555,80 @@ function renderTfList() {
   // deshalb (wie besprochen) 2h nur bei Binance/Bybit.
   const bitstampMode = state.symbol.type === "bitstamp";
   const bitstampTf   = new Set(["15m", "1h", "4h", "1d", "1w", "1M"]);
+
+  // Intervallwechsel — von den festen Eintraegen UND vom freien Feld genutzt.
+  const selectTf = (tf) => {
+    // EWT-Strukturen haengen an dataIndex, nicht an Zeitstempeln.
+    // Nach einem Intervallwechsel zeigt derselbe Index auf ein voellig
+    // anderes Datum — die Zaehlungen saessen dann irgendwo. Deshalb
+    // raeumen, bevor die neuen Kerzen kommen.
+    try { clearEWT(); } catch (e) {}
+    state.timeframe = tf;
+    saveWorkspace();
+    document.getElementById("tfLabel").textContent = tf.label;
+    document.getElementById("tfPanel").classList.remove("open");
+    renderTfList();
+    loadData();
+    reloadAllCompareData();
+  };
+
   CONFIG.TIMEFRAMES.forEach(tf => {
     const item = document.createElement("div");
-    // Gold: nur Daily. Kraken: kein Monthly. Coinbase: nur bis Daily. Bybit: alle.
     // Gold: 1D, 1W und 1M. Woche und Monat entstehen aus den Tagesdaten
     // (aggregateCandles) — kuerzere Intervalle gibt es nicht, weil die
     // LBMA nur zwei Fixings je Handelstag veroeffentlicht.
     const goldTf = new Set(["1d", "1w", "1M"]);
-    const disabled = (goldMode && !goldTf.has(tf.id))
-                  || (krakenMode && !tf.krakenInterval)
-                  || (coinbaseMode && !tf.coinbaseInterval)
-                  || (bybitMode && !tf.bybitInterval)
-                  || (bitstampMode && !bitstampTf.has(tf.id));
+    // Aggregierte Intervalle (12D + freie nD) entstehen bei JEDER Quelle aus
+    // Tageskerzen — alle Quellen liefern 1d. Deshalb nie an den nativen
+    // Intervall-Codes scheitern lassen.
+    const disabled = tf.aggDays
+      ? false
+      : (goldMode && !goldTf.has(tf.id))
+        || (krakenMode && !tf.krakenInterval)
+        || (coinbaseMode && !tf.coinbaseInterval)
+        || (bybitMode && !tf.bybitInterval)
+        || (bitstampMode && !bitstampTf.has(tf.id));
     item.className = "dd-item" + (tf.id === state.timeframe.id ? " active" : "") + (disabled ? " disabled" : "");
     item.textContent = tf.label;
-    if (!disabled) item.addEventListener("click", () => {
-      // EWT-Strukturen haengen an dataIndex, nicht an Zeitstempeln.
-      // Nach einem Intervallwechsel zeigt derselbe Index auf ein voellig
-      // anderes Datum — die Zaehlungen saessen dann irgendwo. Deshalb
-      // raeumen, bevor die neuen Kerzen kommen.
-      try { clearEWT(); } catch (e) {}
-      state.timeframe = tf;
-      saveWorkspace();
-      document.getElementById("tfLabel").textContent = tf.label;
-      document.getElementById("tfPanel").classList.remove("open");
-      renderTfList();
-      loadData();
-      reloadAllCompareData();
-    });
+    if (!disabled) item.addEventListener("click", () => selectTf(tf));
     list.appendChild(item);
   });
+
+  // ---- Freies Intervall: ganze Tage ----
+  // Wird als "<n>d" gefuehrt und wie 12D aus 1d aggregiert (Raster ab
+  // Unix-Epoch). Nur die id wird gespeichert; resolveTimeframe baut das
+  // Objekt bei Workspace-/Layout-/Sync-Laden neu auf. Bei allen Quellen
+  // nutzbar, da aggregiert.
+  const row = document.createElement("div");
+  row.className = "dd-item tf-custom-row"
+    + (state.timeframe.custom ? " active" : "");
+  const curVal = state.timeframe.custom ? state.timeframe.aggDays : "";
+  row.innerHTML = '<span class="tf-custom-label">Frei</span>'
+    + '<input type="number" class="tf-custom-input" min="1" max="365" step="1" '
+    + 'inputmode="numeric" placeholder="n" value="' + curVal + '">'
+    + '<span class="tf-custom-unit">Tage</span>';
+  const input = row.querySelector(".tf-custom-input");
+  const applyCustom = () => {
+    const n = parseInt(input.value, 10);
+    if (!(n >= 1 && n <= 365)) { input.value = curVal; return; }
+    const tf = resolveTimeframe(n + "d");
+    if (tf) selectTf(tf);
+  };
+  // Klick/Tap ins Feld darf die Zeile nicht als Auswahl werten und das
+  // Panel nicht schliessen.
+  input.addEventListener("click", (e) => e.stopPropagation());
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); applyCustom(); }
+  });
+  input.addEventListener("change", applyCustom);
+  list.appendChild(row);
+
+  // Button-Text konsistent halten — auch beim Init und nach Layout-Laden,
+  // wenn ein freies Intervall (z. B. 15D) aktiv ist.
+  const tl = document.getElementById("tfLabel");
+  if (tl) tl.textContent = state.timeframe.label;
 }
+
 
 // Indikatoren in der vom Nutzer gewählten Reihenfolge (Punkt 6).
 // Unbekannte/neue Keys landen hinten in Config-Reihenfolge.
@@ -2801,7 +2888,14 @@ function formatTagValue(v, price) {
 }
 
 // Zeitpunkt, zu dem die aktuelle (letzte) Kerze schliesst — je Intervall.
-function candleCloseMs(lastTs, tfId) {
+function candleCloseMs(lastTs, tf) {
+  const tfId = (tf && tf.id) || tf;
+  // Aggregierte n-Tage-Intervalle: fester Raster ab Unix-Epoch (wie die
+  // Aggregation), Schluss = Beginn der naechsten n-Tage-Periode.
+  if (tf && tf.aggDays) {
+    const step = tf.aggDays * 86400000;
+    return Math.floor(lastTs / step) * step + step;
+  }
   const d = new Date(lastTs);
   switch (tfId) {
     case "15m": return lastTs + 15 * 60000;
@@ -2816,7 +2910,7 @@ function candleCloseMs(lastTs, tfId) {
 
 // Restzeit bis Kerzenschluss, Einheiten je Intervall (Punkt D+M5):
 // 1M→Wochen/Tage, 1W→Tage/Stunden, 1D & 4h→Stunden/Minuten, 1h & 15m→Minuten/Sekunden.
-function formatCountdown(remainMs, tfId) {
+function formatCountdown(remainMs, tf) {
   if (remainMs == null || remainMs <= 0) return null;
   const s = Math.floor(remainMs / 1000);
   const days = Math.floor(s / 86400);
@@ -2824,6 +2918,9 @@ function formatCountdown(remainMs, tfId) {
   const mins = Math.floor((s % 3600) / 60);
   const secs = s % 60;
   const p = (n) => String(n).padStart(2, "0");
+  const tfId = (tf && tf.id) || tf;
+  // Aggregierte n-Tage-Intervalle: Restzeit in Tagen/Stunden wie bei 1w.
+  if (tf && tf.aggDays) return days + "d " + p(hours) + "h";
   switch (tfId) {
     case "1M": return Math.floor(days / 7) + "w " + (days % 7) + "d";
     case "1w": return days + "d " + p(hours) + "h";
@@ -2939,8 +3036,8 @@ function drawIndicatorTags() {
     const lsize = cs.lastSize || 12;
     drawTag(y, formatTagValue(k.close, true), bg, lsize, "candle_pane");
     // Zweite Zeile: Countdown bis Kerzenschluss, direkt unter dem Preis-Tag.
-    const closeMs = candleCloseMs(lastTs, state.timeframe.id);
-    const cd = closeMs != null ? formatCountdown(closeMs - Date.now(), state.timeframe.id) : null;
+    const closeMs = candleCloseMs(lastTs, state.timeframe);
+    const cd = closeMs != null ? formatCountdown(closeMs - Date.now(), state.timeframe) : null;
     if (cd && y != null && isFinite(y)) {
       // Hinterlegt wie der Preis-Tag: gleiche Up/Down-Farbe (bg).
       drawTag(y + (lsize + 6), cd, bg, lsize - 1, "candle_pane");
@@ -4219,12 +4316,16 @@ function openOverlayMenu(overlay, event) {
   const isVert   = overlay.name === "verticalStraightLine";
   const isRect   = overlay.name === "rectangle";
   const p0 = (overlay.points && overlay.points[0]) || {};
+  // Nachkommastellen an die Asset-Preisskala angleichen (P2-Regel in loadData:
+  // >=100 -> 0, >=1 -> 2, sonst 4). Sonst zeigen die Felder den rohen Wert mit
+  // deutlich mehr Stellen als die Achse. Fallback 2, falls noch nichts geladen.
+  const prec = (typeof state.pricePrecision === "number") ? state.pricePrecision : 2;
   if (priceRow) priceRow.style.display = isHoriz ? "" : "none";
   if (dateRow)  dateRow.style.display  = isVert  ? "" : "none";
   if (rectRow)  rectRow.style.display  = isRect  ? "" : "none";
 
   if (isHoriz && priceEl && p0.value != null) {
-    priceEl.value = p0.value;
+    priceEl.value = Number(p0.value).toFixed(prec);
     priceEl.onchange = () => {
       const v = parseFloat(priceEl.value);
       if (!isFinite(v)) return;
@@ -4261,8 +4362,8 @@ function openOverlayMenu(overlay, event) {
     const pv0 = (overlay.points[0] || {}).value;
     const pv1 = (overlay.points[1] || {}).value;
     if (pv0 != null && pv1 != null) {
-      topEl.value = Math.max(pv0, pv1);
-      botEl.value = Math.min(pv0, pv1);
+      topEl.value = Math.max(pv0, pv1).toFixed(prec);
+      botEl.value = Math.min(pv0, pv1).toFixed(prec);
     }
     const applyRect = () => {
       const t = parseFloat(topEl.value), b = parseFloat(botEl.value);
@@ -5481,15 +5582,15 @@ function switchSymbol(sym) {
   // sind Kerzen wieder inhaltsleer; das ist der bewusst in Kauf genommene
   // Preis dafuer, dass der Chart in dem Fall ueberhaupt Daten zeigt.
   // Kraken: Falls aktives TF kein krakenInterval hat (z.B. 1M), auf 1D wechseln
-  if (sym.type === "kraken" && !state.timeframe.krakenInterval) {
+  if (sym.type === "kraken" && !state.timeframe.aggDays && !state.timeframe.krakenInterval) {
     state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
   }
   // Coinbase: kein W/M — auf 1D wechseln falls nötig
-  if (sym.type === "coinbase" && !state.timeframe.coinbaseInterval) {
+  if (sym.type === "coinbase" && !state.timeframe.aggDays && !state.timeframe.coinbaseInterval) {
     state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
   }
   // Bybit: alle TFs unterstützt, aber sicherheitshalber Guard
-  if (sym.type === "bybit" && !state.timeframe.bybitInterval) {
+  if (sym.type === "bybit" && !state.timeframe.aggDays && !state.timeframe.bybitInterval) {
     state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
   }
   renderTfList();
@@ -5537,6 +5638,11 @@ chart.setLoadDataCallback(async ({ type, data, callback }) => {
   if (type !== "forward" || !data) { callback([], false); return; }
   const exType = state.symbol.type;
   if (exType !== "binance" && exType !== "kraken" && exType !== "coinbase" && exType !== "bybit") { callback([], false); return; }
+  // Aggregierte Intervalle (12D/nD) entstehen aus dem initialen 1d-Load.
+  // Aeltere Kerzen nachzuladen wuerde eine Re-Aggregation ueber die
+  // Rastergrenze hinweg erfordern; die Erstladung (bis CANDLE_LIMIT Tage)
+  // deckt die Historie ab. Deshalb hier kein Nachladen.
+  if (state.timeframe.aggDays) { callback([], false); return; }
 
   setStatus("Lade ältere Kerzen …");
   try {
@@ -6911,7 +7017,7 @@ async function applyNamedLayout(name) {
   state.overlaysDirty = false;   // frisch geladen = sauber (Punkt 8)
 
   state.symbol      = l.symbol || state.symbol;
-  state.timeframe   = CONFIG.TIMEFRAMES.find(t => t.id === l.timeframeId) || state.timeframe;
+  state.timeframe   = resolveTimeframe(l.timeframeId) || state.timeframe;
   state.chartType   = l.chartType || state.chartType;
   state.legendCollapsed = !!l.legendCollapsed;
   if (l.watchlists) { state.watchlists = l.watchlists; state.activeWatchlist = l.activeWatchlist || Object.keys(l.watchlists)[0]; }
@@ -7469,7 +7575,18 @@ document.getElementById("faqModal").addEventListener("click", (e) => {
     let workspace = null, layouts = null;
     try { workspace = JSON.parse(localStorage.getItem("tv_workspace") || "null"); } catch (e) {}
     try { layouts   = JSON.parse(localStorage.getItem("tv_layouts")   || "null"); } catch (e) {}
-    return { workspace, layouts };
+    // Indikator-Einstellungen liegen je Indikator in eigenen Schluesseln
+    // (tv4_ind_<key>, siehe settings.js). Ohne sie kommen auf einem anderen
+    // Geraet nur die Default-Parameter an — genau der gemeldete Fehler. Alle
+    // tv4_ind_*-Schluessel mitbuendeln.
+    const indicators = {};
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf("tv4_ind_") === 0) indicators[k] = localStorage.getItem(k);
+      }
+    } catch (e) {}
+    return { workspace, layouts, indicators };
   };
 
   saveBtn.addEventListener("click", async () => {
@@ -7508,6 +7625,15 @@ document.getElementById("faqModal").addEventListener("click", (e) => {
       try {
         if (bundle.workspace != null) localStorage.setItem("tv_workspace", JSON.stringify(bundle.workspace));
         if (bundle.layouts   != null) localStorage.setItem("tv_layouts",   JSON.stringify(bundle.layouts));
+        // Indikator-Einstellungen zurueckschreiben (Gegenstueck zu buildBundle).
+        // Aeltere Codes ohne indicators-Feld: nichts zu tun, kein Fehler.
+        if (bundle.indicators && typeof bundle.indicators === "object") {
+          for (const k of Object.keys(bundle.indicators)) {
+            if (k.indexOf("tv4_ind_") === 0) {
+              try { localStorage.setItem(k, bundle.indicators[k]); } catch (e) {}
+            }
+          }
+        }
         localStorage.setItem("tv_synccode", code);
       } catch (e) {}
       setStatusMsg("Geladen. Seite wird neu geladen …", "ok");
@@ -7790,7 +7916,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // nichts davon ausgeführt — das DOM bleibt dort unverändert.
 // ════════════════════════════════════════════════════════════════════
 
-const TV_BUILD = "m86";
+const TV_BUILD = "m88";
 
 window.__tvBuild = TV_BUILD;
 
