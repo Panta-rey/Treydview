@@ -245,6 +245,7 @@
       const colorVAH  = ext.colorVAH  || "#e8b64c";
       const colorVAL  = ext.colorVAL  || "#e8b64c";
       const colorPOC  = ext.colorPOC  || "#ffffff";
+      const pocDashed = ext.pocDashed !== false;   // default: gestrichelt
 
       // Preis-Range
       let pMin = Infinity, pMax = -Infinity;
@@ -356,7 +357,7 @@
         figures.push({
           type: "line",
           attrs: { coordinates: [{ x: xLeft, y: yPOC }, { x: xRight, y: yPOC }] },
-          styles: { style: "dashed", color: colorPOC, size: 1.5, dashedValue: [4, 3], smooth: false },
+          styles: { style: pocDashed ? "dashed" : "solid", color: colorPOC, size: 1.5, dashedValue: [4, 3], smooth: false },
           ignoreEvent: true,
         });
       }

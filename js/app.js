@@ -3324,6 +3324,26 @@ function findOverlayNear(x, y, lineTol, pointTol) {
       continue;
     }
 
+    // simpleAnnotation (Textfeld): KLC rendert Linie, Pfeil und Text mit
+    // ignoreEvent — nur der Ankerpunkt (die Kerze) ist normal treffbar. Damit
+    // man auch auf Linie und Text (oberhalb der Kerze) klicken/tippen kann,
+    // hier eine eigene Zone. Geometrie aus KLC: Ankerpunkt p; Linie p.y-6..-56;
+    // Text-Baseline p.y-61, zentriert um p.x, baseline unten.
+    if (ov.name === "simpleAnnotation" && pts.length >= 1) {
+      const p = pts[0];
+      const txt = (typeof ov.extendData === "string") ? ov.extendData : "";
+      const fs = (ov.styles && ov.styles.text && ov.styles.text.size) || 12;
+      const halfW = Math.max(pointTol, txt.length * fs * 0.34);   // ~monospace-Breite/2
+      const inBox    = (x >= p.x - halfW && x <= p.x + halfW && y >= p.y - 61 - fs - lineTol && y <= p.y - 56 + lineTol);
+      const inLine   = (Math.abs(x - p.x) <= lineTol + 3 && y >= p.y - 56 && y <= p.y + pointTol);
+      const inAnchor = (Math.hypot(x - p.x, y - p.y) <= pointTol);
+      if (inBox || inLine || inAnchor) {
+        const dist = Math.abs(x - p.x);
+        if (!best || dist < best.dist) best = { overlay: ov, pointIndex: 0, dist };
+      }
+      continue;
+    }
+
     // Long/Short: Die drei Anker liegen auf dem Handy alle auf demselben
     // Zeitstempel, also auf einer einzigen senkrechten Linie. Die sichtbare
     // Zeichnung ist aber ein Kasten — overlays.js zieht Linien und
@@ -3542,6 +3562,24 @@ function findOverlayNear(x, y, lineTol, pointTol) {
     }
   }
   return best;
+}
+
+// Desktop: Rechtsklick auf Linie oder Text eines Textfelds (nicht nur den
+// Ankerpunkt) öffnet das Stilmenü. KLC erfasst per Rechtsklick nur den
+// Ankerpunkt (alle anderen Figuren sind ignoreEvent), deshalb hier ergänzen.
+// Capture-Phase + stopPropagation: greift vor KLC, nur bei Textfeld-Treffern.
+if (chartEl) {
+  chartEl.addEventListener("contextmenu", (e) => {
+    if (tvIsMobile()) return;
+    const rect = chartEl.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    let hit = null;
+    try { hit = findOverlayNear(x, y, 8, 20); } catch (err) {}
+    if (hit && hit.overlay && hit.overlay.name === "simpleAnnotation") {
+      e.preventDefault(); e.stopPropagation();
+      openTextMenu(hit.overlay, { pointerCoordinate: { x, y } });
+    }
+  }, true);
 }
 
 function captureDrawing(id) {
@@ -4053,10 +4091,6 @@ function buildOverlayConfig(overlayName) {
         // zusätzlich Farbe) — das generische styles.line greift bei diesen
         // gefüllten Overlays nicht (Punkt 4/5).
         openRangeMenu(e.overlay, e);
-      } else if (overlayName === "simpleAnnotation") {
-        // Textfeld: eigenes schlankes Menü (Text ändern, Farbe, Grösse,
-        // Löschen) — das Linien-Menü passt für eine Notiz nicht.
-        openTextMenu(e.overlay, e);
       } else {
         openOverlayMenu(e.overlay, e);
       }
@@ -4252,6 +4286,9 @@ quiet(() => {
 function openOverlayMenu(overlay, event) {
   // Long/Short bekommt sein eigenes, schlankes Menue.
   if (overlay && overlay.name === "positionTool") return openPositionMenu(overlay, event);
+  // Textfeld: eigenes schlankes Menü (Text/Farbe/Grösse/Löschen). Zentral hier,
+  // damit ALLE Aufrufer greifen — Desktop-Rechtsklick UND Mobil-Tap (doStyle).
+  if (overlay && overlay.name === "simpleAnnotation") return openTextMenu(overlay, event);
   const menu = document.getElementById("overlayMenu");
   if (!menu) return;
   const { x, y } = menuPosition(event, 190, 230);
@@ -4714,6 +4751,7 @@ function openFrvpMenu(overlay, event) {
   document.getElementById("frvpShowVAH").checked = ext.showVAH !== false;
   document.getElementById("frvpShowVAL").checked = ext.showVAL !== false;
   document.getElementById("frvpShowPOC").checked = ext.showPOC !== false;
+  document.getElementById("frvpPocDashed").checked = ext.pocDashed !== false;
   document.getElementById("frvpColorUp").value   = ext.colorUp   ? rgbToHex(ext.colorUp)   : "#3fb68b";
   document.getElementById("frvpColorDown").value = ext.colorDown ? rgbToHex(ext.colorDown)  : "#d05e5e";
   document.getElementById("frvpColorVAH").value  = ext.colorVAH  ? rgbToHex(ext.colorVAH)  : "#e8b64c";
@@ -4754,6 +4792,7 @@ function openFrvpMenu(overlay, event) {
       showVAH:   document.getElementById("frvpShowVAH").checked,
       showVAL:   document.getElementById("frvpShowVAL").checked,
       showPOC:   document.getElementById("frvpShowPOC").checked,
+      pocDashed: document.getElementById("frvpPocDashed").checked,
       colorUp:   hexToRgba(document.getElementById("frvpColorUp").value,   op),
       colorDown: hexToRgba(document.getElementById("frvpColorDown").value, op),
       colorVAH:    document.getElementById("frvpColorVAH").value,
