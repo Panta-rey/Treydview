@@ -2604,8 +2604,8 @@ function renderTfList() {
     + (state.timeframe.custom ? " active" : "");
   const curVal = state.timeframe.custom ? state.timeframe.aggDays : "";
   row.innerHTML = '<span class="tf-custom-label">Frei</span>'
-    + '<input type="number" class="tf-custom-input" min="1" max="365" step="1" '
-    + 'inputmode="numeric" placeholder="n" value="' + curVal + '">'
+    + '<input type="text" class="tf-custom-input" inputmode="numeric" '
+    + 'pattern="[0-9]*" maxlength="3" placeholder="n" value="' + curVal + '">'
     + '<span class="tf-custom-unit">Tage</span>';
   const input = row.querySelector(".tf-custom-input");
   const applyCustom = () => {
