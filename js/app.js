@@ -3297,13 +3297,26 @@ function findOverlayNear(x, y, lineTol, pointTol) {
     // nur den Zeitbereich (beide auf derselben Höhe, der Bildschirmmitte
     // beim Zeichnen) — die sichtbaren Balken erstrecken sich aber über
     // den gesamten Kursbereich. Die normale Linien-Trefferzone würde hier
-    // fast nie treffen. Für FRVP zählt deshalb die horizontale Nähe zum
-    // Zeitfenster, die Höhe spielt keine Rolle.
+    // fast nie treffen. Deshalb zaehlt fuer FRVP die Naehe zum Balken-Rechteck:
+    // horizontal vom linken Rand bis zur Balkenbreite (width% des Fensters),
+    // vertikal begrenzt durch die gemerkten Profil-Preisgrenzen (window.__tvFrvpBounds).
     if (ov.name === "frvp" && pts.length >= 2) {
       const xs = pts.map(p => p.x);
-      const left = Math.min(...xs) - lineTol, right = Math.max(...xs) + lineTol;
-      if (x >= left && x <= right) {
-        const distX = Math.min(Math.abs(x - Math.min(...xs)), Math.abs(x - Math.max(...xs)));
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const widthPct = (ov.extendData && ov.extendData.width) || 30;
+      const barRight = minX + (maxX - minX) * (widthPct / 100);
+      let yTop = null, yBot = null;
+      const b = (typeof window !== "undefined" && window.__tvFrvpBounds) ? window.__tvFrvpBounds[ov.id] : null;
+      if (b) {
+        const ts0 = ov.points[0].timestamp;
+        const pa = toPx({ timestamp: ts0, value: b.pMax });
+        const pb = toPx({ timestamp: ts0, value: b.pMin });
+        if (pa && pb) { yTop = Math.min(pa.y, pb.y); yBot = Math.max(pa.y, pb.y); }
+      }
+      const inX = (x >= minX - lineTol && x <= barRight + lineTol);
+      const inY = (yTop == null) ? true : (y >= yTop - lineTol && y <= yBot + lineTol);
+      if (inX && inY) {
+        const distX = Math.abs(x - minX);
         if (!best || distX < best.dist) {
           best = { overlay: ov, pointIndex: -1, dist: distX };
         }
@@ -3311,12 +3324,14 @@ function findOverlayNear(x, y, lineTol, pointTol) {
       continue;
     }
 
-    // barPattern: wie FRVP eine Fläche — horizontale Nähe zum Zeitfenster zählt.
+    // barPattern: ein Rechteck mit zwei Eck-Griffen — hier zaehlt die Naehe zum
+    // Rechteck (horizontal UND vertikal), damit ein Tap darunter nicht mehr trifft.
     if (ov.name === "barPattern" && pts.length >= 2) {
-      const xs = pts.map(p => p.x);
-      const left = Math.min(...xs) - lineTol, right = Math.max(...xs) + lineTol;
-      if (x >= left && x <= right) {
-        const distX = Math.min(Math.abs(x - Math.min(...xs)), Math.abs(x - Math.max(...xs)));
+      const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const minY = Math.min(...ys), maxY = Math.max(...ys);
+      if (x >= minX - lineTol && x <= maxX + lineTol && y >= minY - lineTol && y <= maxY + lineTol) {
+        const distX = Math.min(Math.abs(x - minX), Math.abs(x - maxX));
         if (!best || distX < best.dist) {
           best = { overlay: ov, pointIndex: -1, dist: distX };
         }
@@ -3964,7 +3979,9 @@ function mobileDragGuards() {
 // einzeln zu behandeln. Fuer alle anderen Werkzeuge bleibt der
 // Desktop-Zug von KLineCharts unveraendert (Regel 1).
 function dragGuardsFor(overlayName) {
-  if (overlayName === "positionTool") return { ...DRAG_GUARDS };
+  // positionTool und FRVP werden nie verschoben — auch am Desktop nicht.
+  // FRVP: nachträgliches Verschieben ist unnötig und war zudem fehleranfällig.
+  if (overlayName === "positionTool" || overlayName === "frvp") return { ...DRAG_GUARDS };
   return mobileDragGuards();
 }
 
@@ -4511,11 +4528,19 @@ function openTextMenu(overlay, event) {
     : (overlay.extendData && overlay.extendData.text) || "";
   const txtEl  = document.getElementById("tmText");
   const colEl  = document.getElementById("tmColor");
+  const bgEl   = document.getElementById("tmBgColor");
   const sizeEl = document.getElementById("tmSize");
   const sizeVal = document.getElementById("tmSizeVal");
   txtEl.value = curText;
   const ts = (overlay.styles && overlay.styles.text) || {};
   colEl.value = parseColor(ts.color || "#e8b64c").hex;
+  // Hintergrund: nur aktiv, wenn schon eine sichtbare (nicht-transparente)
+  // Farbe gesetzt ist. So bleiben bestehende Textfelder ohne Box unveraendert,
+  // bis man den Hintergrund-Regler bewusst anfasst.
+  const hasBg = !!(ts.backgroundColor && ts.backgroundColor !== "transparent"
+                   && !/rgba\([^)]*,\s*0\s*\)/.test(ts.backgroundColor));
+  bgEl.value = hasBg ? parseColor(ts.backgroundColor).hex : "#1a1a1a";
+  let bgOn = hasBg;
   const sz = ts.size || 14;
   sizeEl.value = sz;
   sizeVal.textContent = sz;
@@ -4525,6 +4550,16 @@ function openTextMenu(overlay, event) {
     if (!ov) return;
     sizeVal.textContent = sizeEl.value;
     const text = { color: colEl.value, size: parseInt(sizeEl.value, 10) || 14 };
+    if (bgOn) {
+      text.backgroundColor = bgEl.value;
+      text.paddingLeft = 6; text.paddingRight = 6;
+      text.paddingTop = 3;  text.paddingBottom = 3;
+      text.borderRadius = 3;
+    } else {
+      text.backgroundColor = "rgba(0,0,0,0)";
+      text.paddingLeft = 0; text.paddingRight = 0;
+      text.paddingTop = 0;  text.paddingBottom = 0;
+    }
     try {
       chart.overrideOverlay({ id: _textTargetId, extendData: txtEl.value, styles: { text } });
       const rec = state.drawings.find(d => d.id === _textTargetId);
@@ -4533,6 +4568,7 @@ function openTextMenu(overlay, event) {
   };
   txtEl.oninput = apply;
   colEl.oninput = apply;
+  bgEl.oninput = () => { bgOn = true; apply(); };
   sizeEl.oninput = apply;
 
   const { x, y } = menuPosition(event, 210, 210);
@@ -9032,7 +9068,8 @@ quiet(() => {
       // kommt gar kein Zug zustande. Ein "mode: null" haette nicht gereicht
       // — der Zweig unten faellt sonst in die Alles-Verschieben-Behandlung.
       if (dragCandidate.pointIndex < 0 &&
-          dragCandidate.overlay.name === "positionTool") {
+          (dragCandidate.overlay.name === "positionTool" ||
+           dragCandidate.overlay.name === "frvp")) {
         dragCandidate = null;
         touchMoved = true;
         return;

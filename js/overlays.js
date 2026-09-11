@@ -301,6 +301,13 @@
       const yBottom_px = yAxis.convertToPixel(pMin);
       const profileH   = Math.abs(yBottom_px - yTop_px);
 
+      // Profil-Preisgrenzen fuer die Mobil-Trefferpruefung merken. findOverlayNear
+      // kennt sonst nur die (flachen) Ankerpunkte und wuerde ueberall in der
+      // Zeitspanne treffen — auch unterhalb des Profils.
+      if (typeof window !== "undefined" && overlay && overlay.id != null) {
+        (window.__tvFrvpBounds || (window.__tvFrvpBounds = {}))[overlay.id] = { pMin, pMax };
+      }
+
       const figures = [];
 
       // ---- Histogramm-Balken ----
