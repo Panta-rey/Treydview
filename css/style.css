@@ -1,5 +1,8 @@
 /* TreydView */
 :root, [data-theme="dark"] {
+  /* Echte, gemessene Topbar-Hoehe (app.js syncTopbarHeight). Fallback 53px
+     nur fuer den allerersten Sekundenbruchteil vor dem ersten Messen. */
+  --tv-topbar-h: 53px;
   --bg:        #0d1117;
   --bg-raised: #141a23;
   --bg-hover:  #1c2333;
@@ -88,7 +91,7 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 @media(prefers-reduced-motion:reduce){.live-badge.live .dot{animation:none}}
 
 /* ---- Workspace ---- */
-.workspace{display:flex;height:calc(100% - 53px);}
+.workspace{display:flex;height:calc(100% - var(--tv-topbar-h, 53px));}
 .chart-col{display:flex;flex-direction:column;flex:1;min-width:0;}
 
 /* ---- Drawbar ---- */

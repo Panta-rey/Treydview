@@ -5219,6 +5219,27 @@ quiet(() => {
   if (sl) new ResizeObserver(() => resize()).observe(sl);
 }, "statusline resize");
 
+// Bug: Bei verkleinertem Desktop-Fenster (z. B. Brave nicht maximiert) bricht
+// die Topbar per flex-wrap auf zwei Zeilen um, sobald nicht mehr alle Buttons
+// in eine Zeile passen. Die CSS-Regel .workspace ging bisher von IMMER genau
+// einer Zeile aus (fest "53px" abgezogen) — bei zwei Zeilen ragte der Chart
+// dann über den Viewport hinaus und wurde unten (Zeitachse!) von
+// html,body{overflow:hidden} abgeschnitten.
+// Fix: die WIRKLICHE Topbar-Höhe messen und in --tv-topbar-h ablegen, statt
+// eine feste Zeilenzahl zu raten. Läuft bei jeder Breite/jedem Zoom-Level;
+// der bestehende .workspace-ResizeObserver oben reagiert automatisch mit
+// (chart.resize()), sobald sich dadurch die Chartfläche ändert.
+function syncTopbarHeight() {
+  const tb = document.querySelector(".topbar");
+  if (!tb) return;
+  const h = Math.ceil(tb.getBoundingClientRect().height);
+  if (h > 0) document.documentElement.style.setProperty("--tv-topbar-h", h + "px");
+}
+quiet(() => {
+  const tb = document.querySelector(".topbar");
+  if (tb) new ResizeObserver(syncTopbarHeight).observe(tb);
+}, "topbar resize");
+
 // ---------- Touch-Support (Mobile) ----------
 // KLineCharts hat eingeschränkten Touch-Support. Wir ergänzen:
 // - Pinch-to-Zoom (zwei Finger) via touchstart/touchmove
