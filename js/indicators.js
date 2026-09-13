@@ -184,12 +184,32 @@ function resampleCloses(dataList, tfId) {
 // Liefert { closes, project }: closes = Basis für die MA-Rechnung (aggregiert
 // oder Chart-Closes), project = bildet eine auf closes gerechnete Serie zurück
 // auf die Chartkerzen ab. Bei "auto"/zu feinem Intervall: Identität.
-function maContext(dataList, tf) {
+// Diagnose fuer Bug 2 (SMA/EMA/BMSB mit "eigenem Intervall" zeigen nach dem
+// Oeffnen der App manchmal keine Linie, bis das Chart-Intervall gewechselt
+// wird — bisher nicht reproduzierbar aus dem Code allein hergeleitet).
+// Gedrosselt auf max. 1 Zeile alle 5s PRO Indikator (Live-Ticks wuerden
+// sonst die Konsole fluten). Nur aktiv, wenn ein eigenes Intervall gesetzt
+// ist — im Normalbetrieb (tf="auto") komplett still. Nach Diagnose wieder
+// entfernbar.
+const _maCtxLastLog = {};
+function maContext(dataList, tf, label) {
   const closes = dataList.map(d => d.close);
   if (!tf || tf === "auto" || !_TF_MS[tf]) return { closes, project: (s) => s };
   const cMs = chartIntervalMs(dataList);
-  if (!(cMs > 0) || _TF_MS[tf] <= cMs) return { closes, project: (s) => s };
-  const agg = resampleCloses(dataList, tf);
+  const useIdentity = !(cMs > 0) || _TF_MS[tf] <= cMs;
+  const agg = useIdentity ? null : resampleCloses(dataList, tf);
+  const key = label || "?";
+  const now = Date.now();
+  if (now - (_maCtxLastLog[key] || 0) > 5000) {
+    _maCtxLastLog[key] = now;
+    console.log(
+      "[TreydView][ma-tf]", key,
+      "tf=" + tf, "candles=" + dataList.length, "cMs=" + cMs,
+      useIdentity ? "pfad=identity(nativ>=tf)"
+        : (agg ? "pfad=aggregiert buckets=" + agg.aggClose.length : "pfad=aggregat-fehlgeschlagen(resample=null)")
+    );
+  }
+  if (useIdentity) return { closes, project: (s) => s };
   if (!agg) return { closes, project: (s) => s };
   // Erster Bar-Index je Bucket — für die Glättung (Punkt D+M1).
   const bucketStart = [];
@@ -292,7 +312,7 @@ klinecharts.registerIndicator({
   ],
   calc: (dataList, indicator) => {
     const [smaP, emaP, tf] = indicator.calcParams;
-    const { closes, project } = maContext(dataList, tf);
+    const { closes, project } = maContext(dataList, tf, indicator.name);
     const emaArr = project(emaSeries(closes, emaP));
     const smaRaw = closes.map((_, i) => {
       if (i < smaP - 1) return null;
@@ -714,7 +734,7 @@ klinecharts.registerIndicator({
   ],
   calc: (dataList, indicator) => {
     const [p1, p2, p3, p4, tf] = indicator.calcParams;
-    const { closes, project } = maContext(dataList, tf);
+    const { closes, project } = maContext(dataList, tf, indicator.name);
     const s1 = project(smaSeries2(closes, p1)), s2 = project(smaSeries2(closes, p2));
     const s3 = project(smaSeries2(closes, p3)), s4 = project(smaSeries2(closes, p4));
     return dataList.map((_, i) => ({
@@ -739,7 +759,7 @@ klinecharts.registerIndicator({
   calc: (dataList, indicator) => {
     const params = indicator.calcParams;
     const tf = params[4];
-    const { closes, project } = maContext(dataList, tf);
+    const { closes, project } = maContext(dataList, tf, indicator.name);
     const results = [params[0], params[1], params[2], params[3]].map(p => project(emaSeries(closes, p)));
     return dataList.map((_, i) => ({
       ema1: results[0][i] ?? undefined, ema2: results[1][i] ?? undefined,
