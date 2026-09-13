@@ -200,8 +200,14 @@ function maContext(dataList, tf, label) {
   const agg = useIdentity ? null : resampleCloses(dataList, tf);
   const key = label || "?";
   const now = Date.now();
-  if (now - (_maCtxLastLog[key] || 0) > 5000) {
-    _maCtxLastLog[key] = now;
+  const prev = _maCtxLastLog[key];
+  // Bei einem echten Sprung der Kerzenzahl (leer -> geladen, oder Symbol-/
+  // Intervall-Wechsel) SOFORT loggen, auch innerhalb der 5s-Drossel — sonst
+  // verschluckt die Drossel genau den zweiten, entscheidenden Aufruf (mit
+  // echten Daten), der kurz nach dem ersten (leeren) Aufruf folgt.
+  const jumped = !prev || prev.n !== dataList.length;
+  if (jumped || now - prev.t > 5000) {
+    _maCtxLastLog[key] = { t: now, n: dataList.length };
     console.log(
       "[TreydView][ma-tf]", key,
       "tf=" + tf, "candles=" + dataList.length, "cMs=" + cMs,
