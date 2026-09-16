@@ -1057,6 +1057,42 @@ function aggregateCandles(candles, tf) {
   return out;
 }
 
+// Native ms je Chart-Intervall — muss mit _TF_MS in indicators.js (maContext)
+// uebereinstimmen. Wird hier separat gefuehrt, um loadData() nicht an
+// indicators.js zu koppeln.
+const _NATIVE_MS_FOR_LOAD = { "15m": 9e5, "1h": 36e5, "4h": 144e5, "1d": 864e5, "1w": 6048e5, "1M": 2592e6 };
+
+// Wie viele native Kerzen braucht das groebste AKTIVE "eigene Intervall"
+// (SMA/EMA/BMSB), damit dessen laengste Periode (200) von Anfang an sichtbar
+// ist — statt erst nach manuellem Zurueckscrollen oder Intervallwechsel
+// (siehe Bug: SMA200 auf 1W-Eigenintervall im 4h-Chart fehlte anfangs, weil
+// die initial geladenen Kerzen nicht fuer 200 Wochen-Buckets reichten).
+// Greift NUR, wenn ein aktiver Indikator tatsaechlich ein Intervall gewaehlt
+// hat, das groeber ist als das Chart selbst — sonst bleibt CONFIG.CANDLE_LIMIT
+// unveraendert (keine unnoetige Mehrfracht fuer alle anderen Faelle).
+function neededCandlesForOwnIntervals(chartTfId) {
+  const nativeMs = _NATIVE_MS_FOR_LOAD[chartTfId];
+  if (!nativeMs) return 0;   // aggregierte (12D/frei) oder unbekannte Intervalle: unveraendert
+  const MAX_PERIOD = 200;    // groesste Periode ueber SMA/EMA (200); BMSB (~21) dominiert nicht
+  const MARGIN = 1.15;       // 15% Puffer fuer unvollstaendige Randbuckets
+  // Deckel gegen extreme Kombinationen (z. B. 15m-Chart + eigenes Intervall
+  // 1 Monat braeuchte ueber 600000 Kerzen — das waere ein sehr langsamer
+  // Ladevorgang). 50000 deckt alle realistischen Kombinationen bis 4h→1M
+  // (~41400) und 1h→1w (~38640) ab; darueber bleibt es beim alten Verhalten
+  // (Diagnose-Log zeigt dann weiterhin, ob die Historie knapp ist).
+  const MAX_CANDLES = 50000;
+  let need = 0;
+  for (const key of ["sma", "ema", "bmsb"]) {
+    if (!state.active.has(key)) continue;
+    const tf = Settings.get(key).inputs.tf;
+    const tfMs = _NATIVE_MS_FOR_LOAD[tf];
+    if (!tfMs || tfMs <= nativeMs) continue;   // "auto" oder gleich/feiner als Chart: keine Aggregation noetig
+    const candlesForThis = Math.ceil((MAX_PERIOD * tfMs / nativeMs) * MARGIN);
+    if (candlesForThis > need) need = candlesForThis;
+  }
+  return Math.min(need, MAX_CANDLES);
+}
+
 async function loadData() {
   const seq = ++_loadSeq;
   if (state.closeStream) { state.closeStream(); state.closeStream = null; }
@@ -1069,6 +1105,12 @@ async function loadData() {
   // zusammengefasst. oneDay liefert die 1d-Codes der jeweiligen Boerse.
   const aggN = state.timeframe.aggDays;
   const oneDay = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
+  // Genug Kerzen fuer aktive "eigene Intervall"-Indikatoren (SMA/EMA/BMSB)
+  // laden, statt der festen CONFIG.CANDLE_LIMIT — siehe neededCandlesForOwnIntervals.
+  const candleLimit = Math.max(
+    CONFIG.CANDLE_LIMIT,
+    aggN ? 0 : neededCandlesForOwnIntervals(state.timeframe.id)
+  );
   try {
     if (state.symbol.type === "binance") {
       // Momentaufnahme aus dem Repo + Zuwachs direkt von Binance.
@@ -1088,14 +1130,14 @@ async function loadData() {
           (from) => DataLayer.fetchBinanceKlinesSince(
             state.symbol.id, bnInterval, from));
       } else {
-        candles = await DataLayer.fetchBinanceKlines(state.symbol.id, bnInterval, CONFIG.CANDLE_LIMIT);
+        candles = await DataLayer.fetchBinanceKlines(state.symbol.id, bnInterval, candleLimit);
       }
       if (aggN) candles = aggregateCandles(candles, state.timeframe);
     } else if (state.symbol.type === "kraken") {
-      candles = await DataLayer.fetchKrakenKlines(state.symbol.krakenPair, aggN ? oneDay.krakenInterval : state.timeframe.krakenInterval, CONFIG.CANDLE_LIMIT);
+      candles = await DataLayer.fetchKrakenKlines(state.symbol.krakenPair, aggN ? oneDay.krakenInterval : state.timeframe.krakenInterval, candleLimit);
       if (aggN) candles = aggregateCandles(candles, state.timeframe);
     } else if (state.symbol.type === "coinbase") {
-      candles = await DataLayer.fetchCoinbaseKlines(state.symbol.coinbaseProduct, aggN ? oneDay.coinbaseInterval : state.timeframe.coinbaseInterval, CONFIG.CANDLE_LIMIT);
+      candles = await DataLayer.fetchCoinbaseKlines(state.symbol.coinbaseProduct, aggN ? oneDay.coinbaseInterval : state.timeframe.coinbaseInterval, candleLimit);
       if (aggN) candles = aggregateCandles(candles, state.timeframe);
     } else if (state.symbol.type === "stooq") {
       // Indizes kommen als Tageskerzen ueber den Worker (Stooq erlaubt
@@ -1118,7 +1160,7 @@ async function loadData() {
       }
       if (!candles || candles.length === 0) throw new Error(`Bitstamp: keine Kerzen für ${state.symbol.bitstampPair}`);
     } else if (state.symbol.type === "bybit") {
-      candles = await DataLayer.fetchBybitKlines(state.symbol.bybitSymbol, aggN ? oneDay.bybitInterval : state.timeframe.bybitInterval, CONFIG.CANDLE_LIMIT);
+      candles = await DataLayer.fetchBybitKlines(state.symbol.bybitSymbol, aggN ? oneDay.bybitInterval : state.timeframe.bybitInterval, candleLimit);
       if (!candles || candles.length === 0) throw new Error(`Bybit: keine Kerzen für ${state.symbol.bybitSymbol} / ${state.timeframe.bybitInterval}`);
       if (aggN) candles = aggregateCandles(candles, state.timeframe);
     } else if (state.symbol.type === "dominance") {
