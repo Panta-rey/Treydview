@@ -1093,8 +1093,18 @@ function neededCandlesForOwnIntervals(chartTfId) {
   return Math.min(need, MAX_CANDLES);
 }
 
-async function loadData() {
+async function loadData(opts) {
   const seq = ++_loadSeq;
+  // Nur beim Auffrischen nach Rueckkehr aus dem Hintergrund (resume, siehe
+  // "8. Rueckkehr in die App"): bisherige Kerzen merken, um den Datenanfang
+  // stabil zu halten. Alle anderen Aufrufer uebergeben nichts → unveraendert.
+  let keep = null;
+  if (opts && opts.keepStart) {
+    try {
+      keep = { sym: state.symbol.id, tf: state.timeframe.id,
+               list: (chart.getDataList() || []).slice() };
+    } catch (e) { keep = null; }
+  }
   if (state.closeStream) { state.closeStream(); state.closeStream = null; }
   setLive("offline", "lädt …");
   applyDefaultChartTypeFor(state.symbol);
@@ -1210,6 +1220,25 @@ async function loadData() {
   }
   // Antwort gehört zu einem inzwischen überholten Wechsel → verwerfen.
   if (seq !== _loadSeq) return;
+  // keepStart (nur resume): Die frische Ladung beginnt bei Quellen ohne
+  // Momentaufnahme (letzte N Kerzen) um die inzwischen neuen Bars SPAETER.
+  // EWT/Muster/SMC haengen an dataIndex und setzen einen stabilen Datenanfang
+  // voraus (siehe serializeGeneratedPoints) — ohne Ausgleich sassen sie danach
+  // um diese Bars verschoben. Deshalb die alten Kerzen VOR der frischen
+  // Ladung voranstellen: Anfang bleibt identisch, per Scrollen nachgeladene
+  // Historie bleibt erhalten, neue Kerzen kommen hinten dazu. Nur bei
+  // gleichem Asset/Intervall und lueckenloser Ueberlappung (sonst entstuende
+  // ein Loch in der Reihe → dann wie bisher die frische Ladung allein).
+  if (keep && keep.list.length && candles && candles.length
+      && keep.sym === state.symbol.id && keep.tf === state.timeframe.id) {
+    const firstNew = candles[0].timestamp;
+    const old = keep.list;
+    if (old[0].timestamp < firstNew && old[old.length - 1].timestamp >= firstNew) {
+      const head = [];
+      for (const c of old) { if (c.timestamp >= firstNew) break; head.push(c); }
+      if (head.length) candles = head.concat(candles);
+    }
+  }
   chart.applyNewData(candles);
   // P2: Preisskala ohne Kommastellen, sobald ein Vorteil besteht — Assets über
   // 100 brauchen keine Nachkommastellen (72'720 statt 72'719.50). Jetzt auf
@@ -1698,6 +1727,17 @@ function renderAssetList(filter = "") {
   if (items.length === 0) list.innerHTML = '<div class="dd-empty">Kein Symbol gefunden</div>';
 }
 document.getElementById("assetSearch").addEventListener("input", e => renderAssetList(e.target.value));
+// Mobil: Tap ins Suchfeld darf das Dropdown nicht schliessen. Auf dem Handy
+// haengt placeMobileDropdown das Panel an document.body (QF3) — dann liegt
+// das Feld nicht mehr in .dropdown, und der globale Klick-Handler aus
+// initDropdowns() wertete den Tap als "ausserhalb" und schloss das Panel.
+// Gleiches Muster wie beim freien Intervall-Feld (.tf-custom-input), aber
+// NUR wenn das Feld tatsaechlich ausserhalb von .dropdown haengt (= genau der
+// Fehlerfall). Auf dem Desktop liegt es in .dropdown → Klick laeuft wie bisher
+// weiter (auch andere "Klick ausserhalb"-Handler verhalten sich unveraendert).
+document.getElementById("assetSearch").addEventListener("click", (e) => {
+  if (!e.currentTarget.closest(".dropdown")) e.stopPropagation();
+});
 
 // ---------- Multi-Exchange Symbol-Loader ----------
 // Lädt Paare von Binance, Coinbase, Kraken und Bybit. Filter-Regeln:
@@ -2586,6 +2626,12 @@ async function reloadAllCompareData() {
 
 const _compareSearchEl = document.getElementById("compareSearch");
 if (_compareSearchEl) _compareSearchEl.addEventListener("input", e => renderCompareList(e.target.value));
+// Mobil: wie #assetSearch — Tap ins Suchfeld schliesst das (an document.body
+// gehaengte) Vergleich-Dropdown nicht mehr. Nur im Fehlerfall (Feld ausserhalb
+// von .dropdown); Desktop unveraendert.
+if (_compareSearchEl) _compareSearchEl.addEventListener("click", (e) => {
+  if (!e.currentTarget.closest(".dropdown")) e.stopPropagation();
+});
 
 function renderTfList() {
   const list = document.getElementById("tfList");
@@ -2861,13 +2907,61 @@ function renderTypeList() {
 function takeScreenshot() {
   try {
     const url = chart.getConvertPictureUrl(true, "jpeg", "#0d1117");
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `treydview_${state.symbol.id}_${state.timeframe.id}_${Date.now()}.jpeg`;
-    a.click();
+    // Vergleichsmodus: Die Linien, die Prozent-Achse und die Etiketten
+    // zeichnet TreydView auf einem EIGENEN Canvas ueber dem Chart
+    // (_compareCanvas). getConvertPictureUrl kennt nur die KLC-Canvases → im
+    // Bild fehlten alle Graphen. Deshalb hier einkomponieren. Ohne Vergleich
+    // laeuft alles exakt wie bisher (gleiches Bild, gleicher Download).
+    if (state.compareAssets.length > 0 && _compareCanvas) {
+      _composeCompareScreenshot(url)
+        .then(_downloadScreenshot)
+        .catch((e) => {
+          // Notfall: lieber das bisherige Bild als gar keins.
+          setStatus("Vergleichslinien konnten nicht ins Bild übernommen werden");
+          _downloadScreenshot(url);
+        });
+      return;
+    }
+    _downloadScreenshot(url);
   } catch (e) {
     setStatus("Screenshot fehlgeschlagen: " + e.message);
   }
+}
+
+function _downloadScreenshot(url) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `treydview_${state.symbol.id}_${state.timeframe.id}_${Date.now()}.jpeg`;
+  a.click();
+}
+
+// KLC-Bild + Vergleich-Canvas zu einem JPEG zusammenfuehren. Das KLC-Bild hat
+// die Groesse des Chart-Containers mal Pixeldichte; der Vergleich-Canvas liegt
+// deckungsgleich bei top/left 0 ueber #mainChart (CSS-Groesse = Chart-Groesse,
+// Puffer in Geraetepixeln, siehe drawCompare). Skaliert wird ueber das
+// Verhaeltnis Bildbreite / CSS-Breite — unabhaengig von der Pixeldichte.
+function _composeCompareScreenshot(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const out = document.createElement("canvas");
+        out.width = img.naturalWidth;
+        out.height = img.naturalHeight;
+        const ctx = out.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        const lc = _compareCanvas;
+        const cssW = chartEl.clientWidth || img.naturalWidth;
+        const s = img.naturalWidth / cssW;
+        const lw = parseFloat(lc.style.width) || cssW;
+        const lh = parseFloat(lc.style.height) || chartEl.clientHeight;
+        ctx.drawImage(lc, 0, 0, lw * s, lh * s);
+        resolve(out.toDataURL("image/jpeg"));
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => reject(new Error("Bild konnte nicht geladen werden"));
+    img.src = url;
+  });
 }
 
 function autoZoom() {
@@ -9562,5 +9656,48 @@ quiet(() => {
     sync();
   });
 }, "backdrop sync");
+
+// ── 8. Rueckkehr in die App: Kurse auffrischen ────────────────────────
+// iOS (v. a. als Home-Bildschirm-App, display:standalone) laedt die Seite
+// beim erneuten Oeffnen NICHT neu, sondern weckt den eingefrorenen Stand
+// auf. Die WebSockets (Kerzen- und Watchlist-Stream) hat iOS im Hintergrund
+// still beendet — der Chart zeigte deshalb den Stand vom Verlassen, bis ein
+// Intervallwechsel loadData() ausloeste. Jetzt passiert beim Zurueckkehren
+// dasselbe wie beim Intervallwechsel (loadData + Vergleich nachladen), nur
+// mit GLEICHEM Asset/Intervall und ohne clearEWT: Zeichnungen, Indikatoren
+// und Scans bleiben, der Datenanfang bleibt stabil (keepStart in loadData).
+// Zusaetzlich wird der Watchlist-Stream neu aufgebaut.
+// Nur Mobil/Touch (Desktop unveraendert) und erst nach mind. 15 s im
+// Hintergrund — kurzes App-Umschalten loest nichts aus.
+quiet(() => {
+  if (!tvIsMobile()) return;
+  const MIN_HIDDEN_MS = 15000;
+  let hiddenAt = document.visibilityState === "hidden" ? Date.now() : null;
+  let lastRun = 0;
+  const refresh = () => {
+    // visibilitychange und pageshow koennen beim selben Aufwecken beide
+    // feuern → nur einmal auffrischen.
+    if (Date.now() - lastRun < 5000) return;
+    // Laufende Zeichnung (Punkt wird gerade gesetzt) nicht stoeren.
+    if (state.drawingId != null) return;
+    lastRun = Date.now();
+    quiet(() => { loadData({ keepStart: true }).catch(() => {}); }, "resume loadData");
+    quiet(() => { reloadAllCompareData().catch(() => {}); }, "resume compare");
+    quiet(() => restartWatchlistStream(), "resume watchlist");
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
+    if (hiddenAt != null && Date.now() - hiddenAt >= MIN_HIDDEN_MS) refresh();
+    hiddenAt = null;
+  });
+  window.addEventListener("pagehide", () => { if (hiddenAt == null) hiddenAt = Date.now(); });
+  // Rueckkehr aus dem Back-Forward-Cache (Safari): Seite wird ohne Neuladen
+  // wiederhergestellt — gleicher Fall wie oben.
+  window.addEventListener("pageshow", (e) => {
+    if (!e.persisted) return;
+    if (hiddenAt == null || Date.now() - hiddenAt >= MIN_HIDDEN_MS) refresh();
+    hiddenAt = null;
+  });
+}, "resume refresh");
 
 })();
