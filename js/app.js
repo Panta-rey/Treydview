@@ -2058,8 +2058,14 @@ function renderCompareActive() {
     const eye = a.hidden
       ? `<path d="M2 2l20 20M9.9 5.1A9.9 9.9 0 0 1 12 5c7 0 11 7 11 7a18 18 0 0 1-3.2 4M6.6 6.6A18 18 0 0 0 1 12s4 7 11 7a9.9 9.9 0 0 0 4.2-.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`
       : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/>`;
+    // Eine Zeile: Symbol normal, Boerse klein und gedimmt dahinter
+    // ("ETH/USDT · Binance"). Voller Name als Tooltip, falls gekuerzt.
+    const lm = /^(.*?)\s*\(([^()]+)\)\s*$/.exec(a.label || "");
+    const ccSym = lm ? lm[1] : (a.label || a.id);
+    const ccEx  = lm ? lm[2] : "";
     chip.innerHTML = `<span class="cc-dot" style="background:${a.color}"></span>`
-      + `<span class="cc-label">${escapeHtml(a.label)}</span>`
+      + `<span class="cc-label" title="${escapeHtml(a.label)}">${escapeHtml(ccSym)}`
+      + (ccEx ? ` <span class="cc-ex">· ${escapeHtml(ccEx)}</span>` : "") + `</span>`
       + `<button class="cc-eye" title="${a.hidden ? "Einblenden" : "Ausblenden"}"><svg viewBox="0 0 24 24" width="13" height="13">${eye}</svg></button>`
       + `<button class="cc-gear" title="Linie anpassen">⚙</button>`
       + `<button class="cc-remove" title="Entfernen">✕</button>`;

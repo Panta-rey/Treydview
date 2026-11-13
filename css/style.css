@@ -10,6 +10,8 @@
 @font-face{font-family:'IBM Plex Mono';font-style:normal;font-display:swap;font-weight:500;src:url(fonts/ibm-plex-mono-latin-ext-500-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
 @font-face{font-family:'IBM Plex Mono';font-style:normal;font-display:swap;font-weight:600;src:url(fonts/ibm-plex-mono-latin-600-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
 @font-face{font-family:'IBM Plex Mono';font-style:normal;font-display:swap;font-weight:600;src:url(fonts/ibm-plex-mono-latin-ext-600-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
+@font-face{font-family:'Archivo';font-style:normal;font-display:swap;font-weight:300;src:url(fonts/archivo-latin-300-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'Archivo';font-style:normal;font-display:swap;font-weight:300;src:url(fonts/archivo-latin-ext-300-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
 @font-face{font-family:'Archivo';font-style:normal;font-display:swap;font-weight:700;src:url(fonts/archivo-latin-700-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
 @font-face{font-family:'Archivo';font-style:normal;font-display:swap;font-weight:700;src:url(fonts/archivo-latin-ext-700-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
 @font-face{font-family:'Archivo';font-style:normal;font-display:swap;font-weight:800;src:url(fonts/archivo-latin-800-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
@@ -79,7 +81,9 @@ html,body{height:100%;background:var(--glow) var(--bg);color:var(--text);font-fa
 [data-theme="light"] .bm-s3{fill:#b8860b;}
 [data-theme="light"] .bm-line{stroke:#3b8fd4;}
 [data-theme="light"] .bm-refl{fill:#3b8fd4;}
-.brand-name{font-family:var(--font-disp);font-weight:800;font-size:16px;letter-spacing:.04em;text-transform:uppercase;}
+.brand-name{font-family:var(--font-disp);font-weight:300;font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:#e6ecf2;}
+.bn-view{color:var(--accent);}
+[data-theme="light"] .brand-name{color:#1f2933;}
 
 /* ---- Dropdown ---- */
 .dropdown{position:relative;}
@@ -529,7 +533,16 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .compare-active{border-top:1px solid var(--border);padding:6px;display:flex;flex-direction:column;gap:4px;}
 .compare-chip{display:flex;align-items:center;gap:7px;padding:4px 8px;background:var(--bg);border-radius:4px;font-size:12px;}
 .cc-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
-.cc-label{flex:1;color:var(--text);}
+.cc-label{flex:1;min-width:0;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cc-ex{color:var(--text-dim);font-size:11px;}
+/* Desktop: Vergleich-Dropdown breiter, Eintraege einzeilig und kompakter,
+   lange Listen scrollen statt unten abgeschnitten zu werden. Mobil bleibt
+   die Groesse aus den Mobil-Regeln (dort scrollt das ganze Panel). */
+@media (min-width: 721px) and (pointer: fine) {
+  #comparePanel{width:250px;}
+  .compare-chip{padding:3px 8px;}
+  .compare-active{max-height:min(60vh,520px);overflow-y:auto;}
+}
 .cc-remove{background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:12px;padding:0 3px;}
 .cc-remove:hover{color:var(--down);}
 
