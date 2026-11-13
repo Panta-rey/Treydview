@@ -159,21 +159,33 @@ function chartIntervalMs(dataList) {
 
 function resampleCloses(dataList, tfId) {
   const D = 864e5;
-  let keyOf;
-  if (tfId === "1w") keyOf = (ts) => Math.floor((ts - 4 * D) / (7 * D));
-  else if (tfId === "1M") keyOf = (ts) => { const d = new Date(ts); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
-  else if (_TF_MS[tfId]) { const m = _TF_MS[tfId]; keyOf = (ts) => Math.floor(ts / m); }
-  else return null;
+  // keyOf: Bucket-Schluessel; spanOf: Kalender-Beginn und -Ende des Buckets
+  let keyOf, spanOf;
+  if (tfId === "1w") {
+    keyOf = (ts) => Math.floor((ts - 4 * D) / (7 * D));
+    spanOf = (k) => [k * 7 * D + 4 * D, (k + 1) * 7 * D + 4 * D];
+  } else if (tfId === "1M") {
+    keyOf = (ts) => { const d = new Date(ts); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
+    spanOf = (k) => [Date.UTC(Math.floor(k / 12), k % 12, 1), Date.UTC(Math.floor(k / 12), k % 12 + 1, 1)];
+  } else if (_TF_MS[tfId]) {
+    const m = _TF_MS[tfId];
+    keyOf = (ts) => Math.floor(ts / m);
+    spanOf = (k) => [k * m, (k + 1) * m];
+  } else return null;
   const aggClose = [];
   const bucketOf = new Array(dataList.length);
+  const posIn = new Array(dataList.length);     // 0-basierte Position der Kerze im Bucket
+  const count = [];                             // Kerzen je Bucket
+  const span = [];                              // [Beginn, Ende] je Bucket (Kalender)
   let key = null, bi = -1;
   for (let i = 0; i < dataList.length; i++) {
     const k = keyOf(dataList[i].timestamp);
-    if (k !== key) { key = k; bi++; aggClose.push(dataList[i].close); }
+    if (k !== key) { key = k; bi++; aggClose.push(dataList[i].close); count.push(0); span.push(spanOf(k)); }
     else aggClose[bi] = dataList[i].close;
     bucketOf[i] = bi;
+    posIn[i] = count[bi]++;
   }
-  return { aggClose, bucketOf };
+  return { aggClose, bucketOf, posIn, count, span };
 }
 
 // Liefert { closes, running }: running(typ, periode) berechnet den
@@ -184,10 +196,19 @@ function resampleCloses(dataList, tfId) {
 // zum NAECHSTEN Bucket — ein Wochen-SMA kannte damit am Montag schon den
 // Sonntagsschluss und lief einem Sprung bis zu 13 Tage voraus.
 //
-// Jetzt wie TradingView live: Ein Tag zeigt den Stand der LAUFENDEN Woche,
-// gerechnet aus den abgeschlossenen Vorwochen plus dem Schlusskurs DIESES
-// Tages. Am letzten Tag der Woche ist das exakt der Wochenwert. Kein Wert
-// nutzt einen Kurs, der zu diesem Zeitpunkt noch nicht bekannt war.
+// Jetzt: Ein Tag zeigt den Stand der LAUFENDEN Woche aus den abgeschlossenen
+// Vorwochen plus dem Schlusskurs DIESES Tages. Kein Wert nutzt einen Kurs,
+// der zu diesem Zeitpunkt noch nicht bekannt war.
+//
+// Gleitender Wochenwechsel (User-Wunsch "keine Treppe"): Wuerde die aelteste
+// Woche am Montag auf einen Schlag aus dem Fenster fallen, sprange die Linie
+// jede Woche um (Kurs - aelteste Woche) / Periode. Stattdessen wird sie ueber
+// die laufende Woche schrittweise aus- und der heutige Kurs eingeblendet:
+// Anteil f = Fortschritt im Bucket (Mo 1/7 … So 7/7). Gewichte: p-1 volle
+// Vorwochen + f · heute + (1-f) · aelteste Woche = p. Am letzten Tag (f = 1)
+// exakt der Wert des Wochencharts. EMA analog: ema(b-1) + f·k·(heute - ema(b-1)).
+// f: abgeschlossene Buckets ueber die Kerzenzahl (letzte Kerze = 1, auch bei
+// Aktien mit 5 Handelstagen), der laufende Bucket ueber die Kalenderzeit.
 function maContext(dataList, tf) {
   const closes = dataList.map(d => d.close);
   const plain = {
@@ -200,6 +221,17 @@ function maContext(dataList, tf) {
   const agg = resampleCloses(dataList, tf);
   if (!agg) return plain;
   const A = agg.aggClose, B = agg.bucketOf, n = dataList.length;
+  const lastB = A.length - 1;
+  const frac = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const b = B[i];
+    if (b < lastB) frac[i] = (agg.posIn[i] + 1) / agg.count[b];
+    else {
+      const [s0, s1] = agg.span[b];
+      const f = (dataList[i].timestamp + cMs - s0) / (s1 - s0);
+      frac[i] = Math.min(1, Math.max(0, f));
+    }
+  }
   return {
     closes: A,
     running: (type, p) => {
@@ -215,7 +247,7 @@ function maContext(dataList, tf) {
         for (let i = 0; i < n; i++) {
           const b = B[i], c = closes[i];
           if (b + 1 < p || c == null) continue;
-          out[i] = b === 0 ? c : c * k + raw[b - 1] * (1 - k);
+          out[i] = b === 0 ? c : raw[b - 1] + frac[i] * k * (c - raw[b - 1]);
         }
         return out;
       }
@@ -226,7 +258,10 @@ function maContext(dataList, tf) {
       for (let i = 0; i < n; i++) {
         const b = B[i], c = closes[i];
         if (b + 1 < p || c == null) continue;
-        out[i] = (S[b] - S[b - p + 1] + c) / p;
+        const base = S[b] - S[b - p + 1];            // p-1 abgeschlossene Vorbuckets
+        out[i] = (p >= 2 && b >= p)
+          ? (base + frac[i] * c + (1 - frac[i]) * A[b - p]) / p
+          : (base + c) / p;
       }
       return out;
     },
