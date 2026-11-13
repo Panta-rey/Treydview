@@ -47,17 +47,6 @@ function emaSeries(values, period) {
   return out;
 }
 
-function wmaAt(values, period, i) {
-  if (i < period - 1) return null;
-  let num = 0, den = 0;
-  for (let j = 0; j < period; j++) {
-    const w = period - j, v = values[i - j];
-    if (v == null) return null;
-    num += v * w; den += w;
-  }
-  return num / den;
-}
-
 function atrSeries(dataList, period) {
   const tr = dataList.map((d, i) => {
     if (i === 0) return d.high - d.low;
@@ -70,13 +59,20 @@ function atrSeries(dataList, period) {
 
 // ---------- Zusätzliche Mathe-Helfer ----------
 function rmaSeries(values, period) {
-  // Wilder's RMA (EMA mit alpha=1/period)
+  // Wilder's RMA (EMA mit alpha=1/period). Start wie Pine ta.rma: SMA der
+  // ersten `period` Werte, vorher kein Wert (Gesamtpruefung C19 — vorher
+  // Start mit dem ersten Wert, die ersten ~100 Kerzen wichen ab).
   const out = new Array(values.length).fill(null);
-  let rma = null;
+  let rma = null, n = 0, sum = 0;
   const alpha = 1 / period;
   for (let i = 0; i < values.length; i++) {
     if (values[i] == null) continue;
-    rma = rma === null ? values[i] : alpha * values[i] + (1 - alpha) * rma;
+    if (rma === null) {
+      sum += values[i]; n++;
+      if (n >= period) { rma = sum / n; out[i] = rma; }
+      continue;
+    }
+    rma = alpha * values[i] + (1 - alpha) * rma;
     out[i] = rma;
   }
   return out;
@@ -111,7 +107,6 @@ function vwmaSeries(dataList, period) {
   return out;
 }
 
-function smaSeries(values, period) { return emaSeries(values, period); } // alias für EMA-smoothed (SMMA = RMA in Pine)
 
 function maByType(values, period, type, dataList) {
   switch (type) {
@@ -181,65 +176,60 @@ function resampleCloses(dataList, tfId) {
   return { aggClose, bucketOf };
 }
 
-// Liefert { closes, project }: closes = Basis für die MA-Rechnung (aggregiert
-// oder Chart-Closes), project = bildet eine auf closes gerechnete Serie zurück
-// auf die Chartkerzen ab. Bei "auto"/zu feinem Intervall: Identität.
-// Diagnose fuer Bug 2 (SMA/EMA/BMSB mit "eigenem Intervall" zeigen nach dem
-// Oeffnen der App manchmal keine Linie, bis das Chart-Intervall gewechselt
-// wird — bisher nicht reproduzierbar aus dem Code allein hergeleitet).
-// Gedrosselt auf max. 1 Zeile alle 5s PRO Indikator (Live-Ticks wuerden
-// sonst die Konsole fluten). Nur aktiv, wenn ein eigenes Intervall gesetzt
-// ist — im Normalbetrieb (tf="auto") komplett still. Nach Diagnose wieder
-// entfernbar.
-const _maCtxLastLog = {};
-function maContext(dataList, tf, label) {
+// Liefert { closes, running }: running(typ, periode) berechnet den
+// Durchschnitt fuer JEDE Chartkerze.
+//
+// Gesamtpruefung A17: Die fruehere Fassung gab jedem Bar den Wert SEINES
+// Buckets (inkl. Schlusskurs am Ende der Woche) und interpolierte zusaetzlich
+// zum NAECHSTEN Bucket — ein Wochen-SMA kannte damit am Montag schon den
+// Sonntagsschluss und lief einem Sprung bis zu 13 Tage voraus.
+//
+// Jetzt wie TradingView live: Ein Tag zeigt den Stand der LAUFENDEN Woche,
+// gerechnet aus den abgeschlossenen Vorwochen plus dem Schlusskurs DIESES
+// Tages. Am letzten Tag der Woche ist das exakt der Wochenwert. Kein Wert
+// nutzt einen Kurs, der zu diesem Zeitpunkt noch nicht bekannt war.
+function maContext(dataList, tf) {
   const closes = dataList.map(d => d.close);
-  if (!tf || tf === "auto" || !_TF_MS[tf]) return { closes, project: (s) => s };
+  const plain = {
+    closes,
+    running: (type, p) => (type === "ema" ? emaSeries(closes, p) : smaSeries2(closes, p)),
+  };
+  if (!tf || tf === "auto" || !_TF_MS[tf]) return plain;
   const cMs = chartIntervalMs(dataList);
-  const useIdentity = !(cMs > 0) || _TF_MS[tf] <= cMs;
-  const agg = useIdentity ? null : resampleCloses(dataList, tf);
-  const key = label || "?";
-  const now = Date.now();
-  const prev = _maCtxLastLog[key];
-  // Bei einem echten Sprung der Kerzenzahl (leer -> geladen, oder Symbol-/
-  // Intervall-Wechsel) SOFORT loggen, auch innerhalb der 5s-Drossel — sonst
-  // verschluckt die Drossel genau den zweiten, entscheidenden Aufruf (mit
-  // echten Daten), der kurz nach dem ersten (leeren) Aufruf folgt.
-  const jumped = !prev || prev.n !== dataList.length;
-  if (jumped || now - prev.t > 5000) {
-    _maCtxLastLog[key] = { t: now, n: dataList.length };
-    console.log(
-      "[TreydView][ma-tf]", key,
-      "tf=" + tf, "candles=" + dataList.length, "cMs=" + cMs,
-      useIdentity ? "pfad=identity(nativ>=tf)"
-        : (agg ? "pfad=aggregiert buckets=" + agg.aggClose.length : "pfad=aggregat-fehlgeschlagen(resample=null)")
-    );
-  }
-  if (useIdentity) return { closes, project: (s) => s };
-  if (!agg) return { closes, project: (s) => s };
-  // Erster Bar-Index je Bucket — für die Glättung (Punkt D+M1).
-  const bucketStart = [];
-  for (let i = 0; i < dataList.length; i++) {
-    const b = agg.bucketOf[i];
-    if (bucketStart[b] === undefined) bucketStart[b] = i;
-  }
-  const lastBucket = agg.aggClose.length - 1;
+  if (!(cMs > 0) || _TF_MS[tf] <= cMs) return plain;
+  const agg = resampleCloses(dataList, tf);
+  if (!agg) return plain;
+  const A = agg.aggClose, B = agg.bucketOf, n = dataList.length;
   return {
-    closes: agg.aggClose,
-    // Glätten: linear zwischen dem MA des aktuellen und des nächsten Buckets
-    // interpolieren, je nach Position des Bars im Bucket. Ergibt eine glatte
-    // statt stufige Linie. Greift nur im gröberen-Intervall-Fall.
-    project: (series) => dataList.map((_, i) => {
-      const b = agg.bucketOf[i];
-      const cur = series[b];
-      if (cur == null) return null;
-      const nxt = (b < lastBucket) ? series[b + 1] : null;
-      if (nxt == null) return cur;
-      const start = bucketStart[b];
-      const end = (bucketStart[b + 1] !== undefined) ? bucketStart[b + 1] : dataList.length;
-      const frac = (end > start) ? (i - start) / (end - start) : 0;
-      return cur + (nxt - cur) * frac;
-    }),
+    closes: A,
+    running: (type, p) => {
+      const out = new Array(n).fill(null);
+      if (!(p >= 1)) return out;
+      if (type === "ema") {
+        // Interner EMA-Verlauf der abgeschlossenen Buckets, gleicher Start
+        // wie emaSeries (erster Wert), sichtbar ab p Buckets.
+        const k = 2 / (p + 1);
+        const raw = new Array(A.length);
+        let e = null;
+        for (let j = 0; j < A.length; j++) { e = e === null ? A[j] : A[j] * k + e * (1 - k); raw[j] = e; }
+        for (let i = 0; i < n; i++) {
+          const b = B[i], c = closes[i];
+          if (b + 1 < p || c == null) continue;
+          out[i] = b === 0 ? c : c * k + raw[b - 1] * (1 - k);
+        }
+        return out;
+      }
+      // SMA: Summe der (p-1) abgeschlossenen Vorbuckets + aktueller Schluss
+      const S = new Array(A.length + 1);
+      S[0] = 0;
+      for (let j = 0; j < A.length; j++) S[j + 1] = S[j] + A[j];
+      for (let i = 0; i < n; i++) {
+        const b = B[i], c = closes[i];
+        if (b + 1 < p || c == null) continue;
+        out[i] = (S[b] - S[b - p + 1] + c) / p;
+      }
+      return out;
+    },
   };
 }
 
@@ -318,15 +308,9 @@ klinecharts.registerIndicator({
   ],
   calc: (dataList, indicator) => {
     const [smaP, emaP, tf] = indicator.calcParams;
-    const { closes, project } = maContext(dataList, tf, indicator.name);
-    const emaArr = project(emaSeries(closes, emaP));
-    const smaRaw = closes.map((_, i) => {
-      if (i < smaP - 1) return null;
-      let s = 0;
-      for (let j = i - smaP + 1; j <= i; j++) s += closes[j];
-      return s / smaP;
-    });
-    const smaArr = project(smaRaw);
+    const { running } = maContext(dataList, tf);
+    const emaArr = running("ema", emaP);
+    const smaArr = running("sma", smaP);
     return dataList.map((_, i) => ({ sma20: smaArr[i] ?? undefined, ema21: emaArr[i] ?? undefined }));
   },
   draw: ({ ctx, kLineDataList, visibleRange, indicator, xAxis, yAxis }) => {
@@ -472,19 +456,18 @@ klinecharts.registerIndicator({
   calc: (dataList, indicator) => {
     const days = indicator.calcParams[0];
     if (dataList.length < 2) return dataList.map(() => ({}));
-    const deltas = [];
-    for (let i = 1; i < Math.min(dataList.length, 50); i++)
-      deltas.push(dataList[i].timestamp - dataList[i-1].timestamp);
-    deltas.sort((a, b) => a - b);
-    const barMs = deltas[Math.floor(deltas.length / 2)];
-    const win = Math.max(1, Math.round(days * 86400000 / barMs));
+    // Fenster ueber echte Zeit (C19): bei Aktien/Indizes ohne Wochenenden
+    // waren "365 Tage" als Kerzenzahl rund 40 % zu lang.
+    const winMs = days * 86400000;
+    const firstTs = dataList[0].timestamp;
     const pv = dataList.map(d => ((d.high + d.low + d.close) / 3) * (d.volume || 0));
     const v  = dataList.map(d => d.volume || 0);
-    let sPV = 0, sV = 0;
-    return dataList.map((_, i) => {
+    let sPV = 0, sV = 0, lo = 0;
+    return dataList.map((d, i) => {
       sPV += pv[i]; sV += v[i];
-      if (i >= win) { sPV -= pv[i - win]; sV -= v[i - win]; }
-      if (i < win - 1 || sV === 0) return {};
+      while (lo < i && dataList[lo].timestamp <= d.timestamp - winMs) { sPV -= pv[lo]; sV -= v[lo]; lo++; }
+      // Erst zeigen, wenn das Fenster voll ist (wie bisher)
+      if (d.timestamp - firstTs < winMs - 86400000 || sV === 0) return {};
       return { rvwap: sPV / sV };
     });
   },
@@ -740,9 +723,9 @@ klinecharts.registerIndicator({
   ],
   calc: (dataList, indicator) => {
     const [p1, p2, p3, p4, tf] = indicator.calcParams;
-    const { closes, project } = maContext(dataList, tf, indicator.name);
-    const s1 = project(smaSeries2(closes, p1)), s2 = project(smaSeries2(closes, p2));
-    const s3 = project(smaSeries2(closes, p3)), s4 = project(smaSeries2(closes, p4));
+    const { running } = maContext(dataList, tf);
+    const s1 = running("sma", p1), s2 = running("sma", p2);
+    const s3 = running("sma", p3), s4 = running("sma", p4);
     return dataList.map((_, i) => ({
       s1: s1[i] ?? undefined, s2: s2[i] ?? undefined,
       s3: s3[i] ?? undefined, s4: s4[i] ?? undefined,
@@ -765,8 +748,8 @@ klinecharts.registerIndicator({
   calc: (dataList, indicator) => {
     const params = indicator.calcParams;
     const tf = params[4];
-    const { closes, project } = maContext(dataList, tf, indicator.name);
-    const results = [params[0], params[1], params[2], params[3]].map(p => project(emaSeries(closes, p)));
+    const { running } = maContext(dataList, tf);
+    const results = [params[0], params[1], params[2], params[3]].map(p => running("ema", p));
     return dataList.map((_, i) => ({
       ema1: results[0][i] ?? undefined, ema2: results[1][i] ?? undefined,
       ema3: results[2][i] ?? undefined, ema4: results[3] ? (results[3][i] ?? undefined) : undefined,
@@ -789,18 +772,26 @@ klinecharts.registerIndicator({
     const [period, stddev, maType, offset] = indicator.calcParams;
     const closes = dataList.map(d => d.close);
     const basis = maByType(closes, period, maType || "SMA", dataList);
-    return dataList.map((_, i) => {
-      const b = basis[i];
-      if (b == null) return {};
+    // Streuung wie Pine ta.stdev: Populations-StdAbw um den SMA des
+    // Fensters, auch wenn die Basislinie ein anderer MA-Typ ist (C19).
+    const sma = maType && maType !== "SMA" ? smaSeries2(closes, period) : basis;
+    const raw = dataList.map((_, i) => {
+      const b = basis[i], m = sma[i];
+      if (b == null || m == null) return null;
       let variance = 0, n = 0;
       for (let j = i - period + 1; j <= i; j++) {
-        if (j >= 0 && closes[j] != null) { variance += Math.pow(closes[j] - b, 2); n++; }
+        if (j >= 0 && closes[j] != null) { variance += Math.pow(closes[j] - m, 2); n++; }
       }
-      if (n < period) return {};
+      if (n < period) return null;
       const sd = Math.sqrt(variance / n);
-      const oi = Math.min(i + (offset || 0), dataList.length - 1);
-      if (oi < 0 || oi >= dataList.length) return {};
       return { up: b + stddev * sd, mid: b, dn: b - stddev * sd };
+    });
+    // Offset wie bei TradingView: verschiebt die Baender um N Kerzen
+    // (positiv = nach rechts). Vorher berechnet, aber nie angewandt (A18).
+    const off = Math.round(+offset || 0);
+    return dataList.map((_, i) => {
+      const src = i - off;
+      return (src >= 0 && src < raw.length && raw[src]) ? raw[src] : {};
     });
   },
   draw: ({ ctx, kLineDataList, visibleRange, indicator, xAxis, yAxis }) => {

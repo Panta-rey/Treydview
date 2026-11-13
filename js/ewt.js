@@ -31,9 +31,15 @@
 //
 // ── DIE GRUNDREGELN GELTEN UNVERAENDERT ─────────────────────────────
 //
-//   KEIN REPAINTING. Ein Fraktal bei Index i ist erst bei i+swingLength
-//   bestaetigt. Eine Struktur gilt erst als erkannt, wenn ihr letzter
-//   Punkt bestaetigt ist; vorher wird sie nicht ausgegeben.
+//   KEIN REPAINTING DER FRAKTALE. Ein Fraktal bei Index i ist erst bei
+//   i+swingLength bestaetigt. Eine Struktur gilt erst als erkannt, wenn ihr
+//   letzter Punkt bestaetigt ist; vorher wird sie nicht ausgegeben.
+//   EINSCHRAENKUNG (Gesamtpruefung C23): Die Pivot-Kette ersetzt ihren
+//   letzten Punkt, wenn spaeter ein extremerer Punkt gleichen Typs kommt,
+//   und je Startpunkt gewinnt die Zaehlung mit dem kleinsten
+//   Anpassungsfehler. Eine gezeichnete Zaehlung kann sich mit neuen Kerzen
+//   also noch aendern (z. B. Welle 5 wandert zu einem hoeheren Hoch) —
+//   fachlich die "verlaengerte Fuenfte", aber kein Nicht-Repainting.
 //
 //   ZWINGEND LOGARITHMISCH. Alle Fibonacci-Rechnungen geometrisch,
 //   siehe logRetrace().
@@ -945,7 +951,11 @@
             const lp = chain[k], hp = chain[k + 1];
             if (lp.type !== "low" || hp.type !== "high") continue;
             const l = lp.index, h = hp.index;
-            const L = data[l].low, H = data[h].high;
+            // Bei Zaehlbasis "Schlusskurse" auch die Box aus Schlusskursen
+            // (vorher immer Dochte, Gesamtpruefung C23).
+            const useClose = opts.basis === "close";
+            const L = useClose ? data[l].close : data[l].low;
+            const H = useClose ? data[h].close : data[h].high;
             if (!(H > L) || !(L > 0)) continue;
             if (h - l < opts.setupMinBars) continue;
             const risePct = (H - L) / L * 100;
@@ -1264,7 +1274,6 @@
     vsNull(data, userOpts = {}, iterations = 30) {
       if (!data || data.length < 200) return { error: "Zu wenig Daten (min. 200)" };
       const opts = { ...userOpts, maxImpulses: 0, maxSetups: 0 };
-      const range = { from: 0, to: data.length - 1 };
 
       const measure = (d) => {
         const r = this.scan(d, { from: 0, to: d.length - 1 }, opts);

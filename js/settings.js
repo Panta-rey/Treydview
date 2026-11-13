@@ -13,7 +13,19 @@ const Settings = {
   },
 
   _saveRaw(indKey, obj) {
-    localStorage.setItem(this._storageKey(indKey), JSON.stringify(obj));
+    // Speicher voll o. ae. darf den Klick nicht abbrechen (Gesamtpruefung C21)
+    try { localStorage.setItem(this._storageKey(indKey), JSON.stringify(obj)); }
+    catch (e) { console.warn("[TreydView] Einstellungen nicht gespeichert", e); }
+  },
+
+  // Eingabe pruefen: leer/ungueltig -> Vorgabewert; Perioden und Faktoren
+  // muessen > 0 sein. Nur "offset" darf 0 oder negativ sein (C21).
+  _cleanNumber(inp, raw) {
+    const v = parseFloat(raw);
+    if (!isFinite(v)) return inp.default;
+    if (inp.key === "offset") return Math.round(v);
+    if (v <= 0) return inp.default;
+    return v;
   },
 
   // Aufgelöste Werte: { inputs: {key: val}, plots: {key: {color(rgba), hex, opacity, width, visible}} }
@@ -23,7 +35,10 @@ const Settings = {
     const saved = this._loadRaw(indKey);
     const out = { inputs: {}, plots: {} };
     (ind.inputs || []).forEach(inp => {
-      out.inputs[inp.key] = saved.inputs?.[inp.key] ?? inp.default;
+      const sv = saved.inputs?.[inp.key];
+      // Frueher gespeicherte NaN-Werte (leeres Feld) auf die Vorgabe zuruecksetzen
+      out.inputs[inp.key] = (inp.type !== "select" && typeof sv === "number" && !isFinite(sv))
+        ? inp.default : (sv ?? inp.default);
     });
     (ind.plots || []).forEach(p => {
       const s = saved.plots?.[p.key] || {};
@@ -109,6 +124,7 @@ const Settings = {
         input.className = "settings-input";
         input.value = current.inputs[inp.key];
         if (inp.step) input.step = inp.step;
+        if (inp.key !== "offset") input.min = inp.step || 1;
       }
       input.id = "sin_" + inp.key;
       row.appendChild(label);
@@ -228,7 +244,7 @@ const Settings = {
       const saved = { inputs: {}, plots: {} };
       (ind.inputs || []).forEach(inp => {
         const el = document.getElementById("sin_" + inp.key);
-        saved.inputs[inp.key] = (inp.type === "select") ? el.value : parseFloat(el.value);
+        saved.inputs[inp.key] = (inp.type === "select") ? el.value : this._cleanNumber(inp, el.value);
       });
       (ind.plots || []).forEach(p => {
         const visEl = document.getElementById("spv_" + p.key);
@@ -240,7 +256,7 @@ const Settings = {
         saved.plots[p.key] = {
           hex:     colEl ? colEl.value : p.color,
           opacity: opEl ? parseInt(opEl.value, 10) : p.opacity,
-          width:   wEl ? parseInt(wEl.value, 10) : p.width,
+          width:   wEl ? (Math.min(5, Math.max(1, parseInt(wEl.value, 10) || p.width || 1))) : p.width,
           visible: visEl ? visEl.checked : true,
           dashed:  dashEl ? dashEl.checked : false,
           showLast: tagEl ? tagEl.checked : true,

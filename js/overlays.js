@@ -62,7 +62,8 @@
       const p1 = overlay.points[1].value;
       const diff = p1 - p0;
       const pct = p0 !== 0 ? (diff / p0) * 100 : 0;
-      const digits = Math.min(precision.price, 4);
+      // Ab Kurs 1 wie bisher; darunter genug Stellen fuer kleine Coins (A21)
+      const digits = Math.abs(p0) >= 1 ? Math.min(precision.price, 4) : priceDecimals(p0);
       const label = `${diff >= 0 ? "+" : ""}${diff.toFixed(digits)}  (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)`;
       const midX = (coordinates[0].x + coordinates[1].x) / 2;
       // Deckkraft der Fläche aus extendData (Punkt 4). Farbe bleibt
@@ -97,6 +98,26 @@
     },
   });
 
+  // Dauer lesbar machen (C24): unter 1 h Minuten, unter 2 Tagen Stunden,
+  // sonst Tage — dazu die Zahl der Kerzen im Bereich, wie bei TradingView.
+  function spanLabel(t0, t1) {
+    const ms = Math.abs(t1 - t0);
+    const min = ms / 60000;
+    const dauer = min < 60 ? `${Math.round(min)} Min`
+      : ms < 2 * 86400000 ? `${Math.round(ms / 3600000)} Std`
+      : `${Math.round(ms / 86400000)} Tage`;
+    let bars = null;
+    try {
+      const dl = window.__tvGetDataList ? window.__tvGetDataList() : null;
+      if (dl && dl.length) {
+        const a = Math.min(t0, t1), b = Math.max(t0, t1);
+        bars = 0;
+        for (const d of dl) if (d.timestamp > a && d.timestamp <= b) bars++;
+      }
+    } catch (e) { bars = null; }
+    return bars != null ? `${dauer} · ${bars} Kerzen` : dauer;
+  }
+
   // ---------- Date Range (horizontale Messung) ----------
   klinecharts.registerOverlay({
     name: "dateRange",
@@ -107,13 +128,7 @@
       const t0 = overlay.points[0].timestamp;
       const t1 = overlay.points[1].timestamp;
       let label = "–";
-      if (t0 && t1) {
-        const ms = Math.abs(t1 - t0);
-        const days = ms / 86400000;
-        label = days >= 2
-          ? `${Math.round(days)} Tage`
-          : `${Math.round(ms / 3600000)} Std`;
-      }
+      if (t0 && t1) label = spanLabel(t0, t1);
       const midX = (coordinates[0].x + coordinates[1].x) / 2;
       // Farbe + Deckkraft aus extendData (Punkt 5).
       const ed = overlay.extendData || {};
@@ -159,17 +174,14 @@
       const p1 = overlay.points[1].value;
       const diff = p1 - p0;
       const pct = p0 !== 0 ? (diff / p0) * 100 : 0;
-      const digits = Math.min(precision.price, 4);
+      // Ab Kurs 1 wie bisher; darunter genug Stellen fuer kleine Coins (A21)
+      const digits = Math.abs(p0) >= 1 ? Math.min(precision.price, 4) : priceDecimals(p0);
       const priceLabel = `${diff >= 0 ? "+" : ""}${diff.toFixed(digits)}  (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)`;
 
       const t0 = overlay.points[0].timestamp;
       const t1 = overlay.points[1].timestamp;
       let timeLabel = "–";
-      if (t0 && t1) {
-        const ms = Math.abs(t1 - t0);
-        const days = ms / 86400000;
-        timeLabel = days >= 2 ? `${Math.round(days)} Tage` : `${Math.round(ms / 3600000)} Std`;
-      }
+      if (t0 && t1) timeLabel = spanLabel(t0, t1);
 
       const midX = (coordinates[0].x + coordinates[1].x) / 2;
       const ed = overlay.extendData || {};
@@ -244,7 +256,16 @@
       const colorDown = ext.colorDown || "rgba(208,94,94,0.55)";
       const colorVAH  = ext.colorVAH  || "#e8b64c";
       const colorVAL  = ext.colorVAL  || "#e8b64c";
-      const colorPOC  = ext.colorPOC  || "#ffffff";
+      // Standard-POC weiss war im hellen Theme unsichtbar (1.06:1) —
+      // ohne eigene Farbe die Textfarbe des Themes.
+      // Auch eine gespeicherte Standardfarbe Weiss (app.js-Vorgabe der FRVP-
+      // Menues) im hellen Theme dunkel zeichnen; eigene Farben bleiben.
+      const lightTheme = document.documentElement.getAttribute("data-theme") === "light";
+      const isWhite = (c) => /^#fff(fff)?$/i.test(String(c || "").trim())
+        || /^rgba?\(\s*255\s*,\s*255\s*,\s*255\s*[,)]/i.test(String(c || "").trim());
+      const colorPOC  = (ext.colorPOC && !(lightTheme && isWhite(ext.colorPOC)))
+        ? ext.colorPOC
+        : (lightTheme ? "#1f2933" : "#ffffff");
       const pocDashed = ext.pocDashed !== false;   // default: gestrichelt
 
       // Preis-Range
@@ -402,9 +423,15 @@
   // EINMAL zentral an jede Registrierung gehaengt, statt ihn in zwanzig
   // Overlay-Definitionen einzeln zu wiederholen.
   //
-  // Die Toleranz kann hier nicht in Pixeln gerechnet werden — der Haken
-  // bekommt keine Bildschirmkoordinaten. Stattdessen ein Anteil der
-  // Kerzenspanne: stark 45 %, schwach 18 % von (Hoch − Tief).
+  // Gerastet wird bedingungslos auf den naechsten O/H/L/C-Wert (kein
+  // Fangbereich mehr; die fruehere 45 %/18 %-Toleranz ist entfallen).
+  //
+  // HINWEIS (Gesamtpruefung C16): Der Wrapper unten wird erst NACH
+  // rectangle, priceRange, dateRange, priceDateRange, frvp und barPattern
+  // installiert. Diese sechs nutzen deshalb KLineCharts' eigenen Magneten
+  // (mit Fangbereich), alle spaeter registrierten dieses bedingungslose
+  // Einrasten. Bewusst so belassen, um das gewohnte Verhalten nicht zu
+  // aendern — bei Bedarf den Wrapper an den Dateianfang ziehen.
   function magnetSnapValue({ mode, performPoint }) {
     if (!performPoint || mode === "normal" || !mode) return;
     const candle = window.__tvCandleAt && window.__tvCandleAt(performPoint.timestamp);
@@ -576,9 +603,20 @@
     return `rgba(${r},${g},${b},${a})`;
   }
 
-  function fmtPrice(p) {
-    return p.toLocaleString("de-CH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Nachkommastellen nach Kursniveau (Gesamtpruefung A21). Ab 1 wie bisher
+  // zwei Stellen; darunter so viele, dass vier gueltige Ziffern sichtbar
+  // bleiben — sonst zeigten PEPE/SHIB ueberall "0.00".
+  function priceDecimals(p) {
+    const a = Math.abs(p);
+    if (!(a > 0) || a >= 1) return 2;
+    return Math.min(12, -Math.floor(Math.log10(a)) + 3);
   }
+  function fmtPrice(p) {
+    if (p == null || !isFinite(p)) return "–";
+    const d = priceDecimals(p);
+    return p.toLocaleString("de-CH", { minimumFractionDigits: d, maximumFractionDigits: d });
+  }
+  window.__tvPriceDecimals = priceDecimals;
 
   // Theme-abhängige Label-Farben. Farbiger Text auf kontrastierendem Chip
   // ist besser lesbar als farbiger Text direkt auf dem Chart.
@@ -592,7 +630,7 @@
 
   // Baut die Figuren für eine Reihe von Fib-Levels.
   // yAt(level) -> Pixel-Y, priceAt(level) -> Preis
-  function buildFibFigures(levels, coords, yAt, priceAt, extendData) {
+  function buildFibFigures(levels, coords, yAt, priceAt, extendData, bounding) {
     const ed = extendData || {};
     // Golden Pocket (0.618–0.65): zusätzliches 0.65-Level einfügen, wenn aktiv.
     // Die Fläche zwischen 0.618 und 0.65 wird dann als Band gefüllt.
@@ -614,7 +652,9 @@
     const lineWidth   = ed.lineWidth || 1;
     const hidden      = ed.hiddenLevels || {};   // { "0.236": true, ... }
 
-    if (extendRight) xRight = xLeft + (xRight - xLeft) * 2.2;
+    // "Nach rechts verlaengern" reicht bis an den Chartrand wie beim FRVP
+    // (frueher fest 2.2 x Breite). Ohne bounding der alte Rueckfall.
+    if (extendRight) xRight = (bounding && bounding.width > xRight) ? bounding.width : xLeft + (xRight - xLeft) * 2.2;
 
     const visible = levels.filter(lv => !hidden[String(lv.v)]);
     const lc = labelColors();
@@ -690,7 +730,7 @@
     },
     needDefaultXAxisFigure: true,
     needDefaultYAxisFigure: true,
-    createPointFigures: ({ coordinates, overlay }) => {
+    createPointFigures: ({ coordinates, overlay, bounding }) => {
       if (coordinates.length < 2) return [];
       const [c0, c1] = coordinates;
       const pts = overlay.points || [];
@@ -701,7 +741,7 @@
       const priceAt = (lv) => p0 + (p1 - p0) * lv;
       const yAt     = (lv) => c0.y + (c1.y - c0.y) * lv;
 
-      const figs = buildFibFigures(FIB_LEVELS, [c0, c1], yAt, priceAt, overlay.extendData);
+      const figs = buildFibFigures(FIB_LEVELS, [c0, c1], yAt, priceAt, overlay.extendData, bounding);
       // Verbindungslinie der beiden Ankerpunkte (gestrichelt, dezent)
       figs.push({
         type: "line",
@@ -723,7 +763,7 @@
     },
     needDefaultXAxisFigure: true,
     needDefaultYAxisFigure: true,
-    createPointFigures: ({ coordinates, overlay }) => {
+    createPointFigures: ({ coordinates, overlay, bounding }) => {
       // Während des Zeichnens (currentStep !== -1): die Linien A→B→C als
       // Gummiband mitziehen (Punkt 3) — erst nach dem dritten Punkt die vollen
       // Fibonacci-Figuren.
@@ -753,7 +793,7 @@
       const dy = cB.y - cA.y;
       const yAt = (lv) => cC.y + dy * lv;
 
-      const figs = buildFibFigures(FIB_EXT_LEVELS, [cB, cC], yAt, priceAt, overlay.extendData);
+      const figs = buildFibFigures(FIB_EXT_LEVELS, [cB, cC], yAt, priceAt, overlay.extendData, bounding);
       // Hilfslinien A→B→C
       figs.push({
         type: "line",
@@ -942,9 +982,11 @@
         });
       });
 
-      // Stop-Linie
-      if (ed.stopLoss != null && overlay.points?.[0]) {
-        const yStop = yLo + (yLo - yUp) * 0.06 * (ed.stopLoss < ed.lower ? 1 : -1);
+      // Stop-Linie auf dem echten Stop-Preis (dritter Punkt, Gesamtpruefung
+      // A16). Aeltere Baender ohne dritten Punkt zeichnen keine Linie statt
+      // einer erfundenen Position.
+      if (ed.stopLoss != null && coordinates[2] && isFinite(coordinates[2].y)) {
+        const yStop = coordinates[2].y;
         figs.push({
           type: "line",
           attrs: { coordinates: [{ x: x0, y: yStop }, { x: x1, y: yStop }] },
@@ -1448,7 +1490,7 @@
           styles: {
             style: "stroke_fill",
             color: border,
-            backgroundColor: "rgba(13,17,23,0.75)",
+            backgroundColor: labelColors().bg,
             borderColor: border,
             borderSize: 0,
             size: 10,
@@ -1542,7 +1584,7 @@
       // backgroundColor explizit, sonst KLC-Default weiss auf graublau.
       const numStyle = {
         style: "stroke_fill", color: col,
-        backgroundColor: "rgba(13,17,23,0.85)",
+        backgroundColor: labelColors().bg,
         borderColor: col, borderSize: 1, borderRadius: 3,
         size: zoomSize(barSpace, 10), family: "IBM Plex Mono, monospace",
         paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
@@ -1589,7 +1631,7 @@
                      align: "right", baseline: "bottom" },
             styles: {
               style: "stroke_fill", color: "rgba(63,182,139,0.95)",
-              backgroundColor: "rgba(13,17,23,0.85)",
+              backgroundColor: labelColors().bg,
               borderColor: "rgba(63,182,139,0.6)", borderSize: 1, borderRadius: 3,
               size: zoomSize(barSpace, 10), family: "IBM Plex Mono, monospace",
               paddingLeft: 5, paddingRight: 5, paddingTop: 1, paddingBottom: 1,
@@ -1709,7 +1751,7 @@
         figs.push({
           type: "circle",
           attrs: { x: c.x, y: c.y, r: 3 },
-          styles: { style: "stroke_fill", color: "rgba(13,17,23,0.9)",
+          styles: { style: "stroke_fill", color: labelColors().bg,
                     borderColor: k, borderSize: 1.5 },
         });
         figs.push({
@@ -1717,7 +1759,7 @@
           attrs: { x: c.x + 7, y: c.y, text: n, align: "left", baseline: "middle" },
           styles: {
             style: "stroke_fill", color: k,
-            backgroundColor: "rgba(13,17,23,0.85)",
+            backgroundColor: labelColors().bg,
             borderColor: k, borderSize: 1, borderRadius: 3,
             size: zoomSize(barSpace, 10), family: "IBM Plex Mono, monospace",
             paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
@@ -1835,7 +1877,7 @@
         figs.push({
           type: "circle",
           attrs: { x: c0.x, y: c0.y, r: ed.degreeRank === 0 ? 3.5 : 2.8 },
-          styles: { style: "stroke_fill", color: "rgba(13,17,23,0.9)",
+          styles: { style: "stroke_fill", color: labelColors().bg,
                     borderColor: col, borderSize: 1.5 },
         });
         if (!labels[i]) return;
@@ -1854,7 +1896,7 @@
                    align: "center", baseline: up ? "bottom" : "top" },
           styles: {
             style: "stroke_fill", color: col,
-            backgroundColor: "rgba(13,17,23,0.85)",
+            backgroundColor: labelColors().bg,
             borderColor: col, borderSize: 1, borderRadius: 3,
             size: zoomSize(barSpace, 11), family: "IBM Plex Mono, monospace",
             paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,

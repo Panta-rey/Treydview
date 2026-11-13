@@ -37,6 +37,51 @@ function resolveTimeframe(id) {
   return null;
 }
 
+// Unterstuetzt die Quelle des Symbols dieses Intervall NATIV? (Gesamtpruefung
+// A1) Vorher lieferten Coinbase "4h" 6-Stunden-, Kraken "1M" 15-Tage- und
+// Bitstamp "15m" 1-Stunden-Kerzen unter falschem Etikett. Aggregierte
+// Intervalle (12D, nD) entstehen bei jeder Quelle aus Tageskerzen.
+const BITSTAMP_TF = new Set(["1h", "4h", "1d", "1w", "1M"]);
+const DAILY_ONLY_TF = new Set(["1d", "1w", "1M"]);
+function tfSupportedFor(sym, tf) {
+  if (!sym || !tf) return false;
+  if (tf.aggDays) return true;
+  switch (sym.type) {
+    case "kraken":   return !!tf.krakenInterval;
+    case "coinbase": return !!tf.coinbaseInterval;
+    case "bybit":    return !!tf.bybitInterval;
+    case "bitstamp": return BITSTAMP_TF.has(tf.id);
+    case "worker":
+    case "stooq":
+    case "dominance": return DAILY_ONLY_TF.has(tf.id);
+    default:         return !!tf.binanceInterval;
+  }
+}
+// Passt das Intervall nicht zur Quelle, auf 1D ausweichen.
+function ensureTfFor(sym) {
+  if (!tfSupportedFor(sym, state.timeframe)) state.timeframe = resolveTimeframe("1d");
+}
+
+// Nachkommastellen nach Kursniveau (Gesamtpruefung A21): ab 100 zwei,
+// ab 1 vier, darunter so viele, dass vier gueltige Ziffern sichtbar
+// bleiben — vorher zeigten PEPE/SHIB "0.0000" als aktuellen Kurs.
+function priceDigits(v) {
+  const a = Math.abs(v);
+  if (!(a > 0)) return 2;
+  if (a >= 100) return 2;
+  if (a >= 1) return 4;
+  return Math.min(12, -Math.floor(Math.log10(a)) + 3);
+}
+
+// Fremdtext (Layout-/Watchlist-Namen, Labels aus Boersendaten, importierte
+// Dateien, Sync-Staende) nie roh per innerHTML einsetzen — sonst kann ein
+// praeparierter Name Skript ausfuehren (Gesamtpruefung B1/B3).
+function escapeHtml(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 // Das gespeicherte Symbol ist ein ganzes OBJEKT, kein blosser Bezeichner.
 // Wurde es einmal gespeichert, blieben Aenderungen an CONFIG.DEFAULT_SYMBOLS
 // wirkungslos — der Browser lud weiter die eingefrorene alte Fassung, mit
@@ -78,7 +123,13 @@ const state = {
   chartType:   _ws?.chartType || "candle_solid", // candle_solid | area
   legendCollapsed: _ws?.legendCollapsed || false,
   drawStyle:   _ws?.drawStyle || { color: "#e8b64c", lineStyle: "solid", opacity: 100, width: 1 },
-  compareAssets: [],   // [{ id, label, color, data: [{timestamp, close}] }]
+  // [{ …Symbol, color, opacity, width, dashed, hidden, data: [{timestamp, close}] }]
+  // Seit der Gesamtpruefung (A5) im Workspace gespeichert (ohne Kursdaten)
+  // und beim Start neu geladen — vorher war der Vergleich nach jedem
+  // Neuladen weg.
+  compareAssets: Array.isArray(_ws?.compareAssets)
+    ? _ws.compareAssets.filter(a => a && a.id).map(a => ({ ...a, data: [] }))
+    : [],
   // Senkrechter Zoom im Vergleichsmodus. Die Prozent-Skala wird bei jedem
   // Neuzeichnen automatisch berechnet — ohne diesen Faktor haette ein
   // Y-Zug am Chart nur das Raster bewegt, die Linien aber nicht.
@@ -132,6 +183,9 @@ const state = {
   smcOverlayIds: [],
   smcSaved: _ws?.smcSaved || [],
   smcOpts: _ws?.smcOpts || {},
+  // Haekchen der Scan-Panels (Mustertypen, SMC-Anzeige) — vorher nach
+  // jedem Neuladen wieder alle an (C32). Schluessel = data-pat bzw. id.
+  scanUi: (_ws && _ws.scanUi && typeof _ws.scanUi === "object") ? _ws.scanUi : {},
 
   // Elliott-Wellen-Scanner (Welle 3 / Golden Pocket)
   ewtOverlayIds: [],
@@ -142,25 +196,8 @@ const state = {
   // Darstellungsoption, keine Voreinstellung.
   logScale: _ws?.logScale === true,
 
-  // Chart-Darstellung (Kerzen-/Linienfarben)
-  chartStyle: _ws?.chartStyle || {
-    // Preis-Markierungen: aktueller Preis + lokale Hochs/Tiefs
-    lastLine:    true,
-    lastText:    true,
-    lastSize:    12,
-    hiLoShow:    true,
-    hiLoSize:    12,
-    upColor:     "#3fb68b",
-    downColor:   "#d05e5e",
-    hollow:      false,
-    lineColor:   "#e8b64c",
-    lineWidth:   2,
-    // Flaeche unter der Linie standardmaessig AUS. Bei Indizes und Fonds,
-    // die als Linie starten, verdeckt die Fuellung sonst den unteren
-    // Chartbereich, ohne Information zu liefern.
-    areaFill:    false,
-    fillOpacity: 15,
-  },
+  // Chart-Darstellung (Kerzen-/Linienfarben); Vorgaben in chartStyleDefaults()
+  chartStyle: _ws?.chartStyle || chartStyleDefaults(),
 
   // Lazy Loading
   loadingOlder:   false,
@@ -212,11 +249,14 @@ if (!_ws && window.matchMedia("(pointer: coarse)").matches) {
 // state.watchlist zeigt immer auf die gerade aktive Liste. So funktioniert
 // der gesamte bestehende Code weiter, ohne dass jeder Zugriff angefasst
 // werden muss.
-// Bestehende Workspaces kennen die Preis-Markierungs-Felder nicht
-state.chartStyle = {
-  lastLine: true, lastText: true, lastSize: 12, hiLoShow: true, hiLoSize: 12,
-  ...state.chartStyle,
-};
+// Bestehende Workspaces kennen die Preis-Markierungs-Felder nicht —
+// fehlende Felder aus den Vorgaben ergaenzen (vorhandene bleiben).
+state.chartStyle = { ...chartStyleDefaults(), ...state.chartStyle };
+
+// Gespeichertes Intervall, das die Quelle nicht (mehr) nativ liefert
+// (A1, z. B. Coinbase 4h aus einem alten Workspace) → auf 1D. Hier, vor
+// dem ersten Beschriften und Laden, damit Etikett und Kerzen stimmen.
+ensureTfFor(state.symbol);
 
 Object.defineProperty(state, "watchlist", {
   get() { return this.watchlists[this.activeWatchlist] || []; },
@@ -239,7 +279,7 @@ function quiet(fn, label) {
 window.__tvTestBybit = async (symbol, interval) => {
   const url = `${CONFIG.BYBIT_REST}/v5/market/kline?category=spot&symbol=${symbol}&interval=${interval}&limit=5`;
   console.log("Bybit URL:", url);
-  const res = await fetch(url);
+  const res = await tvFetch(url);
   const json = await res.json();
   console.log("Bybit response:", JSON.stringify(json).slice(0,500));
   return json;
@@ -429,6 +469,11 @@ function baseStyles() {
 chart.setStyles(baseStyles());
 
 // ---------- Indikator-Params bauen ----------
+// Positive Zahl oder Vorgabe. Die frueheren ||-Vorgaben machten jede 0
+// unmoeglich; fuer Perioden ist das richtig, fuer den BOLL-Offset nicht (C21).
+function posOr(v, def) { const n = Number(v); return isFinite(n) && n > 0 ? n : def; }
+function numOr(v, def) { const n = Number(v); return v !== "" && v != null && isFinite(n) ? n : def; }
+
 function buildCreate(ind) {
   const sv  = Settings.get(ind.key);
   const inp = sv.inputs;
@@ -439,7 +484,7 @@ function buildCreate(ind) {
     // Aenderungen darin als neue Instanz — genau das wollen wir hier.
     case "sma":      create.calcParams = [inp.p1||20, inp.p2||50, inp.p3||100, inp.p4||200, inp.tf||"auto"]; break;
     case "ema":      create.calcParams = [inp.p1||21, inp.p2||50, inp.p3||100, inp.p4||200, inp.tf||"auto"]; break;
-    case "boll":     create.calcParams = [inp.period||20, inp.stddev||2.0, inp.maType||"SMA", inp.offset||0]; break;
+    case "boll":     create.calcParams = [posOr(inp.period, 20), posOr(inp.stddev, 2.0), inp.maType||"SMA", numOr(inp.offset, 0)]; break;
     case "gc":       create.calcParams = [inp.period||144, inp.mult||1.414, inp.poles||4]; break;
     case "hull":     create.calcParams = [inp.mode||"HMA", inp.period||55, inp.lengthMult||1.0]; break;
     case "rvwap":    create.calcParams = [inp.days||365]; break;
@@ -797,14 +842,21 @@ function startPaneDrag(key) {
     ghost.style.top  = (y + 8) + "px";
     positionMarker(y);
   };
-  const up = (e) => {
+  const cleanup = () => {
     document.removeEventListener("mousemove", move);
     document.removeEventListener("mouseup", up);
     document.removeEventListener("touchmove", move);
     document.removeEventListener("touchend", up);
+    document.removeEventListener("touchcancel", cancel);
     document.body.style.cursor = "";
     try { ghost.remove(); } catch (err) {}
     try { marker.remove(); } catch (err) {}
+  };
+  // Vom System abgebrochene Beruehrung (Anruf, Mitteilung, Geste): ohne
+  // Umsortieren aufraeumen — vorher blieben Geisterlinie und Listener haengen.
+  const cancel = () => { cleanup(); _paneDrag = null; };
+  const up = (e) => {
+    cleanup();
     const drag = _paneDrag; _paneDrag = null;
     if (!drag) return;
     const y = (e ? evXY(e).y : null) != null ? evXY(e).y : drag.lastY;
@@ -831,6 +883,7 @@ function startPaneDrag(key) {
   document.addEventListener("mouseup", up);
   document.addEventListener("touchmove", move, { passive: false });
   document.addEventListener("touchend", up);
+  document.addEventListener("touchcancel", cancel);
 }
 
 function reorderSubPanes(orderedKeys) {
@@ -888,7 +941,6 @@ function computeVrvpMeta() {
   const data = allData.slice(fromIdx, toIdx + 1);
   if (data.length < 2) { state.vrvpMeta = null; return; }
 
-  const prices = data.flatMap(d => [d.high, d.low]);
   // Schleife statt Math.min/max(...prices): Spread sprengt den Stack
   // ab ~130'000 Argumenten (= ~65'000 Kerzen nach Lazy Loading).
   let pMin = Infinity, pMax = -Infinity;
@@ -915,10 +967,25 @@ function computeVrvpMeta() {
     if (totalVol[r] > totalVol[pocRow]) pocRow = r;
     if (totalVol[r] > maxVol) maxVol = totalVol[r];
   }
+  // Value Area (Gesamtpruefung A10): ausgehend vom POC jeweils die
+  // volumenstaerkere Nachbarzeile dazunehmen, bis vaPct % des Volumens
+  // erreicht sind — gleiche Rechnung wie beim FRVP. Vorher waren die
+  // Einstellung "Value Area %" und der Plot "Value Area" wirkungslos.
+  let totalAll = 0;
+  for (let r = 0; r < rows; r++) totalAll += totalVol[r];
+  const vaTarget = totalAll * (Math.min(100, Math.max(1, vaPct)) / 100);
+  let vaVol = totalVol[pocRow], vaLow = pocRow, vaHigh = pocRow;
+  while (vaVol < vaTarget && (vaLow > 0 || vaHigh < rows - 1)) {
+    const aH = vaHigh < rows - 1 ? totalVol[vaHigh + 1] : -1;
+    const aL = vaLow  > 0        ? totalVol[vaLow  - 1] : -1;
+    if (aH >= aL) { vaHigh++; vaVol += Math.max(0, aH); } else { vaLow--; vaVol += Math.max(0, aL); }
+  }
   state.vrvpMeta = {
     rows, pMin, pMax, rowH, upVol, downVol, totalVol,
     maxVol,
     pocPrice: pMin + (pocRow + 0.5) * rowH,
+    vahPrice: pMin + (vaHigh + 1) * rowH,
+    valPrice: pMin + vaLow * rowH,
   };
 }
 
@@ -937,8 +1004,12 @@ function drawVrvp() {
   const { rowH, pMin, upVol, downVol, totalVol, maxVol, pocPrice, vahPrice, valPrice } = state.vrvpMeta;
   const rows = totalVol.length;
   const w = chartEl.clientWidth, h = chartEl.clientHeight;
-  canvas.width = w; canvas.height = h;
+  // Retina-scharf (C12): Pixelpuffer in Geraetepixeln, Zeichnung in CSS-Pixeln.
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  canvas.style.width = w + "px"; canvas.style.height = h + "px";
   const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
   // Clip auf die ECHTEN Grenzen des Preis-Panes (candle_pane).
@@ -959,9 +1030,28 @@ function drawVrvp() {
 
   // Abstand zur Preisachse: Balken enden mit grösserem Gap, damit die
   // Preisskala frei bleibt und nichts überlappt.
-  const rightGap = 96;
+  // Mindestens wie bisher 96 px; bei breiter Preisachse (kleine Kurse mit
+  // vielen Stellen) entsprechend mehr (C12).
+  let axisW = 0;
+  try { const ax = chart.getSize("candle_pane", "yAxis"); axisW = (ax && ax.width) || 0; } catch (e) {}
+  const rightGap = Math.max(96, axisW + 16);
   const rightEdge = w - rightGap;
   const maxBarW = w * widthPct;
+  const yOf = (v) => {
+    const c = chart.convertToPixel({ value: v }, { paneId: "candle_pane", absolute: true });
+    return c && c.y != null ? c.y : null;
+  };
+
+  // Value Area als Band hinter den Balken (Plot "Value Area")
+  const vaPlot = sv.plots.va;
+  const showVa = vaPlot && vaPlot.visible !== false && vahPrice != null && valPrice != null;
+  if (showVa) {
+    const y1 = yOf(vahPrice), y2 = yOf(valPrice);
+    if (y1 != null && y2 != null) {
+      ctx.fillStyle = vaPlot.color;
+      ctx.fillRect(rightEdge - maxBarW, Math.min(y1, y2), maxBarW, Math.abs(y2 - y1));
+    }
+  }
 
   for (let r = 0; r < rows; r++) {
     const pb = pMin + r * rowH, pt = pb + rowH;
@@ -980,6 +1070,24 @@ function drawVrvp() {
     // Up-Balken (links daneben)
     ctx.fillStyle = (sv.plots.up && sv.plots.up.visible !== false) ? sv.plots.up.color : "rgba(0,0,0,0)";
     ctx.fillRect(rightEdge - barW, yTop, upW, yH);
+  }
+
+  // VAH/VAL-Linien und POC (gestrichelt) wie beim FRVP
+  if (showVa) {
+    const line = (price, color, dash) => {
+      const y = yOf(price);
+      if (y == null) return;
+      ctx.save();
+      ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+      ctx.setLineDash(dash || []);
+      ctx.beginPath(); ctx.moveTo(rightEdge - maxBarW, y); ctx.lineTo(rightEdge, y); ctx.stroke();
+      ctx.restore();
+    };
+    const lineCol = hexToRgba(vaPlot.hex || "#e8b64c", 90);
+    line(vahPrice, lineCol);
+    line(valPrice, lineCol);
+    const pocCol = getComputedStyle(document.documentElement).getPropertyValue("--text").trim() || "#c9d4e0";
+    line(pocPrice, pocCol, [4, 3]);
   }
   ctx.restore();
 }
@@ -1158,7 +1266,8 @@ async function loadData(opts) {
       // Bitstamp liefert nur 1h, 4h und 1d. Groebere Intervalle entstehen
       // aus Tageskerzen: Wochen- und Monatskerzen liessen sich zwar
       // anfragen, waeren aber je Boerse anders geschnitten.
-      const stepMap = { "15m": 3600, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 86400, "1M": 86400 };
+      // 15m ist gesperrt (A1): Bitstamp-Worker liefert nur 1h/4h/1d.
+      const stepMap = { "1h": 3600, "4h": 14400, "1d": 86400, "1w": 86400, "1M": 86400 };
       const step = aggN ? 86400 : (stepMap[state.timeframe.id] || 86400);
       // Momentaufnahme aus dem Repo + Zuwachs vom Worker. Nur fuer
       // Tageskerzen — die gespeicherte Datei enthaelt Tagesdaten.
@@ -1765,14 +1874,14 @@ async function loadAllExchangeSymbols() {
   // zuerst"-Ordnung ausreichend.
   const binanceVol = new Map();
   try {
-    const tRes = await fetch(`${CONFIG.BINANCE_REST}/ticker/24hr`);
+    const tRes = await tvFetch(`${CONFIG.BINANCE_REST}/ticker/24hr`);
     if (tRes.ok) {
       const arr = await tRes.json();
       if (Array.isArray(arr)) arr.forEach(t => binanceVol.set(t.symbol, parseFloat(t.quoteVolume) || 0));
     }
   } catch (e) {}
   try {
-    const infoRes = await fetch(`${CONFIG.BINANCE_REST}/exchangeInfo`);
+    const infoRes = await tvFetch(`${CONFIG.BINANCE_REST}/exchangeInfo`);
     if (infoRes.ok) {
       const info = await infoRes.json();
       info.symbols
@@ -1788,7 +1897,7 @@ async function loadAllExchangeSymbols() {
 
   // --- Coinbase: alle aktiven Pairs ---
   try {
-    const res = await fetch(`${CONFIG.COINBASE_REST}/products`);
+    const res = await tvFetch(`${CONFIG.COINBASE_REST}/products`);
     if (res.ok) {
       const arr = await res.json();
       arr.filter(p => p.status === "online" && ALLOWED_QUOTES.has(p.quote_currency))
@@ -1802,7 +1911,7 @@ async function loadAllExchangeSymbols() {
 
   // --- Kraken: alle online Pairs ---
   try {
-    const res = await fetch(`${CONFIG.KRAKEN_REST}/AssetPairs`);
+    const res = await tvFetch(`${CONFIG.KRAKEN_REST}/AssetPairs`);
     if (res.ok) {
       const json = await res.json();
       if (!json.error?.length) {
@@ -1821,7 +1930,7 @@ async function loadAllExchangeSymbols() {
 
   // --- Bybit: Spot-Pairs mit Volumen-Filter (viele Trash-Tokens) ---
   try {
-    const res = await fetch(`${CONFIG.BYBIT_REST}/v5/market/tickers?category=spot`);
+    const res = await tvFetch(`${CONFIG.BYBIT_REST}/v5/market/tickers?category=spot`);
     if (res.ok) {
       const json = await res.json();
       if (json.retCode === 0) {
@@ -1950,7 +2059,7 @@ function renderCompareActive() {
       ? `<path d="M2 2l20 20M9.9 5.1A9.9 9.9 0 0 1 12 5c7 0 11 7 11 7a18 18 0 0 1-3.2 4M6.6 6.6A18 18 0 0 0 1 12s4 7 11 7a9.9 9.9 0 0 0 4.2-.9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`
       : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/>`;
     chip.innerHTML = `<span class="cc-dot" style="background:${a.color}"></span>`
-      + `<span class="cc-label">${a.label}</span>`
+      + `<span class="cc-label">${escapeHtml(a.label)}</span>`
       + `<button class="cc-eye" title="${a.hidden ? "Einblenden" : "Ausblenden"}"><svg viewBox="0 0 24 24" width="13" height="13">${eye}</svg></button>`
       + `<button class="cc-gear" title="Linie anpassen">⚙</button>`
       + `<button class="cc-remove" title="Entfernen">✕</button>`;
@@ -1977,7 +2086,7 @@ async function addCompareAsset(sym) {
     setStatus(`Maximal ${COMPARE_COLORS.length} Vergleichs-Assets`);
     return;
   }
-  const color = COMPARE_COLORS[state.compareAssets.length];
+  const color = nextCompareColor();
   // WICHTIG: das ganze Symbol uebernehmen, nicht nur id und label.
   // refreshCompareData entscheidet ueber entry.type, welche Boerse gefragt
   // wird, und braucht dazu bybitSymbol / krakenPair / coinbaseProduct.
@@ -1986,6 +2095,7 @@ async function addCompareAsset(sym) {
   // die es dort nicht gibt. Ergebnis: "Vergleichsdaten ... fehlgeschlagen".
   const entry = { ...sym, color, data: [], hidden: false };
   state.compareAssets.push(entry);
+  saveWorkspace();
   renderCompareActive();
   renderCompareList(document.getElementById("compareSearch")?.value || "");
   await refreshCompareData(entry);
@@ -1997,6 +2107,7 @@ function toggleCompareAsset(id) {
   if (!a) return;
   a.hidden = !a.hidden;
   window.__tvCompareAssets = state.compareAssets;
+  saveWorkspace();
   renderCompareActive();
   try { drawCompare(); } catch (e) {}
   updateLegend();
@@ -2004,9 +2115,9 @@ function toggleCompareAsset(id) {
 
 function removeCompareAsset(id) {
   state.compareAssets = state.compareAssets.filter(c => c.id !== id);
-  // Farben neu zuordnen, damit sie konsistent bleiben
-  state.compareAssets.forEach((a, i) => { a.color = COMPARE_COLORS[i]; });
+  // Farben NICHT neu verteilen: die uebrigen Linien behalten ihre Farbe (C8)
   window.__tvCompareAssets = state.compareAssets;
+  saveWorkspace();
   renderCompareActive();
   renderCompareList(document.getElementById("compareSearch")?.value || "");
   // Auto-Exit: sind keine Vergleichsassets mehr da, schaltet
@@ -2070,6 +2181,7 @@ window.addEventListener("beforeunload", (e) => {
 
 // Kline-Daten eines Vergleichs-Assets im aktuellen Timeframe holen
 async function refreshCompareData(entry) {
+  completeCompareEntry(entry);
   try {
     let candles;
     const tf = state.timeframe;
@@ -2283,6 +2395,38 @@ function isFibDrawing() {
 // Der traf ueber verschiedene Intervalle (1M-Chart gegen Tages-Indexdaten)
 // oder bei anderer Tagesgrenze der Quelle fast nie — die Vergleichslinien
 // zerfielen in einzelne Striche oder verschwanden ganz an der Nulllinie.
+// Naechstgelegene Kerze zu einem Zeitstempel, binaer statt linear ueber
+// alle Kerzen bei jeder Mausbewegung (C7). Gleichstand → die fruehere,
+// wie die bisherige lineare Suche.
+function nearestCandle(data, ts) {
+  if (!data || !data.length || ts == null) return null;
+  let lo = 0, hi = data.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (data[mid].timestamp < ts) lo = mid + 1; else hi = mid;
+  }
+  if (lo === 0) return data[0];
+  if (lo >= data.length) return data[data.length - 1];
+  const a = data[lo - 1], b = data[lo];
+  return (Math.abs(b.timestamp - ts) < Math.abs(a.timestamp - ts)) ? b : a;
+}
+
+// Ausgerichtete Vergleichsreihe zwischenspeichern: drawCompare laeuft bei
+// jedem Scroll-Frame, die Ausrichtung aendert sich aber nur mit den Daten
+// (C8). Schluessel: Reihe (Objekt) + Laenge/Raender beider Reihen.
+const _alignCache = new WeakMap();
+function alignedCompareSeries(assetData, bars) {
+  if (!assetData || !assetData.length || !bars || !bars.length) return alignCompareSeries(assetData, bars || []);
+  const la = assetData[assetData.length - 1];
+  const key = bars.length + "|" + bars[0].timestamp + "|" + bars[bars.length - 1].timestamp
+    + "|" + assetData.length + "|" + la.timestamp + ":" + la.close;
+  const hit = _alignCache.get(assetData);
+  if (hit && hit.key === key) return hit.out;
+  const out = alignCompareSeries(assetData, bars);
+  _alignCache.set(assetData, { key, out });
+  return out;
+}
+
 function alignCompareSeries(assetData, bars) {
   const out = new Array(bars.length).fill(null);
   if (!assetData || !assetData.length || !bars.length) return out;
@@ -2357,7 +2501,7 @@ function drawCompare() {
   if (!mainRef) return;
 
   // Vergleichsreihen auf die Chart-Bars ausrichten (Treppe, s. o.).
-  const aligned = state.compareAssets.map(a => alignCompareSeries(a.data, dataList));
+  const aligned = state.compareAssets.map(a => alignedCompareSeries(a.data, dataList));
 
   const assetRefs = aligned.map(arr => {
     for (let i = fromIdx; i <= toIdx; i++) if (arr[i] != null) return arr[i];
@@ -2408,11 +2552,14 @@ function drawCompare() {
   ctx.rect(0, paneTop, w, paneH);
   ctx.clip();
 
-  // Hauptasset-Linie (weiss)
+  // Hauptasset-Linie in der Textfarbe des Themes — fest weiss war sie im
+  // hellen Theme unsichtbar (Gesamtpruefung A11).
+  const mainCol = getComputedStyle(document.documentElement).getPropertyValue("--text").trim()
+    || (state.theme === "light" ? "#1f2933" : "#ffffff");
   drawLine(ctx, dataList, fromIdx, toIdx, (d) => {
     const pos = posOf(d.close, mainRef);
     return pos == null ? null : { pos };
-  }, "#ffffff", 2, dataList, posToY, chart);
+  }, mainCol, 2, dataList, posToY, chart);
 
   // Vergleichs-Linien (Farbe/Deckkraft/Linienstärke je Asset einstellbar, Punkt 5a)
   state.compareAssets.forEach((asset, idx) => {
@@ -2463,7 +2610,7 @@ function drawCompare() {
       label: shortSymbol(state.symbol.label),
       pct: ((lastVisible.close - mainRef) / mainRef) * 100,
       y:   posToY(posOf(lastVisible.close, mainRef)),
-      color: "#ffffff",
+      color: mainCol,
     });
   }
   state.compareAssets.forEach((asset, idx) => {
@@ -2636,14 +2783,8 @@ if (_compareSearchEl) _compareSearchEl.addEventListener("click", (e) => {
 function renderTfList() {
   const list = document.getElementById("tfList");
   list.innerHTML = "";
-  const goldMode     = state.symbol.type === "worker" || state.symbol.type === "stooq";
-  const krakenMode   = state.symbol.type === "kraken";
-  const coinbaseMode = state.symbol.type === "coinbase";
-  const bybitMode    = state.symbol.type === "bybit";
-  // Bitstamp aggregiert aus 1h/4h/1d (stepMap) — 2h ist dort nicht abbildbar,
-  // deshalb (wie besprochen) 2h nur bei Binance/Bybit.
-  const bitstampMode = state.symbol.type === "bitstamp";
-  const bitstampTf   = new Set(["15m", "1h", "4h", "1d", "1w", "1M"]);
+  // Welche Intervalle die Quelle nativ liefert, entscheidet tfSupportedFor
+  // (Gesamtpruefung A1) — eine Stelle fuer Liste, Symbolwechsel und Start.
 
   // Intervallwechsel — von den festen Eintraegen UND vom freien Feld genutzt.
   const selectTf = (tf) => {
@@ -2663,20 +2804,9 @@ function renderTfList() {
 
   CONFIG.TIMEFRAMES.forEach(tf => {
     const item = document.createElement("div");
-    // Gold: 1D, 1W und 1M. Woche und Monat entstehen aus den Tagesdaten
-    // (aggregateCandles) — kuerzere Intervalle gibt es nicht, weil die
-    // LBMA nur zwei Fixings je Handelstag veroeffentlicht.
-    const goldTf = new Set(["1d", "1w", "1M"]);
-    // Aggregierte Intervalle (12D + freie nD) entstehen bei JEDER Quelle aus
-    // Tageskerzen — alle Quellen liefern 1d. Deshalb nie an den nativen
-    // Intervall-Codes scheitern lassen.
-    const disabled = tf.aggDays
-      ? false
-      : (goldMode && !goldTf.has(tf.id))
-        || (krakenMode && !tf.krakenInterval)
-        || (coinbaseMode && !tf.coinbaseInterval)
-        || (bybitMode && !tf.bybitInterval)
-        || (bitstampMode && !bitstampTf.has(tf.id));
+    // Gold/Indizes/Dominanz: nur 1D, 1W, 1M (Woche und Monat aus
+    // Tageskerzen). Aggregierte Intervalle gehen bei jeder Quelle.
+    const disabled = !tfSupportedFor(state.symbol, tf);
     item.className = "dd-item" + (tf.id === state.timeframe.id ? " active" : "") + (disabled ? " disabled" : "");
     item.textContent = tf.label;
     if (!disabled) item.addEventListener("click", () => selectTf(tf));
@@ -2816,10 +2946,10 @@ function updateLegend(hoverData) {
   const data = chart.getDataList();
   const d = hoverData || (data && data.at(-1));
   if (!d) { body.innerHTML = ""; return; }
-  const fmt = (v) => v == null ? "–" : v.toLocaleString("de-CH", { maximumFractionDigits: d.close >= 100 ? 2 : 4 });
+  const fmt = (v) => v == null ? "–" : v.toLocaleString("de-CH", { maximumFractionDigits: priceDigits(d.close) });
 
   let html = `<div class="legend-line legend-ohlc">`
-    + `<span class="lg-sym">${state.symbol.label}</span> `
+    + `<span class="lg-sym">${escapeHtml(state.symbol.label)}</span> `
     + `<span class="lg-tf">${state.timeframe.label}</span>  `
     + `O <b>${fmt(d.open)}</b>  H <b>${fmt(d.high)}</b>  L <b>${fmt(d.low)}</b>  C <b>${fmt(d.close)}</b>`
     + `  Vol ${(d.volume||0).toLocaleString("de-CH",{maximumFractionDigits:0})}`
@@ -3006,8 +3136,11 @@ function scheduleTagDraw() {
 }
 
 // Live-Countdown: jede Sekunde die Tags neu zeichnen. drawIndicatorTags ist
-// billig und kehrt im Vergleichsmodus/ohne Daten früh zurück.
-setInterval(() => { scheduleTagDraw(); }, 1000);
+// billig und kehrt im Vergleichsmodus/ohne Daten früh zurück. Im Hintergrund
+// (Tab verdeckt, App minimiert) gibt es nichts zu sehen — dort aussetzen und
+// beim Zurueckkehren einmal sofort zeichnen (C15).
+setInterval(() => { if (!document.hidden) scheduleTagDraw(); }, 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleTagDraw(); });
 
 function formatTagValue(v, price) {
   if (v == null || !isFinite(v)) return null;
@@ -3270,6 +3403,25 @@ function deserializeGeneratedPoints(points) {
     return { timestamp: p.timestamp, value: p.value };
   });
 }
+// Ein Scan-Overlay (EWT/Muster/SMC) wurde entfernt — per Rechtsklick, Entf
+// oder Papierkorb. Liste und Persistenz nachziehen, sonst kam es nach dem
+// Neuladen zurueck (Gesamtpruefung A7). Waehrend die clear*-Funktionen
+// ohnehin alles raeumen, ist _genBulk gesetzt und hier nichts zu tun.
+var _genBulk = false;   // var: gehoistet, kein TDZ bei fruehem Aufruf
+function forgetGeneratedOverlay(id) {
+  if (_genBulk || id == null) return;
+  [["ewtOverlayIds", "ewtSaved"], ["patternOverlayIds", "patternSaved"], ["smcOverlayIds", "smcSaved"]]
+    .forEach(([idsKey, savedKey]) => {
+      const ids = state[idsKey] || [];
+      if (!ids.includes(id)) return;
+      state[idsKey] = ids.filter(x => x !== id);
+      state[savedKey] = captureGeneratedOverlays(state[idsKey]);
+      markDirty();
+      saveWorkspace();
+    });
+}
+function GEN_ON_REMOVED(e) { forgetGeneratedOverlay(e && e.overlay && e.overlay.id); return false; }
+
 function captureGeneratedOverlays(ids) {
   const out = [];
   (ids || []).forEach(id => {
@@ -3301,6 +3453,7 @@ function restoreGeneratedOverlays(saved) {
         styles: d.styles ?? undefined,
         lock: true,   // Scan-Overlays sind nicht per Maus editierbar
         onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
+        onRemoved: GEN_ON_REMOVED,
       });
       if (id) ids.push(Array.isArray(id) ? id[0] : id);
     } catch (e) {}
@@ -4118,7 +4271,28 @@ function dragGuardsFor(overlayName) {
   // positionTool und FRVP werden nie verschoben — auch am Desktop nicht.
   // FRVP: nachträgliches Verschieben ist unnötig und war zudem fehleranfällig.
   if (overlayName === "positionTool" || overlayName === "frvp") return { ...DRAG_GUARDS };
-  return mobileDragGuards();
+  const g = mobileDragGuards();
+  if (Object.keys(g).length) return g;
+  // Desktop: KLineCharts zieht selbst. Am Ende des Zugs die neuen Punkte in
+  // state.drawings uebernehmen — sonst sprang eine verschobene Linie nach
+  // Neuladen, Layoutwechsel oder Sync an den Ursprungsort zurueck
+  // (Gesamtpruefung A6). false = KLineCharts-Verhalten bleibt unveraendert.
+  return {
+    onPressedMoveEnd: (e) => { persistDrawingFromChart(e && e.overlay && e.overlay.id); return false; },
+  };
+}
+
+function persistDrawingFromChart(id) {
+  if (id == null) return;
+  try {
+    const ov = chart.getOverlayById(id);
+    const rec = (state.drawings || []).find(d => d.id === id);
+    if (!ov || !rec || !ov.points) return;
+    rec.points = serializeDrawPoints(ov.points);
+    if (ov.extendData !== undefined) rec.extendData = ov.extendData ?? null;
+    markDirty();
+    saveWorkspace();
+  } catch (e) { /* Zeichnung inzwischen entfernt */ }
 }
 
 function buildOverlayConfig(overlayName) {
@@ -4303,12 +4477,12 @@ function startTool(overlayName) {
 // unerreichbar. Nach dem Einblenden die ECHTE Grösse messen und klemmen
 // (menuPosition schätzt nur; das FRVP-Menü ist höher als die Schätzung).
 // Der Abdunkler haengt an body.menu-open (style.css: body.menu-open::after,
-// z-index 649, pointer-events:all). Wird die Klasse beim Schliessen nicht
+// z-index 665, pointer-events:all). Wird die Klasse beim Schliessen nicht
 // entfernt, bleibt der Bildschirm dunkel und nimmt keine Eingaben mehr an.
 // Darum nie blind entfernen, sondern immer aus dem tatsaechlichen Zustand
 // ALLER Menues ableiten — sonst reisst das Schliessen eines Menues den
 // Abdunkler weg, waehrend ein anderes noch offen ist.
-const TV_MENU_IDS = ["overlayMenu", "frvpMenu", "fibMenu", "posMenu", "compareStyleMenu", "rangeMenu", "textMenu"];
+const TV_MENU_IDS = ["overlayMenu", "frvpMenu", "fibMenu", "posMenu", "compareStyleMenu", "rangeMenu", "textMenu", "barPatternMenu"];
 function syncMenuOpen() {
   const anyOpen = TV_MENU_IDS.some((id) => {
     const el = document.getElementById(id);
@@ -4996,12 +5170,16 @@ function rgbToHex(color) {
   if (!m || m.length < 3) return "#888888";
   return "#" + [0, 1, 2].map(i => Math.round(parseFloat(m[i])).toString(16).padStart(2, "0")).join("");
 }
-// Menü schliessen bei Klick ausserhalb
+// Menü schliessen bei Klick ausserhalb. syncMenuOpen nimmt den Abdunkler
+// mit weg — ohne blieb der Bildschirm auf dem Handy dunkel (C10).
 document.addEventListener("click", (e) => {
-  const menu = document.getElementById("frvpMenu");
-  if (menu && !menu.contains(e.target) && !menu.classList.contains("hidden")) {
-    menu.classList.add("hidden");
-  }
+  ["frvpMenu", "barPatternMenu"].forEach((mid) => {
+    const menu = document.getElementById(mid);
+    if (menu && !menu.contains(e.target) && !menu.classList.contains("hidden")) {
+      menu.classList.add("hidden");
+      syncMenuOpen();
+    }
+  });
 });
 
 // Der Zeichenstil-Knopf ist ab m33 aus der Seitenleiste entfernt: der
@@ -5250,7 +5428,16 @@ function renderDrawbar() {
   clear.className = "draw-cat-btn small danger";
   clear.title = "Alle Zeichnungen löschen";
   clear.innerHTML = `<svg viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  clear.addEventListener("click", () => chart.removeOverlay());
+  // Rueckfrage (C13) und vollstaendiges Raeumen inkl. gespeicherter Scans und
+  // Grid-Baender (A7) — vorher kamen Scans nach dem Neuladen zurueck.
+  clear.addEventListener("click", () => {
+    if (!confirm("Alle Zeichnungen, Muster, Wellen, Zonen und Grid-Bänder löschen?")) return;
+    clearAllDrawings();
+    try { if (state.gbResult) gbUI.renderTiers(); } catch (e) {}
+    markDirty();
+    saveWorkspace();
+    setStatus("Alle Zeichnungen gelöscht");
+  });
   tools.appendChild(clear);
 }
 
@@ -5261,9 +5448,43 @@ document.addEventListener("click", (e) => {
   }
 });
 
+// ESC schliesst zuerst, was obenauf liegt: Kontextmenues, dann
+// Einstellungen / Sync / FAQ (Gesamtpruefung C31). Nur wenn nichts offen
+// war, bricht ESC wie bisher das Zeichnen ab.
+function closeTopUiOnEscape() {
+  const vis = (id) => {
+    const el = document.getElementById(id);
+    return el && !el.classList.contains("hidden") ? el : null;
+  };
+  let closed = false;
+  TV_MENU_IDS.forEach((id) => {
+    const el = vis(id);
+    if (!el) return;
+    if (id === "fibMenu") { closeFibMenu(); closed = true; return; }
+    // Eigener Schliessen-Knopf zuerst (setzt Ziel-IDs zurueck, Textfeld
+    // uebernimmt seinen Text) — sonst nur ausblenden.
+    const x = el.querySelector(".om-close, #posMenuClose");
+    if (x) x.click();
+    if (!el.classList.contains("hidden")) el.classList.add("hidden");
+    closed = true;
+  });
+  if (closed) { syncMenuOpen(); return true; }
+  const dialogs = [["settingsOverlay", "settingsClose"], ["syncModal", "syncClose"], ["faqModal", "faqClose"]];
+  for (const [id, btnId] of dialogs) {
+    const el = vis(id);
+    if (!el) continue;
+    const b = document.getElementById(btnId);
+    if (b) b.click();
+    if (!el.classList.contains("hidden")) el.classList.add("hidden");
+    return true;
+  }
+  return false;
+}
+
 // Tastatur: ESC bricht Zeichnen ab, Entf löscht selektiertes Overlay
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
+    if (closeTopUiOnEscape()) return;
     // Polyline aktiv: abbrechen (Vorschau weg, kein Overlay)
     if (state.activeTool === "polyline") { stopPolyline(); return; }
     if (state.drawingId != null) {
@@ -5291,7 +5512,7 @@ function updatePriceHeader(last, prev) {
   if (!last) return;
   const ref = prev || last;
   const change = ref.close ? ((last.close - ref.close) / ref.close) * 100 : 0;
-  const d = last.close >= 100 ? 2 : 4;
+  const d = priceDigits(last.close);
   const priceStr = last.close.toLocaleString("de-CH", { minimumFractionDigits: d, maximumFractionDigits: d });
   const changeStr = `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`;
 
@@ -5311,17 +5532,7 @@ function updatePriceHeader(last, prev) {
   }
 
   // Mobile Info-Bar synchron halten
-  const mibPrice  = document.getElementById("mibPrice");
-  const mibChange = document.getElementById("mibChange");
-  const mibAsset  = document.getElementById("mibAsset");
-  const mibTf     = document.getElementById("mibTf");
-  if (mibAsset)  mibAsset.textContent  = state.symbol.label;
-  if (mibTf)     mibTf.textContent     = state.timeframe?.label || "–";
-  if (mibPrice)  mibPrice.textContent  = priceStr;
-  if (mibChange) {
-    mibChange.textContent = changeStr;
-    mibChange.style.color = change >= 0 ? "var(--up)" : "var(--down)";
-  }
+  // (Die fruehere .mobile-info-bar war nie sichtbar und ist entfernt, C28.)
 }
 
 function setLive(mode, text) {
@@ -5334,9 +5545,9 @@ function setStatus(t) { document.getElementById("statusline").textContent = t; }
 function resize() {
   chart.resize();
   if (state.vrvpCanvas) {
-    state.vrvpCanvas.width = chartEl.clientWidth;
-    state.vrvpCanvas.height = chartEl.clientHeight;
+    // Groesse setzt drawVrvp selbst (inkl. devicePixelRatio, C12)
     if (state.active.has("vrvp")) drawVrvp();
+    else state.vrvpCanvas.getContext("2d").clearRect(0, 0, state.vrvpCanvas.width, state.vrvpCanvas.height);
   }
   if (_compareCanvas && state.compareAssets.length > 0) {
     _compareCanvas.width  = chartEl.clientWidth;
@@ -5448,18 +5659,6 @@ quiet(() => {
   bindSheetSwipeClose(sheet, closeSheet);   // QF3: Querformat nach rechts wischen schliesst
 })();
 
-// Mobile Info-Bar
-(function initMobileInfoBar() {
-  const mibAsset   = document.getElementById("mibAsset");
-  const mibTf      = document.getElementById("mibTf");
-  const mibCompare = document.getElementById("mibCompare");
-  if (!mibAsset) return;
-  mibAsset.addEventListener("click", () => document.getElementById("assetTrigger")?.click());
-  mibTf.addEventListener("click",   () => document.getElementById("tfTrigger")?.click());
-  // K2: bisher ohne Handler — Tap auf "+" tat auf dem Handy nichts.
-  mibCompare?.addEventListener("click", () => document.getElementById("compareTrigger")?.click());
-})();
-
 (function initTouch() {
   const el = document.getElementById("mainChart");
 
@@ -5503,7 +5702,7 @@ quiet(() => {
 
   // ---------- Long-Press → Rechtsklick-Menü ----------
   let lpTimer = null, lpStart = null;
-  const LP_MS = 500, LP_MOVE = 12;
+  const LP_MOVE = 12;
   const cancelLP = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } lpStart = null; };
 
   // ---------- Y-Achsen-Drag-Zoom ----------
@@ -5642,6 +5841,29 @@ quiet(() => {
 })();
 
 // ---------- Workspace speichern ----------
+// Vergleichs-Eintraege zum Speichern: ganzes Symbol + Stil, OHNE Kursdaten.
+// Gemeinsam fuer Workspace und Layouts (A4/A5) — vorher speicherte das
+// Layout nur {id,label}, Nicht-Binance-Vergleiche landeten danach im
+// Binance-Abruf und schlugen fehl.
+function compareAssetsForStorage() {
+  return (state.compareAssets || []).map(({ data, ...rest }) => rest);
+}
+
+// Fehlen einem (alten) Eintrag Boersenfelder, aus der Symbolliste ergaenzen.
+function completeCompareEntry(entry) {
+  if (!entry || entry.type) return entry;
+  const s = (state.allSymbols || []).find(x => x.id === entry.id);
+  if (s) Object.keys(s).forEach(k => { if (entry[k] === undefined) entry[k] = s[k]; });
+  return entry;
+}
+
+// Freie Farbe fuer einen neuen Vergleich. Bestehende Linien behalten ihre
+// Farbe, wenn eine andere entfernt wird (C8).
+function nextCompareColor() {
+  const used = new Set(state.compareAssets.map(a => a.color));
+  return COMPARE_COLORS.find(c => !used.has(c)) || COMPARE_COLORS[state.compareAssets.length % COMPARE_COLORS.length];
+}
+
 function saveWorkspace() {
   try {
     localStorage.setItem("tv_workspace", JSON.stringify({
@@ -5675,6 +5897,7 @@ function saveWorkspace() {
       chartStyle: state.chartStyle,
       drawStyle:  state.drawStyle,
       smcOpts:    state.smcOpts,
+      scanUi:     state.scanUi,
       ewtOpts:    state.ewtOpts,
       // Persistierte Scan-Overlays (EWT/Muster/SMC), Punkt 1a
       ewtSaved:     state.ewtSaved,
@@ -5682,6 +5905,8 @@ function saveWorkspace() {
       smcSaved:     state.smcSaved,
       logScale:   state.logScale,
       paneHeights: state.paneHeights,   // M8c: Custom-Pane-Höhen (Mobil)
+      // Vergleiche ohne Kursdaten (A5); data wird beim Laden neu geholt
+      compareAssets: compareAssetsForStorage(),
     }));
   } catch (e) {
     // QuotaExceededError: localStorage voll (z.B. viele Zeichnungen).
@@ -5705,7 +5930,7 @@ function renderWlSelect() {
   }
   if (!state.watchlists[state.activeWatchlist]) state.activeWatchlist = names[0];
   sel.innerHTML = names.map(n =>
-    `<option value="${n}"${n === state.activeWatchlist ? " selected" : ""}>${n}</option>`).join("");
+    `<option value="${escapeHtml(n)}"${n === state.activeWatchlist ? " selected" : ""}>${escapeHtml(n)}</option>`).join("");
 }
 
 function switchWatchlist(name) {
@@ -5762,14 +5987,14 @@ function renderWatchlist() {
 
     const label = sym.replace("USDT", "/USDT");
     const priceStr = p && p.price != null
-      ? p.price.toLocaleString("de-CH", { maximumFractionDigits: p.price < 10 ? 4 : 2 })
+      ? p.price.toLocaleString("de-CH", { maximumFractionDigits: p.price < 10 ? Math.max(4, priceDigits(p.price)) : 2 })
       : "–";
     const chg = p && p.changePct != null ? p.changePct : null;
     const chgStr = chg != null ? (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%" : "–";
     const chgClass = chg == null ? "" : chg >= 0 ? "up" : "down";
 
     item.innerHTML = `
-      <div class="wl-sym">${label}</div>
+      <div class="wl-sym">${escapeHtml(label)}</div>
       <div class="wl-vals">
         <span class="wl-price">${priceStr}</span>
         <span class="wl-chg ${chgClass}">${chgStr}</span>
@@ -5837,6 +6062,11 @@ function restartWatchlistStream() {
   loadWatchlistPrices();
   const wanted = new Set(state.watchlist);
   state.wlStreamOk = false;
+  // Nur die Watchlist-Paare abonnieren statt aller ~2000 (C9). Der
+  // Status-Rueckruf hing frueher durch eine verrutschte Klammer an
+  // forEach statt am Stream und wurde nie aufgerufen; das "Live"-Badge
+  // gehoert ohnehin dem Kerzenstream des Charts (A13).
+  let _wlRaf = false;
   state.wlCloseStream = DataLayer.openMiniTickerStream((ticks) => {
     let changed = false;
     ticks.forEach(t => {
@@ -5848,14 +6078,15 @@ function restartWatchlistStream() {
         changePct: t.open ? ((t.price - t.open) / t.open) * 100 : prev.changePct,
       };
       changed = true;
-    },
-    (s) => {
-      state.wlStreamOk = s === "live";
-      if (state.wlStreamOk) setLive("live", "Live");
+    });
+    // Hoechstens einmal pro Frame neu aufbauen
+    if (changed && !_wlRaf) {
+      _wlRaf = true;
+      requestAnimationFrame(() => { _wlRaf = false; renderWatchlist(); });
     }
-  );
-    if (changed) requestAnimationFrame(renderWatchlist);
-  });
+  }, (st) => {
+    state.wlStreamOk = st === "live";
+  }, state.watchlist);
 }
 
 // ---------- Symbol-Wechsel (zentral, auch von Watchlist genutzt) ----------
@@ -5877,18 +6108,9 @@ function switchSymbol(sym) {
   // und die Wahl bleibt beim Nutzer. Faellt Yahoo aus und FRED springt ein,
   // sind Kerzen wieder inhaltsleer; das ist der bewusst in Kauf genommene
   // Preis dafuer, dass der Chart in dem Fall ueberhaupt Daten zeigt.
-  // Kraken: Falls aktives TF kein krakenInterval hat (z.B. 1M), auf 1D wechseln
-  if (sym.type === "kraken" && !state.timeframe.aggDays && !state.timeframe.krakenInterval) {
-    state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
-  }
-  // Coinbase: kein W/M — auf 1D wechseln falls nötig
-  if (sym.type === "coinbase" && !state.timeframe.aggDays && !state.timeframe.coinbaseInterval) {
-    state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
-  }
-  // Bybit: alle TFs unterstützt, aber sicherheitshalber Guard
-  if (sym.type === "bybit" && !state.timeframe.aggDays && !state.timeframe.bybitInterval) {
-    state.timeframe = CONFIG.TIMEFRAMES.find(t => t.id === "1d");
-  }
+  // Intervall passt nicht zur Quelle (z. B. Coinbase 4h, Kraken 1M,
+  // Bitstamp 15m): auf 1D wechseln (A1).
+  ensureTfFor(sym);
   renderTfList();
   renderCompareList();
   renderWatchlist();
@@ -5903,7 +6125,9 @@ function switchSymbol(sym) {
 // Für Wiederladen ist die Layout-Speicherfunktion gedacht.
 function clearAllDrawings() {
   // removeOverlay() ohne id löscht ALLE Overlays (auch Grid/FRVP/Long-Short).
+  _genBulk = true;
   try { chart.removeOverlay(); } catch (e) {}
+  _genBulk = false;
   state.drawings = [];
   state.gbBandIds = [];
   state.patternOverlayIds = [];
@@ -5939,6 +6163,14 @@ chart.setLoadDataCallback(async ({ type, data, callback }) => {
   // Rastergrenze hinweg erfordern; die Erstladung (bis CANDLE_LIMIT Tage)
   // deckt die Historie ab. Deshalb hier kein Nachladen.
   if (state.timeframe.aggDays) { callback([], false); return; }
+
+  // Kraken liefert ueber OHLC nur die letzten 720 Kerzen (A2) — ehrlich
+  // sagen statt "Historie vollständig".
+  if (exType === "kraken") {
+    callback([], false);
+    setStatus("Kraken liefert nur die letzten 720 Kerzen — für längere Historie Binance oder Bitstamp wählen");
+    return;
+  }
 
   setStatus("Lade ältere Kerzen …");
   try {
@@ -6186,120 +6418,8 @@ function updateCycleBar(r) {
   document.addEventListener("click", closePopover);
 })();
 
-function gbRenderTiers() {
-  const r = state.gbResult;
-  const t = document.getElementById("gbTiers");
-  const box = document.getElementById("gbRecoBox");
-  if (!r || !r.tiers.length) {
-    t.innerHTML = '<tbody><tr><td class="lbl">Keine Daten</td></tr></tbody>';
-    if (box) box.innerHTML = "";
-    return;
-  }
-
-  // ---- Empfehlung: die eine Aussage, um die es geht ----
-  const rec = r.recommendation || {};
-  const stageClass = { defensive: "reco-stop", "accumulate-spot": "reco-go", "accumulate-grid": "reco-go",
-                       range: "reco-go", "long-bias": "reco-go", wait: "reco-wait" }[rec.stage] || "reco-wait";
-  if (box) {
-    box.className = "gb-reco " + stageClass;
-    box.innerHTML = `<div class="reco-main">${rec.label || "—"}</div>`
-      + `<div class="reco-why">${rec.why || ""}</div>`
-      + `<div class="reco-meta">`
-        + `<span>Grid-Eignung: <b>${r.gridSuitability?.label || "—"}</b></span>`
-        + `<span>Profil: <b>${r.profile?.name || "—"}</b></span>`
-        + (r.tiers.some(x => x.leverageGuard) ? `<span class="reco-guard">⚠ Hebel-Leitplanke aktiv → max 1×</span>` : "")
-      + `</div>`;
-  }
-
-  const fmt = (n) => n == null ? "–" : n.toLocaleString("de-CH", { maximumFractionDigits: 0 });
-  const sign = (n) => (n > 0 ? "+" : "") + n.toFixed(1) + "%";
-
-  // Nur was man in Pionex tatsächlich eintippt oder zum Entscheiden braucht.
-  // Alles andere (Scores, ATR, Faktoren) rechnet im Hintergrund.
-  const rows = [
-    ["Range oben",   (x) => fmt(x.upper)],
-    ["Range unten",  (x) => fmt(x.lower)],
-    ["Grids",        (x) => x.grids],
-    ["Hebel",        (x) => x.leverage + "×" + (x.leverageGuard ? " ⚠" : "")],
-    ["Investment",   (x) => fmt(x.positionSize) + " USDT"],
-    ["Stop Loss",    (x) => fmt(x.stopLoss)],
-    ["Sicherheit",   (x) => x.safety],
-    ["Netto-Erwartung", (x) => x.viability ? sign(x.viability.net) : "–"],
-  ];
-
-  let html = "<thead><tr><th></th>" + r.tiers.map(x => {
-    const isReco = rec.tier === x.id;
-    return `<th class="tier-head${isReco ? " tier-reco" : ""}">${x.label}${isReco ? " ★" : ""}<span class="tier-hz">${x.horizon}</span></th>`;
-  }).join("") + "</tr></thead><tbody>";
-
-  rows.forEach(([lbl, fn]) => {
-    html += `<tr><td class="lbl">${lbl}</td>` + r.tiers.map(x => {
-      const isReco = rec.tier === x.id;
-      let cls = isReco ? "on" : "";
-      if (lbl === "Netto-Erwartung" && x.viability && !x.viability.ok) cls = "neg";
-      return `<td${cls ? ` class="${cls}"` : ""}>${fn(x)}</td>`;
-    }).join("") + "</tr>";
-  });
-
-  html += '<tr><td class="lbl"></td>' + r.tiers.map(x =>
-    `<td><button class="gb-show${state.gbActiveTier === x.id ? " active" : ""}" data-tier="${x.id}">${state.gbActiveTier === x.id ? "Im Chart ✓" : "Im Chart"}</button></td>`
-  ).join("") + "</tr></tbody>";
-  t.innerHTML = html;
-
-  t.querySelectorAll(".gb-show").forEach(b => {
-    b.addEventListener("click", () => {
-      const id = b.dataset.tier;
-      state.gbActiveTier = state.gbActiveTier === id ? null : id;
-      saveWorkspace();
-      gbRenderTiers();
-      gbDrawBands(state.gbActiveTier);
-    });
-  });
-
-  const w = document.getElementById("gbWarning");
-  w.textContent = r.missing.length ? "Quellen fehlen: " + r.missing.join(", ") : "";
-  w.className = "gb-note" + (r.missing.length ? " warn" : "");
-}
-
-function gbRenderData() {
-  const r = state.gbResult;
-  const box = document.getElementById("gbData");
-  if (!r) return;
-  const n = (v, d = 2, suf = "") => v == null ? "–" : v.toFixed(d) + suf;
-  const blk = (title, kvs) =>
-    `<div><div class="gb-blk-title">${title}</div>` +
-    kvs.map(([k, v]) => `<div class="gb-kv"><span>${k}</span><span>${v}</span></div>`).join("") + "</div>";
-
-  box.innerHTML =
-    blk("Markt & Trend", [
-      ["Preis", n(r.market.price, 0)],
-      ["SMA50", n(r.market.sma50, 0)],
-      ["SMA200", n(r.market.sma200, 0)],
-      ["Abstand SMA200", n(r.market.sma200Dist, 2, "%")],
-      ["RSI14 (Wilder)", n(r.market.rsi, 1)],
-      ["ATR14 / 90 / 200", `${n(r.market.atr14)} / ${n(r.market.atr90)} / ${n(r.market.atr200)}`],
-      ["Volumen", r.market.volumeSignal],
-    ]) +
-    blk("Sentiment & Derivate", [
-      ["Fear & Greed", r.derivatives.fng != null ? `${r.derivatives.fng} (${r.derivatives.fngLabel})` : "–"],
-      ["F&G Ø30 / Ø90", `${n(r.derivatives.fngAvg30, 1)} / ${n(r.derivatives.fngAvg90, 1)}`],
-      ["Funding 8h", n(r.derivatives.funding8h, 4, "%")],
-      ["Funding monatlich", n(r.derivatives.fundingMonthly, 2, "%")],
-      ["Open Interest", r.derivatives.oiNow != null ? n(r.derivatives.oiNow, 0) + " BTC" : "–"],
-      ["OI Δ30T / Δ90T", `${n(r.derivatives.oiChange30, 2, "%")} / ${n(r.derivatives.oiChange90, 2, "%")}`],
-      ["L/S Ratio", n(r.derivatives.lsRatio, 4)],
-      ["OI-Interpretation", r.oiInterpretation],
-    ]) +
-    blk("Konfluenz", [
-      ["Trend-Score", r.confluence.trendScore ?? "–"],
-      ["Derivate-Score", r.confluence.derivativeScore ?? "–"],
-      ["Summe", r.confluence.sum ?? "–"],
-      ["Extrem-Filter", r.confluence.extreme],
-      ["Roh-Bias (vor Filter)", r.rawBias],
-      ["Bias (final)", r.bias],
-      ["Regime", r.regime],
-    ]);
-}
+// (Die frueheren app.js-Kopien von gbRenderTiers/gbRenderData waren tot —
+// gerendert wird ausschliesslich in gridbot.js. Entfernt, Gesamtpruefung C6.)
 
 // ---------- Grid-Bänder im Chart ----------
 
@@ -6313,13 +6433,11 @@ function gbRenderData() {
 const FIB_MENU_LEVELS = FIB_LEVEL_SETS;
 
 let _fibTargetId = null;
-let _fibTargetName = null;
 
 function openFibMenu(event) {
   const ov = event?.overlay;
   if (!ov) return;
   _fibTargetId = ov.id;
-  _fibTargetName = ov.name;
   const ed = ov.extendData || {};
 
   document.getElementById("fibMenuTitle").textContent =
@@ -6399,7 +6517,6 @@ function closeFibMenu() {
   document.getElementById("fibMenu").classList.add("hidden");
   syncMenuOpen();
   _fibTargetId = null;
-  _fibTargetName = null;
 }
 
 // Von overlays.js aus aufrufbar
@@ -6440,9 +6557,11 @@ function clearPatternHint() {
 }
 
 function clearPatterns() {
+  _genBulk = true;
   (state.patternOverlayIds || []).forEach(id => {
     try { chart.removeOverlay(id); } catch (e) {}
   });
+  _genBulk = false;
   state.patternOverlayIds = [];
   state.patternSaved = [];
 }
@@ -6502,6 +6621,8 @@ function scanPatterns() {
         }
         id = chart.createOverlay({
           name: "channelPattern", points: pts, lock: true,
+          onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
+          onRemoved: GEN_ON_REMOVED,
           extendData: { label: p.label, direction: p.direction, quality: p.quality,
                         target: p.target, breakoutDir: p.breakoutDir,
                         hasBreak, pole: !!p.pole },
@@ -6516,6 +6637,8 @@ function scanPatterns() {
         }
         id = chart.createOverlay({
           name: "pattern", points, lock: true,
+          onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
+          onRemoved: GEN_ON_REMOVED,
           extendData: {
             label: p.label, direction: p.direction, quality: p.quality,
             neckline: p.neckline, target: p.target,
@@ -6540,9 +6663,11 @@ function scanPatterns() {
 
 // ---------- Smart Money Concepts (FVG / Order Blocks) ----------
 function clearSMC() {
+  _genBulk = true;
   (state.smcOverlayIds || []).forEach(id => {
     try { chart.removeOverlay(id); } catch (e) {}
   });
+  _genBulk = false;
   state.smcOverlayIds = [];
   state.smcSaved = [];
 }
@@ -6597,7 +6722,7 @@ function scanSMC() {
   zones.forEach(z => {
     const closedIdx = z.kind === "fvg" ? z.filledIndex : z.mitigatedIndex;
     const isClosed  = closedIdx != null;
-    if (isClosed && !showFilled) return;   // gefüllte/mitigierte standardmässig aus
+    if (isClosed && !showFilled) return;   // nur mit "Gefüllte/mitigierte zeigen" (Vorgabe: an)
     if (!isClosed) openCount++;
 
     // rechte Kante: bis zur Füllung, sonst bis (über) den letzten Bar
@@ -6621,6 +6746,7 @@ function scanSMC() {
         onMouseEnter: () => { setChartCursor("pointer"); showSMCHint(z); return false; },
         onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
         onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
+        onRemoved: GEN_ON_REMOVED,
       });
       if (id) { state.smcOverlayIds.push(id); drawn++; }
     } catch (e) {}
@@ -6657,9 +6783,11 @@ function showSMCHint(z) {
 // Einsammeln der Optionen, das Zeichnen und die Statuszeile.
 
 function clearEWT() {
+  _genBulk = true;
   (state.ewtOverlayIds || []).forEach(id => {
     try { chart.removeOverlay(id); } catch (e) {}
   });
+  _genBulk = false;
   state.ewtOverlayIds = [];
   state.ewtSaved = [];
   // Der Scan vergroessert den rechten Rand, damit Projektionen Platz
@@ -6845,6 +6973,7 @@ function scanEWT() {
         onMouseEnter: () => { setChartCursor("pointer"); showEWTWaveHint(s); return false; },
         onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
         onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
+        onRemoved: GEN_ON_REMOVED,
       });
       push(id);
     } catch (e) { /* eine defekte Struktur darf den Rest nicht verhindern */ }
@@ -6871,6 +7000,7 @@ function scanEWT() {
                 + ` · B ${(s.ratioBA * 100).toFixed(0)}% · C ${s.ratioCA.toFixed(2)}×A`,
         },
         onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
+        onRemoved: GEN_ON_REMOVED,
       });
       push(id);
     } catch (e) {}
@@ -6929,6 +7059,7 @@ function scanEWT() {
         onMouseEnter: () => { setChartCursor("pointer"); showEWTHint(s); return false; },
         onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
         onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
+        onRemoved: GEN_ON_REMOVED,
       }));
 
       // ---- Projektion der Folgewellen ----
@@ -6955,6 +7086,7 @@ function scanEWT() {
           onMouseEnter: () => { setChartCursor("pointer"); showEWTProjHint(s, pr); return false; },
           onMouseLeave: () => { setChartCursor(""); clearPatternHint(); return false; },
           onRightClick: (e) => { try { chart.removeOverlay(e.overlay.id); } catch (x) {} return true; },
+        onRemoved: GEN_ON_REMOVED,
         }));
       }
     } catch (e) {}
@@ -7214,6 +7346,9 @@ function autoScaleY() {
 // ---------- Theme (Hell / Dunkel) ----------
 function applyTheme() {
   document.documentElement.setAttribute("data-theme", state.theme);
+  // Statusleiste (iOS/Android) passend zum Theme (C29)
+  const tc = document.querySelector('meta[name="theme-color"]');
+  if (tc) tc.setAttribute("content", state.theme === "light" ? "#ffffff" : "#0d1117");
   setTimeout(scheduleTagDraw, 30);
   // Icon wechseln: Mond im Dunkelmodus, Sonne im Hellmodus
   const icon = document.getElementById("themeIcon");
@@ -7260,9 +7395,10 @@ function currentLayoutSnapshot() {
   return {
     symbol: state.symbol,
     timeframeId: state.timeframe.id,
-    // Nur die Kennung sichern, nicht die Kursdaten — die werden beim
-    // Laden ohnehin neu geholt und wären sonst mehrere MB im localStorage.
-    compareAssets: state.compareAssets.map(a => ({ id: a.id, label: a.label })),
+    // Ganzes Symbol + Stil, aber keine Kursdaten (A4). Vorher nur {id,label}:
+    // Bybit/Stooq/Bitstamp/Kraken/Coinbase/Dominanz-Vergleiche schlugen nach
+    // dem Laden fehl, Farbe/Breite/Strichart gingen verloren.
+    compareAssets: compareAssetsForStorage(),
     // Zeichnungen gehören zur Arbeitsfläche — ohne sie ist ein Layout
     // nur die halbe Ansicht. Ohne id gespeichert, die vergibt KLineCharts neu.
     drawings: state.drawings.map(({ id, ...rest }) => rest),
@@ -7273,10 +7409,11 @@ function currentLayoutSnapshot() {
     active: [...state.active],
     chartType: state.chartType,
     legendCollapsed: state.legendCollapsed,
-    watchlists: state.watchlists,
-    activeWatchlist: state.activeWatchlist,
+    // Watchlisten gehoeren NICHT mehr zum Layout (Entscheid Gesamtpruefung
+    // A8): sie bleiben unabhaengig und werden beim Laden nicht ersetzt.
     watchlistOpen: state.watchlistOpen,
     theme: state.theme,
+    logScale: state.logScale,
     currentLayout: state.currentLayout,
     gbOpen: state.gbOpen,
     gbCollapsed: state.gbCollapsed,
@@ -7316,11 +7453,26 @@ async function applyNamedLayout(name) {
   state.timeframe   = resolveTimeframe(l.timeframeId) || state.timeframe;
   state.chartType   = l.chartType || state.chartType;
   state.legendCollapsed = !!l.legendCollapsed;
-  if (l.watchlists) { state.watchlists = l.watchlists; state.activeWatchlist = l.activeWatchlist || Object.keys(l.watchlists)[0]; }
-  else if (l.watchlist) { state.watchlists = { Standard: l.watchlist }; state.activeWatchlist = "Standard"; }
   state.watchlistOpen = l.watchlistOpen !== false;
   state.theme       = l.theme || state.theme;
   state.chartStyle  = l.chartStyle || state.chartStyle;
+  // Ab der Gesamtpruefung (A8) stellt das Layout auch diese Teile wieder
+  // her — gespeichert wurden sie schon lange, angewendet nie.
+  // Watchlisten bleiben bewusst unangetastet.
+  if (typeof l.logScale === "boolean") state.logScale = l.logScale;
+  if (Array.isArray(l.indOrder)) state.indOrder = l.indOrder;
+  if (l.frvpDefaults && typeof l.frvpDefaults === "object") state.frvpDefaults = l.frvpDefaults;
+  if (l.fibDefaults && typeof l.fibDefaults === "object")   state.fibDefaults  = l.fibDefaults;
+  if (l.gbProfile)  state.gbProfile = l.gbProfile;
+  if (l.gbCapital != null) state.gbCapital = l.gbCapital;
+  if (Array.isArray(l.gbTiers)) state.gbTiers = l.gbTiers;
+  if (l.gbThresholds && typeof l.gbThresholds === "object") state.gbThresholds = l.gbThresholds;
+  if (l.gbHeight)   state.gbHeight = l.gbHeight;
+  if (typeof l.gbCollapsed === "boolean") state.gbCollapsed = l.gbCollapsed;
+  const layoutGbOpen = typeof l.gbOpen === "boolean" ? l.gbOpen : state.gbOpen;
+  const layoutGbTier = l.gbActiveTier || null;
+  // Intervall muss zur Quelle passen (A1)
+  ensureTfFor(state.symbol);
 
   // Indikatoren neu setzen: alte entfernen, neue aus dem Layout aktivieren
   [...state.active].forEach(k => {
@@ -7344,9 +7496,13 @@ async function applyNamedLayout(name) {
   // Vergleichs-Assets aus dem Layout übernehmen. Ohne das bleibt der
   // alte Compare-State stehen und man sieht Kerzen UND Vergleichslinien
   // gleichzeitig.
-  state.compareAssets = (l.compareAssets || []).map((a, i) => ({
-    id: a.id, label: a.label, color: COMPARE_COLORS[i % COMPARE_COLORS.length],
-    data: [], hidden: false,
+  // Ganze Eintraege uebernehmen (A4). Alte Layouts mit nur {id,label}
+  // werden aus der Symbolliste ergaenzt; Farbe nur, wenn keine gespeichert ist.
+  state.compareAssets = (l.compareAssets || []).filter(a => a && a.id).map((a, i) => completeCompareEntry({
+    ...a,
+    color: a.color || COMPARE_COLORS[i % COMPARE_COLORS.length],
+    hidden: !!a.hidden,
+    data: [],
   }));
   window.__tvCompareAssets = state.compareAssets;
 
@@ -7398,6 +7554,21 @@ async function applyNamedLayout(name) {
   // Vergleiche enthält. Muss NACH loadData laufen.
   applyCompareIndicator();
   if (state.compareAssets.length > 0) reloadAllCompareData();
+
+  // Grid Bot aus dem Layout (A8): Profil/Schwellen/Kapital setzen, Leiste
+  // in den gespeicherten Zustand bringen, aktives Band wieder zeichnen.
+  try {
+    GridBot.setThresholds(state.gbThresholds);
+    GridBot.setProfile(state.gbProfile);
+    gbUI.renderSettings();
+    gbUI.setCollapsed(!!state.gbCollapsed);
+    gbUI.toggleBar(!!layoutGbOpen);
+    state.gbActiveTier = state.compareAssets.length > 0 ? null : layoutGbTier;
+    if (layoutGbOpen || state.gbActiveTier) gbUI.refresh(false);
+    else gbUI.renderTiers();
+  } catch (e) { console.warn("[TreydView] Grid Bot aus Layout", e); }
+  saveWorkspace();
+
   document.getElementById("layoutPanel").classList.remove("open");
   setStatus(`Layout "${name}" geladen`);
 }
@@ -7416,7 +7587,7 @@ function renderLayoutList() {
     const item = document.createElement("div");
     item.className = "layout-item";
     const isOpen = state.currentLayout === name;
-    item.innerHTML = `<span class="li-name${isOpen ? " li-open" : ""}">${name}</span>`
+    item.innerHTML = `<span class="li-name${isOpen ? " li-open" : ""}">${escapeHtml(name)}</span>`
       + `<button class="li-upd" title="Mit aktueller Ansicht überschreiben">`
       + `<svg viewBox="0 0 24 24" width="12" height="12"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`
       + `<button class="li-del" title="Löschen">✕</button>`;
@@ -7437,6 +7608,7 @@ function renderLayoutList() {
     });
     item.querySelector(".li-del").addEventListener("click", (e) => {
       e.stopPropagation();
+      if (!confirm(`Layout "${name}" löschen?`)) return;   // Rueckfrage (C13)
       const l = loadLayouts();
       delete l[name];
       saveLayouts(l);
@@ -7518,6 +7690,12 @@ function importLayoutsFromFile(file) {
         // Jedes Layout muss ein Objekt sein und wenigstens ein Symbol
         // tragen — sonst ist es kein TreydView-Layout.
         if (!snap || typeof snap !== "object" || Array.isArray(snap) || !snap.symbol) continue;
+        // Grundform pruefen, damit eine fremde/kaputte Datei beim Laden
+        // nicht mitten in applyNamedLayout scheitert (C15).
+        if (typeof snap.symbol !== "object" || typeof snap.symbol.id !== "string") continue;
+        if (snap.drawings != null && !Array.isArray(snap.drawings)) continue;
+        if (snap.compareAssets != null && !Array.isArray(snap.compareAssets)) continue;
+        if (snap.active != null && !Array.isArray(snap.active)) continue;
         const ziel = _freierLayoutName(vorhanden, name);
         if (ziel !== name) umbenannt++;
         vorhanden[ziel] = snap;
@@ -7608,12 +7786,32 @@ function applyChartStyle() {
   document.getElementById("chartStyleMenu").classList.add("hidden");
 }
 
-function resetChartStyle() {
-  state.chartStyle = {
-    upColor: "#3fb68b", downColor: "#d05e5e", hollow: false,
-    lineColor: "#e8b64c", lineWidth: 2, areaFill: true, fillOpacity: 15,
-    lastLine: true, lastText: true, lastSize: 12, hiLoShow: true, hiLoSize: 12,
+// Eine Quelle fuer Start, Migration und "Zuruecksetzen" (C14). Vorher
+// stand die Liste dreimal im Code, und "Zuruecksetzen" schaltete die
+// Flaechenfuellung EIN, obwohl die Vorgabe AUS ist.
+function chartStyleDefaults() {
+  return {
+    // Preis-Markierungen: aktueller Preis + lokale Hochs/Tiefs
+    lastLine:    true,
+    lastText:    true,
+    lastSize:    12,
+    hiLoShow:    true,
+    hiLoSize:    12,
+    upColor:     "#3fb68b",
+    downColor:   "#d05e5e",
+    hollow:      false,
+    lineColor:   "#e8b64c",
+    lineWidth:   2,
+    // Flaeche unter der Linie standardmaessig AUS. Bei Indizes und Fonds,
+    // die als Linie starten, verdeckt die Fuellung sonst den unteren
+    // Chartbereich, ohne Information zu liefern.
+    areaFill:    false,
+    fillOpacity: 15,
   };
+}
+
+function resetChartStyle() {
+  state.chartStyle = chartStyleDefaults();
   saveWorkspace();
   chart.setStyles(baseStyles());
   document.getElementById("chartStyleMenu").classList.add("hidden");
@@ -7649,6 +7847,12 @@ loadBinanceSymbols();
 loadData().then(() => {
   const saved = state.drawings;
   if (saved && saved.length) restoreDrawings(saved);
+  // Vergleiche ueberleben das Neuladen (A5): Liste zeigen, Kurse holen.
+  if (state.compareAssets.length > 0) {
+    window.__tvCompareAssets = state.compareAssets;
+    quiet(() => renderCompareActive(), "compare restore list");
+    reloadAllCompareData().catch(() => {});
+  }
   // Persistierte Scan-Overlays (EWT/Muster/SMC) nach dem Laden wieder
   // anlegen (Punkt 1a). state.*Saved kommt aus dem Workspace (_ws).
   try {
@@ -7851,9 +8055,45 @@ document.getElementById("faqModal").addEventListener("click", (e) => {
     statusEl.textContent = msg || "";
     statusEl.className = "sync-status" + (kind ? " " + kind : "");
   };
+  // Sicherung vor dem letzten Laden (tv_*_backup): Knopf nur zeigen,
+  // wenn es eine gibt. Ein Schritt zurueck, kein Verlauf.
+  const restoreBtn = $id("syncRestoreBtn");
+  const refreshRestoreBtn = () => {
+    if (!restoreBtn) return;
+    let has = false;
+    try { has = localStorage.getItem("tv_workspace_backup") != null || localStorage.getItem("tv_layouts_backup") != null; } catch (e) {}
+    restoreBtn.classList.toggle("hidden", !has);
+  };
+  if (restoreBtn) restoreBtn.addEventListener("click", () => {
+    let ts = null;
+    try { ts = parseInt(localStorage.getItem("tv_backup_ts") || "", 10); } catch (e) {}
+    const when = ts ? new Date(ts).toLocaleString("de-CH") : "unbekannt";
+    if (!confirm(`Stand vor dem letzten Sync-Laden wiederherstellen (gesichert: ${when})?\n\nDie aktuellen Einstellungen und Layouts auf diesem Gerät werden ersetzt.`)) return;
+    try {
+      const ws = localStorage.getItem("tv_workspace_backup");
+      const ly = localStorage.getItem("tv_layouts_backup");
+      if (ws != null) localStorage.setItem("tv_workspace", ws);
+      if (ly != null) localStorage.setItem("tv_layouts", ly);
+      let ind = null;
+      try { ind = JSON.parse(localStorage.getItem("tv_ind_backup") || "null"); } catch (e) { ind = null; }
+      if (ind && typeof ind === "object") {
+        Object.keys(ind).forEach((k) => {
+          if (k.indexOf("tv4_ind_") === 0 && typeof ind[k] === "string") localStorage.setItem(k, ind[k]);
+        });
+      }
+      localStorage.removeItem("tv_workspace_backup");
+      localStorage.removeItem("tv_layouts_backup");
+      localStorage.removeItem("tv_ind_backup");
+      localStorage.removeItem("tv_backup_ts");
+    } catch (e) { setStatusMsg("Wiederherstellen fehlgeschlagen.", "err"); return; }
+    setStatusMsg("Wiederhergestellt. Seite wird neu geladen …", "ok");
+    setTimeout(() => location.reload(), 600);
+  });
+
   const openModal = () => {
     try { codeInput.value = localStorage.getItem("tv_synccode") || ""; } catch (e) {}
     setStatusMsg("");
+    refreshRestoreBtn();
     modal.classList.remove("hidden");
     setTimeout(() => codeInput.focus(), 30);
   };
@@ -7885,17 +8125,25 @@ document.getElementById("faqModal").addEventListener("click", (e) => {
     return { workspace, layouts, indicators };
   };
 
+  // Antwort lesen, ohne bei HTML-Fehlerseiten (Cloudflare 5xx, Proxy)
+  // mit "Unexpected token <" auszusteigen (Gesamtpruefung B4).
+  const readJson = async (res) => {
+    try { return await res.json(); } catch (e) { return { error: `Server-Antwort unlesbar (HTTP ${res.status}).` }; }
+  };
+
   saveBtn.addEventListener("click", async () => {
     const code = getCode();
-    if (code.length < 6) { setStatusMsg("Code zu kurz (mindestens 6 Zeichen).", "err"); return; }
+    // Neue Codes brauchen 12 Zeichen; bestehende ab 6 nimmt der Worker
+    // weiterhin an (er prueft, ob unter dem Code schon ein Stand liegt).
+    if (code.length < 6) { setStatusMsg("Code zu kurz (mindestens 12 Zeichen).", "err"); return; }
     busy(true); setStatusMsg("Speichern …");
     try {
-      const res = await fetch(`${base}/sync`, {
+      const res = await tvFetch(`${base}/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, workspace: buildBundle() }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (res.ok && data.ok) {
         try { localStorage.setItem("tv_synccode", code); } catch (e) {}
         setStatusMsg("Gespeichert. Mit diesem Code rufst du die Einstellungen auf jedem Gerät ab.", "ok");
@@ -7908,15 +8156,45 @@ document.getElementById("faqModal").addEventListener("click", (e) => {
     busy(false);
   });
 
+  // Laden per POST, damit der Code nicht in der URL (Logs, Verlauf)
+  // steht. Laeuft noch der alte Worker (kennt action:"load" nicht und
+  // antwortet 400 ohne "found"), einmal per GET wie bisher nachfragen.
+  const fetchStored = async (code) => {
+    let res = await tvFetch(`${base}/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, action: "load" }),
+    });
+    let data = await readJson(res);
+    if (res.status === 400 && data && data.found === undefined && /Workspace/.test(data.error || "")) {
+      res = await tvFetch(`${base}/sync?code=${encodeURIComponent(code)}`);
+      data = await readJson(res);
+    }
+    return { res, data };
+  };
+
   loadBtn.addEventListener("click", async () => {
     const code = getCode();
     if (code.length < 6) { setStatusMsg("Code zu kurz (mindestens 6 Zeichen).", "err"); return; }
     busy(true); setStatusMsg("Laden …");
     try {
-      const res = await fetch(`${base}/sync?code=${encodeURIComponent(code)}`);
-      const data = await res.json();
+      const { res, data } = await fetchStored(code);
       if (!res.ok) { setStatusMsg("Fehler: " + (data.error || res.status), "err"); busy(false); return; }
       if (!data.found || !data.workspace) { setStatusMsg("Kein gespeicherter Stand für diesen Code gefunden.", "err"); busy(false); return; }
+      // Laden ueberschreibt alles Lokale — erst fragen (Gesamtpruefung, Entscheid 10)
+      if (!confirm("Gespeicherten Stand laden?\n\nDeine aktuellen Einstellungen, Layouts und Zeichnungen auf diesem Gerät werden ersetzt. Eine Sicherung des bisherigen Stands wird angelegt.")) {
+        setStatusMsg("Laden abgebrochen.", ""); busy(false); return;
+      }
+      // Sicherung des bisherigen Stands (ein Schritt zurueck moeglich)
+      try {
+        const oldWs = localStorage.getItem("tv_workspace");
+        const oldLy = localStorage.getItem("tv_layouts");
+        if (oldWs != null) localStorage.setItem("tv_workspace_backup", oldWs);
+        if (oldLy != null) localStorage.setItem("tv_layouts_backup", oldLy);
+        // Indikator-Einstellungen werden beim Laden ebenfalls ueberschrieben
+        localStorage.setItem("tv_ind_backup", JSON.stringify(buildBundle().indicators || {}));
+        localStorage.setItem("tv_backup_ts", String(Date.now()));
+      } catch (e) {}
       const bundle = data.workspace;
       try {
         if (bundle.workspace != null) localStorage.setItem("tv_workspace", JSON.stringify(bundle.workspace));
@@ -7980,17 +8258,42 @@ document.getElementById("patternClearBtn").addEventListener("click", () => {
   clearPatterns();
   setStatus("Muster entfernt");
 });
+const PAT_PRESETS = {
+  streng: {},   // Engine-Defaults
+  mittel: { lookback: 7, tolerance: 1.5, minDepth: 5.0, shoulderTol: 4.0, minHeadPct: 2.5, minQuality: 0.6 },
+  locker: { lookback: 5, tolerance: 2.0, minDepth: 3.0, shoulderTol: 5.0, minHeadPct: 2.0, minQuality: 0.5 },
+};
 document.getElementById("patStrictness").addEventListener("change", (e) => {
-  const presets = {
-    streng: {},   // Engine-Defaults
-    mittel: { lookback: 7, tolerance: 1.5, minDepth: 5.0, shoulderTol: 4.0, minHeadPct: 2.5, minQuality: 0.6 },
-    locker: { lookback: 5, tolerance: 2.0, minDepth: 3.0, shoulderTol: 5.0, minHeadPct: 2.0, minQuality: 0.5 },
-  };
-  state.patternOpts = presets[e.target.value] || {};
+  state.patternOpts = PAT_PRESETS[e.target.value] || {};
   saveWorkspace();
   const warn = document.getElementById("patWarn");
   if (warn) warn.classList.toggle("hidden", e.target.value === "streng");
 });
+// Gespeicherte Strenge in die Auswahl zurueckspiegeln — vorher zeigte sie
+// nach dem Neuladen "Streng", gescannt wurde aber mit "Mittel"/"Locker".
+(function restoreScanUi() {
+  const sel = document.getElementById("patStrictness");
+  if (sel) {
+    const lb = state.patternOpts && state.patternOpts.lookback;
+    const v = lb === 7 ? "mittel" : lb === 5 ? "locker" : "streng";
+    sel.value = v;
+    const warn = document.getElementById("patWarn");
+    if (warn) warn.classList.toggle("hidden", v === "streng");
+  }
+  const boxes = [
+    ...document.querySelectorAll("#patTypes input[type=checkbox]"),
+    ...document.querySelectorAll("#smcPanel input[type=checkbox]"),
+  ];
+  boxes.forEach((cb) => {
+    const key = cb.dataset.pat || cb.id;
+    if (!key) return;
+    if (typeof state.scanUi[key] === "boolean") cb.checked = state.scanUi[key];
+    cb.addEventListener("change", () => {
+      state.scanUi[key] = cb.checked;
+      saveWorkspace();
+    });
+  });
+})();
 
 // ---------- SMC-Handler (FVG / Order Blocks) ----------
 (function () {
@@ -8208,8 +8511,10 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 
 // ════════════════════════════════════════════════════════════════════
 // MOBILE-SCHICHT
-// Läuft ausschliesslich auf Touch-/Schmalgeräten. Auf dem Desktop wird
-// nichts davon ausgeführt — das DOM bleibt dort unverändert.
+// Ueberwiegend Touch-/Schmalgeraete; jeder Teil prueft tvIsMobile() selbst.
+// Auch auf dem Desktop laufen: der Build-Abgleich direkt unten und die
+// Chart-Sperre 4b (Scrollen/Zoomen gesperrt, solange ein Zeichenwerkzeug
+// aktiv ist — gewollt, damit der Klick nicht den Chart verschiebt).
 // ════════════════════════════════════════════════════════════════════
 
 const TV_BUILD = "m88";
@@ -8367,14 +8672,7 @@ quiet(() => {
 
   window.__tvCandleAt = (timestamp) => {
     try {
-      const data = chart.getDataList();
-      if (!data || !data.length || timestamp == null) return null;
-      let best = null, diff = Infinity;
-      for (const d of data) {
-        const dd = Math.abs(d.timestamp - timestamp);
-        if (dd < diff) { diff = dd; best = d; }
-      }
-      return best;
+      return nearestCandle(chart.getDataList(), timestamp);
     } catch (e) { return null; }
   };
 
@@ -8444,7 +8742,7 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
   // Ende bekommt — beim Long/Short wird aus einem Einstieg per
   // expandPoints ein Dreiergespann [Einstieg, Stop, Ziel].
   const need = opts.needPoints || TOOL_POINT_COUNT[overlayName] || 2;
-  const AXIS_W = 80, ENGAGE = 8;
+  const ENGAGE = 8;
   let points = [];
   let markers = [];   // Pixel-Positionen bereits gesetzter Punkte — sichtbare Bestätigung
   let previewId = null;
@@ -8526,11 +8824,7 @@ function startMobilePointTool(overlayName, overlayConfig, opts) {
       const data = chart.getDataList();
       if (!data || !data.length) return null;
 
-      let closest = null, bestDiff = Infinity;
-      for (const d of data) {
-        const diff = Math.abs(d.timestamp - v.timestamp);
-        if (diff < bestDiff) { bestDiff = diff; closest = d; }
-      }
+      const closest = nearestCandle(data, v.timestamp);
       if (!closest) return null;
 
       const tol = 40;   // nur noch ein Fangbereich, siehe state.magnetMode
@@ -8818,57 +9112,6 @@ quiet(() => {
       { timestamp: entry.timestamp, value: stop },
       { timestamp: entry.timestamp, value: target },
     ];
-  }
-
-  // Desktop: ein einzelner Mausklick setzt den Einstieg.
-  // startMobilePointTool horcht ausschliesslich auf Beruehrungen — auf dem
-  // Desktop kaeme dort nie ein Ereignis an und das Werkzeug bliebe haengen.
-  function placePositionByClick(dir, cfg) {
-    setStatus(dir === "long"
-      ? "Long: Einstieg anklicken"
-      : "Short: Einstieg anklicken");
-
-    const abbrechen = () => {
-      host.removeEventListener("mousedown", onDown, true);
-      document.removeEventListener("keydown", onKey, true);
-      state.activeTool = null;
-      renderDrawbar();
-      document.getElementById("posToolTopBtn")?.classList.remove("active");
-    };
-    const onKey = (e) => {
-      if (e.key !== "Escape") return;
-      abbrechen();
-      setStatus("Abgebrochen");
-    };
-    const onDown = (e) => {
-      if (e.button !== 0) return;
-      const rect = host.getBoundingClientRect();
-      const x = e.clientX - rect.left, y = e.clientY - rect.top;
-      if (x > rect.width - 80) return;          // Preisskala nicht bemalen
-      e.preventDefault(); e.stopPropagation();
-      abbrechen();
-      quiet(() => {
-        // Desktop1: erst Pixel→Wert, dann WERT-basiert auf O/H/L/C rasten
-        // (koordinaten-unabhängig, greift zuverlässig). Kein Pixel-Snap-
-        // Rückweg mehr — der war die Ursache für "Magnet greift nicht".
-        let v = chart.convertFromPixel({ x, y }, { paneId: "candle_pane" });
-        if (!v || v.timestamp == null || v.value == null) {
-          setStatus("Einstieg konnte nicht bestimmt werden");
-          return;
-        }
-        v = snapEntryValue(v);
-        const entry = { timestamp: v.timestamp, value: v.value };
-        const id = chart.createOverlay({ ...cfg, points: expandPositionPoints(dir, entry) });
-        const oid = Array.isArray(id) ? id[0] : id;
-        if (oid) captureDrawing(oid);
-        state.selectedOverlayId = null;
-        setStatus(dir === "long"
-          ? "Long gesetzt — Position anklicken, dann Stop oder Ziel ziehen"
-          : "Short gesetzt — Position anklicken, dann Stop oder Ziel ziehen");
-      }, "placePositionByClick");
-    };
-    host.addEventListener("mousedown", onDown, true);
-    document.addEventListener("keydown", onKey, true);
   }
 
   function placePosition(dir) {

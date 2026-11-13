@@ -169,6 +169,22 @@ const GridBot = (function () {
     return "✅ Keine akuten Warnungen";
   }
 
+  // Preisgenaue Rundung (Gesamtpruefung A15). Frueher Math.round auf ganze
+  // USD: bei BTC richtig, bei XRP 0.55 ergab das Range 1–1 und Stop 1.
+  // Jetzt auf 5 gueltige Stellen relativ zum Kurs — fuer Kurse ab 10'000
+  // bleibt es bei ganzen Zahlen (BTC unveraendert).
+  function priceStep(ref) {
+    if (!(ref > 0)) return 1;
+    return Math.pow(10, Math.floor(Math.log10(ref)) - 4);
+  }
+  function roundTo(v, step) {
+    if (v == null || !isFinite(v)) return v;
+    const r = Math.round(v / step) * step;
+    // Gleitkomma-Reste (0.30000000000000004) abschneiden
+    const dec = Math.max(0, -Math.floor(Math.log10(step)));
+    return +r.toFixed(Math.min(12, dec));
+  }
+
   // ---------- 2. Tier-Berechnung ----------
   //
   // Cockpit B37-B46. Die Reihenfolge ist die eigentliche Logik:
@@ -184,8 +200,9 @@ const GridBot = (function () {
     const prof = PROFILES[PROFILE];
 
     // B37/B38: Range = Preis ∓ ATR% × Faktor
-    const lower = Math.round(price * (1 - atrFrac * f));
-    const upper = Math.round(price * (1 + atrFrac * f));
+    const step  = priceStep(price);
+    const lower = roundTo(price * (1 - atrFrac * f), step);
+    const upper = roundTo(price * (1 + atrFrac * f), step);
 
     // B39/B27: Hebel = MAX(1, MIN(Bot-Cap, Profil-Cap, ABRUNDEN(1/Stopdistanz)))
     // 1/Breite: je weiter das Grid, desto weniger Hebel ist tragbar.
@@ -209,8 +226,8 @@ const GridBot = (function () {
 
     // B41: Stop = halber ATR-Puffer hinter der Range
     const stopLoss = bias === "Short"
-      ? Math.round(upper * (1 + atrFrac * 0.5))
-      : Math.round(lower * (1 - atrFrac * 0.5));
+      ? roundTo(upper * (1 + atrFrac * 0.5), step)
+      : roundTo(lower * (1 - atrFrac * 0.5), step);
 
     // B42: Take Profit nur bei gerichtetem Grid
     const takeProfit = bias === "Long" ? upper : bias === "Short" ? lower : null;
@@ -263,7 +280,10 @@ const GridBot = (function () {
       direction: bias,
       lower, upper, leverage, grids, stopLoss, takeProfit,
       fundingDrag, positionSize, effective, safety,
-      gridStep: Math.round((upper - lower) / grids),
+      gridStep: roundTo((upper - lower) / grids, step / 10),
+      // Anzeige-Flag fuer die Hebel-Leitplanke (A9). Vorher fragte die
+      // Tabelle x.leverageGuard ab, das Feld wurde aber nie gesetzt.
+      leverageGuard: guardActive,
     };
   }
 
@@ -412,7 +432,11 @@ const GridBot = (function () {
     const feePct  = opts.feePct  ?? TH.feeRoundtrip;
     const tiers   = opts.tiers   ?? DEFAULT_TIERS;
 
-    const funding8h      = deriv?.funding?.fundingNow ?? null;
+    // Schwellen (-0.01 / +0.05) gelten je 8 Stunden. Paare mit 4h- oder
+    // 1h-Takt zahlen pro Abrechnung entsprechend weniger — auf 8h normieren.
+    const fRaw = deriv?.funding?.fundingNow ?? null;
+    const fHours = deriv?.funding?.intervalHours || 8;
+    const funding8h      = fRaw == null ? null : fRaw * (8 / fHours);
     const fundingMonthly = deriv?.funding?.fundingMonthly ?? null;
     const oiChange30     = deriv?.oi?.oiChange30 ?? null;
     const lsRatio        = deriv?.ls?.lsRatio ?? null;
@@ -439,8 +463,7 @@ const GridBot = (function () {
       // B45–B48: lohnt sich das Grid nach Funding und Gebühren überhaupt?
       // WICHTIG: viability erwartet die 8h-RATE (rechnet selbst × Tage × 3).
       // fundingAvg30 aus derivatives.js ist bereits auf den MONAT hochgerechnet
-      // (× 90) — direkte Übergabe wäre Faktor 90 zu hoch und liesse jede
-      // gerichtete Position massiv unrentabel aussehen.
+      // (mit dem echten Abrechnungstakt) — /90 ergibt das 8h-Aequivalent.
       const avg8h = deriv?.funding?.fundingAvg30 != null
         ? deriv.funding.fundingAvg30 / 90
         : funding8h;
@@ -476,7 +499,7 @@ const GridBot = (function () {
       derivatives: {
         fng, fngLabel: deriv?.fng?.fngLabel ?? null,
         fngAvg30: deriv?.fng?.fngAvg30 ?? null, fngAvg90: deriv?.fng?.fngAvg90 ?? null,
-        funding8h, fundingMonthly,
+        funding8h, fundingMonthly, fundingHours: deriv?.funding?.intervalHours ?? null,
         fundingAvg30: deriv?.funding?.fundingAvg30 ?? null,
         oiNow: deriv?.oi?.oiNow ?? null, oiChange30, oiChange90: deriv?.oi?.oiChange90 ?? null,
         lsRatio,
@@ -562,7 +585,8 @@ const GridBot = (function () {
   
     // Volumen-Signal aus Chart-Kerzen (aktuellster TF, passt so)
     const vols = d.map(x => x.volume || 0);
-    const volMa = vols.slice(-20).reduce((a, b) => a + b, 0) / 20;
+    const volWin = vols.slice(-20);
+    const volMa = volWin.reduce((a, b) => a + b, 0) / Math.max(1, volWin.length);
     const volSignal = vols.at(-1) > volMa * 2 ? "🔥 Volumen-Spike (Achtung Trendwende/Ausbruch)"
                     : vols.at(-1) < volMa * 0.5 ? "😴 Volumen-Flaute" : "➖ Volumen normal";
   
@@ -586,8 +610,8 @@ const GridBot = (function () {
   async function gbRefresh(force) {
     // Tages-Kerzen separat holen — ATR/SMA/ER sollen immer auf Tagesdaten basieren,
     // unabhängig davon welchen Chart-Timeframe der Nutzer gerade anschaut.
-    // 200 Kerzen reichen für ATR200 + SMA200 + ER20. Nur für Binance-Symbole;
-    // bei anderen Exchanges (Kraken, Coinbase, Bybit) wird mit Chart-Daten gerechnet.
+    // 200 Kerzen reichen für ATR200 + SMA200 + ER20. Seit der Gesamtpruefung
+    // fuer jede Quelle; nur wenn der Abruf scheitert, rechnet er mit Chart-Daten.
     let dailyD = null;
     try {
       if (state.symbol.type === "binance") {
@@ -602,11 +626,25 @@ const GridBot = (function () {
         dailyD = await DataLayer.fetchBitstampHistory(state.symbol.bitstampPair, 86400);
         dailyD = (dailyD || []).slice(-210).map(k => Array.isArray(k)
           ? { timestamp: k[0], open: k[1], high: k[2], low: k[3], close: k[4], volume: k[5] } : k);
+      } else if (state.symbol.type === "coinbase") {
+        // Gesamtpruefung A23: ohne diesen Zweig rechneten ATR, SMA200 und
+        // Mayer auf einem 15m-Chart mit 15-Minuten-Kerzen.
+        dailyD = await DataLayer.fetchCoinbaseKlines(state.symbol.coinbaseProduct, 86400, 210);
+      } else if (state.symbol.type === "stooq") {
+        dailyD = (await DataLayer.fetchStooqHistory(state.symbol.stooqSymbol) || []).slice(-210);
+      } else if (state.symbol.type === "dominance") {
+        dailyD = (await DataLayer.fetchDominance(state.symbol.domCoin) || []).slice(-210);
+      } else if (state.symbol.type === "worker") {
+        const snap = (CONFIG.HISTORY_SNAPSHOTS || {})[state.symbol.id];
+        const fn = state.symbol.id === "XAGUSD"
+          ? (from) => DataLayer.fetchSilverHistory(from)
+          : (from) => DataLayer.fetchGoldHistory(from);
+        dailyD = (await DataLayer.fetchHistoryCached(snap, fn) || []).slice(-210);
       }
     } catch (e) { dailyD = null; }   // Fallback: Chart-Kerzen
   
     const market = gbMarketData(dailyD);
-    if (!market) { setStatus("Grid Bot: zu wenig Chart-Daten (200+ Kerzen nötig)"); return; }
+    if (!market) { setStatus("Grid Bot: zu wenig Kerzen geladen (mindestens 10, für SMA200 und Mayer 200+)"); return; }
   
     if (force) Derivatives.clearCache();
     document.getElementById("gbUpdated").textContent = "lädt…";
@@ -629,6 +667,14 @@ const GridBot = (function () {
     };
     GridBot.setThresholds(state.gbThresholds);
     state.gbResult = GridBot.compute(market, deriv, opts);
+    // Einordnung je Asset (Gesamtpruefung A23): die Zyklus-Schwellen sind an
+    // BTC kalibriert. Bei anderen Krypto-Assets nur Orientierung, bei Gold
+    // und Indizes gelten weder Schwellen noch Futures-Daten.
+    const perp = derivSymbolFor(state.symbol);
+    state.gbResult.assetNote = !perp
+      ? "Kein Krypto-Asset — Zyklus-Schwellen und Futures-Daten gelten hier nicht"
+      : perp !== "BTCUSDT" ? "Schwellen auf BTC geeicht — hier nur als Orientierung" : null;
+    state.gbResult.oiUnit = perp ? perp.replace(/USDT$/, "") : "";
   
     gbRenderStatus();
     gbRenderTiers();
@@ -657,19 +703,19 @@ const GridBot = (function () {
     };
   
     const m = r.mayer;
-    set("gbRegime", m != null ? "Mayer " + m.toFixed(2) : "Mayer –",
+    set("gbMayer", m != null ? "Mayer " + m.toFixed(2) : "Mayer –",
         m == null ? "" : m > GridBot.CYCLE.mayerExpensive ? "warn" : m < GridBot.CYCLE.mayerCheap ? "good" : "");
   
     const er = r.er;
-    set("gbRsi", er != null ? "ER " + er.toFixed(2) : "ER –",
+    set("gbEr", er != null ? "ER " + er.toFixed(2) : "ER –",
         er == null ? "" : er >= GridBot.CYCLE.erTrend ? "warn" : er < GridBot.CYCLE.erRange ? "good" : "");
   
     const fng = r.derivatives?.fng;
-    set("gbFunding", fng != null ? "F&G " + fng : "F&G –",
+    set("gbFngStat", fng != null ? "F&G " + fng : "F&G –",
         fng == null ? "" : fng > GridBot.CYCLE.fngGreed ? "warn" : fng < GridBot.CYCLE.fngFear ? "good" : "");
   
     const rsi = r.market?.rsi;
-    set("gbFng", rsi != null ? "RSI " + rsi.toFixed(0) : "RSI –",
+    set("gbRsi", rsi != null ? "RSI " + rsi.toFixed(0) : "RSI –",
         rsi == null ? "" : (rsi >= 75 || rsi <= 25) ? "warn" : "");
   
     document.getElementById("gbUpdated").textContent = state.gbUpdated || "";
@@ -699,11 +745,17 @@ const GridBot = (function () {
         + `<div class="reco-meta">`
           + `<span>Grid-Eignung: <b>${r.gridSuitability?.label || "—"}</b></span>`
           + `<span>Profil: <b>${r.profile?.name || "—"}</b></span>`
+          + (r.assetNote ? `<span class="reco-note">ℹ ${r.assetNote}</span>` : "")
           + (r.tiers.some(x => x.leverageGuard) ? `<span class="reco-guard">⚠ Hebel-Leitplanke aktiv → max 1×</span>` : "")
         + `</div>`;
     }
   
-    const fmt = (n) => n == null ? "–" : n.toLocaleString("de-CH", { maximumFractionDigits: 0 });
+    // Nachkommastellen nach Kursniveau: BTC ganze Zahlen wie bisher, XRP/DOGE
+    // mit genug Stellen, damit Range und Stop unterscheidbar bleiben.
+    const pxRef = r.market && r.market.price;
+    const pxDec = !(pxRef > 0) ? 0 : Math.max(0, Math.min(8, 4 - Math.floor(Math.log10(pxRef))));
+    const fmt = (n) => n == null ? "–" : n.toLocaleString("de-CH", { maximumFractionDigits: pxDec });
+    const fmtUsd = (n) => n == null ? "–" : n.toLocaleString("de-CH", { maximumFractionDigits: 0 });
     const sign = (n) => (n > 0 ? "+" : "") + n.toFixed(1) + "%";
   
     // Nur was man in Pionex tatsächlich eintippt oder zum Entscheiden braucht.
@@ -713,7 +765,7 @@ const GridBot = (function () {
       ["Range unten",  (x) => fmt(x.lower)],
       ["Grids",        (x) => x.grids],
       ["Hebel",        (x) => x.leverage + "×" + (x.leverageGuard ? " ⚠" : "")],
-      ["Investment",   (x) => fmt(x.positionSize) + " USDT"],
+      ["Investment",   (x) => fmtUsd(x.positionSize) + " USDT"],
       ["Stop Loss",    (x) => fmt(x.stopLoss)],
       ["Sicherheit",   (x) => x.safety],
       ["Netto-Erwartung", (x) => x.viability ? sign(x.viability.net) : "–"],
@@ -758,15 +810,18 @@ const GridBot = (function () {
     const box = document.getElementById("gbData");
     if (!r) return;
     const n = (v, d = 2, suf = "") => v == null ? "–" : v.toFixed(d) + suf;
+    // Kurse mit passender Genauigkeit (A15): BTC ganzzahlig wie bisher
+    const pRef = r.market.price;
+    const pDec = !(pRef > 0) ? 0 : Math.max(0, Math.min(8, 4 - Math.floor(Math.log10(pRef))));
     const blk = (title, kvs) =>
       `<div><div class="gb-blk-title">${title}</div>` +
       kvs.map(([k, v]) => `<div class="gb-kv"><span>${k}</span><span>${v}</span></div>`).join("") + "</div>";
   
     box.innerHTML =
       blk("Markt & Trend", [
-        ["Preis", n(r.market.price, 0)],
-        ["SMA50", n(r.market.sma50, 0)],
-        ["SMA200", n(r.market.sma200, 0)],
+        ["Preis", n(r.market.price, pDec)],
+        ["SMA50", n(r.market.sma50, pDec)],
+        ["SMA200", n(r.market.sma200, pDec)],
         ["Abstand SMA200", n(r.market.sma200Dist, 2, "%")],
         ["RSI14 (Wilder)", n(r.market.rsi, 1)],
         ["ATR14 / 90 / 200", `${n(r.market.atr14)} / ${n(r.market.atr90)} / ${n(r.market.atr200)}`],
@@ -775,10 +830,13 @@ const GridBot = (function () {
       blk("Sentiment & Derivate", [
         ["Fear & Greed", r.derivatives.fng != null ? `${r.derivatives.fng} (${r.derivatives.fngLabel})` : "–"],
         ["F&G Ø30 / Ø90", `${n(r.derivatives.fngAvg30, 1)} / ${n(r.derivatives.fngAvg90, 1)}`],
-        ["Funding 8h", n(r.derivatives.funding8h, 4, "%")],
+        ["Funding 8h", n(r.derivatives.funding8h, 4, "%")
+          + (r.derivatives.fundingHours && r.derivatives.fundingHours !== 8 ? ` (Takt ${r.derivatives.fundingHours} h)` : "")],
         ["Funding monatlich", n(r.derivatives.fundingMonthly, 2, "%")],
-        ["Open Interest", r.derivatives.oiNow != null ? n(r.derivatives.oiNow, 0) + " BTC" : "–"],
-        ["OI Δ30T / Δ90T", `${n(r.derivatives.oiChange30, 2, "%")} / ${n(r.derivatives.oiChange90, 2, "%")}`],
+        // Einheit = Basiswaehrung des Perpetuals (A14); Binance liefert nur
+        // den letzten Monat, deshalb keine 90-Tage-Aenderung mehr (A19).
+        ["Open Interest", r.derivatives.oiNow != null ? n(r.derivatives.oiNow, 0) + " " + (r.oiUnit || "") : "–"],
+        ["OI Δ30T", n(r.derivatives.oiChange30, 2, "%")],
         ["L/S Ratio", n(r.derivatives.lsRatio, 4)],
         ["OI-Interpretation", r.oiInterpretation],
       ]) +
@@ -888,7 +946,11 @@ const GridBot = (function () {
     try {
       const id = chart.createOverlay({
         name: "gridBands",
-        points: [{ timestamp: ts, value: t.upper }, { timestamp: d.at(-1).timestamp, value: t.lower }],
+        // Dritter Punkt = echter Stop-Preis (A16). Vorher zeichnete das
+        // Overlay die SL-Linie schematisch neben LP — beim Short sogar
+        // innerhalb der Range.
+        points: [{ timestamp: ts, value: t.upper }, { timestamp: d.at(-1).timestamp, value: t.lower }]
+          .concat(t.stopLoss != null ? [{ timestamp: d.at(-1).timestamp, value: t.stopLoss }] : []),
         lock: true,
         onMouseEnter: () => { setChartCursor("pointer"); return false; },
         onMouseLeave: () => { setChartCursor(""); return false; },
@@ -915,10 +977,18 @@ const GridBot = (function () {
       state.gbHeight = h;
       resize();
     };
+    // Dokument-Listener nur WAEHREND des Ziehens. Vorher hing ein
+    // touchmove mit passive:false dauerhaft am Dokument und bremste mobil
+    // jedes Scrollen; touchcancel fehlte (Gesamtpruefung C22).
     const onUp = () => {
       if (!dragging) return;
       dragging = false;
       document.body.style.cursor = "";
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.removeEventListener("touchend", onUp);
+      document.removeEventListener("touchcancel", onUp);
       saveWorkspace();
     };
   
@@ -928,14 +998,15 @@ const GridBot = (function () {
       startH = bar.getBoundingClientRect().height;
       document.body.style.cursor = "ns-resize";
       e.preventDefault();
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("touchmove", onMove, { passive: false });
+      document.addEventListener("mouseup", onUp);
+      document.addEventListener("touchend", onUp);
+      document.addEventListener("touchcancel", onUp);
     };
   
     handle.addEventListener("mousedown", onDown);
     handle.addEventListener("touchstart", onDown, { passive: false });
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("touchmove", onMove, { passive: false });
-    document.addEventListener("mouseup", onUp);
-    document.addEventListener("touchend", onUp);
   }
 
   function gbApplyHeight() {

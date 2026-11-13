@@ -32,6 +32,9 @@ const CONFIG = {
     // BTCUSDT/ETHUSDT-Snapshots liegen bewusst nicht im Repo -> der fetch gab 404
     // in der Konsole. Entfernt; diese Paare laufen über den vollen Binance-Abruf.
     XAUUSD:    "data/gold-lbma.json",
+    // Silber: Datei entsteht mit snapshot.sh (seit der Gesamtpruefung C3).
+    // Fehlt sie, laedt der Chart wie bisher die volle Historie vom Worker.
+    XAGUSD:    "data/silver-lbma.json",
   },
   // Allgemeine Stooq-Zeitreihe ueber denselben Worker. Erwartet
   //   GET <WORKER_BASE_URL>/stooq?s=<symbol>
@@ -98,11 +101,14 @@ const CONFIG = {
   TIMEFRAMES: [
     { id: "15m", label: "15m", binanceInterval: "15m", krakenInterval: "15",    coinbaseInterval: 900,   bybitInterval: "15"  },
     { id: "1h",  label: "1h",  binanceInterval: "1h",  krakenInterval: "60",    coinbaseInterval: 3600,  bybitInterval: "60"  },
-    { id: "4h",  label: "4h",  binanceInterval: "4h",  krakenInterval: "240",   coinbaseInterval: 21600, bybitInterval: "240" },
+    // Coinbase kennt kein 4h (nur 60/300/900/3600/21600/86400 s) — 21600 waeren
+    // 6 Stunden unter dem Etikett "4h". Deshalb fuer Coinbase gesperrt.
+    { id: "4h",  label: "4h",  binanceInterval: "4h",  krakenInterval: "240",                           bybitInterval: "240" },
     { id: "1d",  label: "1D",  binanceInterval: "1d",  krakenInterval: "1440",  coinbaseInterval: 86400, bybitInterval: "D"   },
     { id: "1w",  label: "1W",  binanceInterval: "1w",  krakenInterval: "10080",                          bybitInterval: "W"   },
     { id: "12d", label: "12D", aggDays: 12 },
-    { id: "1M",  label: "1M",  binanceInterval: "1M",  krakenInterval: "21600",                          bybitInterval: "M"   },
+    // Kraken "21600" sind 21600 MINUTEN = 15 Tage, kein Monat — fuer Kraken gesperrt.
+    { id: "1M",  label: "1M",  binanceInterval: "1M",                                                    bybitInterval: "M"   },
   ],
 
   KRAKEN_REST:   "https://api.kraken.com/0/public",
@@ -418,29 +424,7 @@ const CONFIG = {
   // leeres Array truthy bleibt und diese Vorgabe nicht ueberschreibt).
   DEFAULT_ACTIVE: [],
 
-  DRAW_TOOLS: [
-    { overlay: "segment",                icon: "╱",  title: "Trendlinie" },
-    { overlay: "rayLine",                icon: "⟋",  title: "Strahl" },
-    { overlay: "horizontalStraightLine", icon: "─",  title: "Horizontale Linie" },
-    { overlay: "verticalStraightLine",   icon: "│",  title: "Vertikale Linie" },
-    { overlay: "priceLine",              icon: "₊─", title: "Preislinie" },
-    { overlay: "priceChannelLine",       icon: "⫽",  title: "Preiskanal" },
-    { overlay: "parallelStraightLine",   icon: "∥",  title: "Parallele Linien" },
-    { overlay: "fibRetracement",        icon: "𝑓",  title: "Fib Retracement" },
-    { overlay: "fibExtension",          icon: "𝑓",  title: "Fib Extension" },
-    { overlay: "rectangle",              icon: "▭",  title: "Rechteck" },
-    { overlay: "priceRange",             icon: "↕",  title: "Price Range" },
-    { overlay: "dateRange",              icon: "↔",  title: "Date Range" },
-    { overlay: "frvp",                   icon: "▤",  title: "Fixed Range Volume Profile" },
-  ],
 
-  // Standard-Stil für neue Zeichnungen (im Draw-Stil-Popover änderbar)
-  DRAW_STYLE_DEFAULT: {
-    color:   "#e8b64c",
-    opacity: 100,
-    width:   2,
-    style:   "solid",   // solid | dashed
-  },
 
   THEME: {
     up: "#3fb68b", down: "#d05e5e", accent: "#e8b64c",

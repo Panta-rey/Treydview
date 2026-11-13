@@ -141,17 +141,17 @@ const SMC = (function () {
         if (o.lastCandleOnly && i + 1 <= to && data[i + 1] &&
             data[i + 1].close < data[i + 1].open) continue;
 
-        let broke = false, disp = 0;
+        let broke = false, disp = 0, breakIdx = i + 1;
         for (let k = i + 1; k <= Math.min(to, i + o.obLookahead); k++) {
           disp = Math.max(disp, data[k].high - ob.high);
-          if (data[k].close > ob.high) { broke = true; break; }
+          if (data[k].close > ob.high) { broke = true; breakIdx = k; break; }
         }
         if (broke && disp > o.obDisplaceMult * atr) {
           const top    = o.obUseBody ? Math.max(ob.open, ob.close) : ob.high;
           const bottom = o.obUseBody ? Math.min(ob.open, ob.close) : ob.low;
           const zone = { type: "bullish", kind: "ob", top, bottom,
                          index: i, timestamp: ob.timestamp };
-          zone.mitigatedIndex = firstMitigationOB(data, i, to + 1e9, zone);
+          zone.mitigatedIndex = firstMitigationOB(data, i, to + 1e9, zone, breakIdx);
           out.push(zone);
         }
       }
@@ -161,17 +161,17 @@ const SMC = (function () {
         if (o.lastCandleOnly && i + 1 <= to && data[i + 1] &&
             data[i + 1].close > data[i + 1].open) continue;
 
-        let broke = false, disp = 0;
+        let broke = false, disp = 0, breakIdx = i + 1;
         for (let k = i + 1; k <= Math.min(to, i + o.obLookahead); k++) {
           disp = Math.max(disp, ob.low - data[k].low);
-          if (data[k].close < ob.low) { broke = true; break; }
+          if (data[k].close < ob.low) { broke = true; breakIdx = k; break; }
         }
         if (broke && disp > o.obDisplaceMult * atr) {
           const top    = o.obUseBody ? Math.max(ob.open, ob.close) : ob.high;
           const bottom = o.obUseBody ? Math.min(ob.open, ob.close) : ob.low;
           const zone = { type: "bearish", kind: "ob", top, bottom,
                          index: i, timestamp: ob.timestamp };
-          zone.mitigatedIndex = firstMitigationOB(data, i, to + 1e9, zone);
+          zone.mitigatedIndex = firstMitigationOB(data, i, to + 1e9, zone, breakIdx);
           out.push(zone);
         }
       }
@@ -180,10 +180,13 @@ const SMC = (function () {
   }
 
   // Ab welchem Index wird der OB erstmals wieder berührt (mitigiert)? null = offen.
-  function firstMitigationOB(data, obIdx, hardEnd, zone) {
+  function firstMitigationOB(data, obIdx, hardEnd, zone, breakIdx) {
     const end = Math.min(data.length - 1, hardEnd);
-    // Erst NACH dem Displacement-Move suchen (mind. 2 Kerzen später)
-    for (let j = obIdx + 2; j <= end; j++) {
+    // Erst NACH dem Ausbruch suchen (mind. 2 Kerzen nach dem OB). Der
+    // Ausbruch darf bis obLookahead Kerzen dauern — eine Beruehrung davor
+    // zaehlte frueher schon als "mitigiert" (Gesamtpruefung C25).
+    const start = Math.max(obIdx + 2, (breakIdx != null ? breakIdx : obIdx) + 1);
+    for (let j = start; j <= end; j++) {
       const d = data[j];
       if (!d) break;
       if (zone.type === "bullish") { if (d.low  <= zone.top)    return j; }
@@ -206,24 +209,33 @@ const SMC = (function () {
     const realFVG   = detectFVG(data, range, opts).length;
     const realOB    = detectOrderBlocks(data, range, opts).length;
     const realTotal = realFVG + realOB;
-    const rets = [];
-    for (let i = 1; i < data.length; i++)
-      rets.push(Math.log(data[i].close / data[i - 1].close));
+    // Je Kerze Rendite UND echte Dochtform (relativ zum Koerper). Frueher
+    // bekamen die Zufallskerzen feste ±0.2 %-Dochte — echte Dochte sind
+    // breiter, der Vergleich war dadurch verzerrt (Gesamtpruefung C25).
+    const rets = [], hiW = [], loW = [];
+    for (let i = 1; i < data.length; i++) {
+      const d = data[i];
+      rets.push(Math.log(d.close / data[i - 1].close));
+      const top = Math.max(d.open, d.close), bot = Math.min(d.open, d.close);
+      hiW.push(top > 0 && d.high >= top ? Math.log(d.high / top) : 0);
+      loW.push(bot > 0 && d.low > 0 && d.low <= bot ? Math.log(bot / d.low) : 0);
+    }
     const nullCounts = [];
     for (let r = 0; r < runs; r++) {
-      const shuffled = [];
-      while (shuffled.length < rets.length) {
+      const order = [];
+      while (order.length < rets.length) {
         const start = Math.floor(Math.random() * Math.max(1, rets.length - blockLen));
-        shuffled.push(...rets.slice(start, start + blockLen));
+        for (let k = start; k < Math.min(rets.length, start + blockLen); k++) order.push(k);
       }
-      shuffled.length = rets.length;
+      order.length = rets.length;
       let p = data[0].close;
       const synth = [Object.assign({}, data[0])];
-      for (let i = 0; i < shuffled.length; i++) {
-        const prev = p;
-        p *= Math.exp(shuffled[i]);
+      for (let i = 0; i < order.length; i++) {
+        const k = order[i], prev = p;
+        p *= Math.exp(rets[k]);
         synth.push({ timestamp: data[i+1].timestamp, open: prev,
-          high: Math.max(prev, p)*1.002, low: Math.min(prev, p)*0.998, close: p, volume: 1 });
+          high: Math.max(prev, p) * Math.exp(hiW[k]), low: Math.min(prev, p) / Math.exp(loW[k]),
+          close: p, volume: 1 });
       }
       nullCounts.push(detectFVG(synth, range, opts).length + detectOrderBlocks(synth, range, opts).length);
     }

@@ -2,11 +2,17 @@
 <html lang="de-CH">
 <head>
   <meta charset="UTF-8">
+  <!-- Content-Security-Policy (Gesamtpruefung B6): Skripte nur aus diesem
+       Repo, Verbindungen nur zu den genutzten Datenquellen. Faengt ein
+       eingeschleustes <script> oder einen Datenabfluss an fremde Server ab.
+       NEUE DATENQUELLE → ihren Host hier unter connect-src eintragen, sonst
+       blockiert der Browser die Anfrage (Konsole: "Refused to connect").
+       style-src 'unsafe-inline': app.js setzt Stile per innerHTML. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://api.binance.com https://fapi.binance.com wss://stream.binance.com:9443 https://api.alternative.me https://api.kraken.com https://api.exchange.coinbase.com https://api.bybit.com https://pantarey.rey-gafner.workers.dev; manifest-src 'self'; worker-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>TreydView</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Archivo:wght@700;800&display=swap" rel="stylesheet">
+  <!-- Schriften liegen lokal in css/fonts/ (Gesamtpruefung B5) —
+       kein Abruf bei Google mehr. @font-face steht in style.css. -->
   <!-- Auf dem iPhone kennt der Browser keine Vollbild-Schnittstelle. Über
        «Teilen → Zum Home-Bildschirm» startet TreydView dank dieser Angaben
        ohne Adressleiste und Reiter. -->
@@ -18,6 +24,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TreydView">
   <meta name="theme-color" content="#0d1117">
+  <!-- App-Symbol: drei Segel mit Spiegelung im Fluss ("Alles fliesst"). Vorlage: icons/logo.svg -->
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest?v=m88">
   <link rel="stylesheet" href="css/style.css?v=m88">
   <!-- Lokal gehostet und gepatcht (Zoom-Grenze). Siehe Kommentar in der Datei.
@@ -27,7 +36,7 @@
 <body>
 
 <header class="topbar">
-  <div class="brand"><span class="brand-mark">ᴪ</span><span class="brand-name">TreydView</span></div>
+  <div class="brand"><svg class="brand-mark" viewBox="36 30 128 144" aria-hidden="true"><path class="bm-s1" d="M50 61V115H86Z"/><path class="bm-s2" d="M76 47V115H118Z"/><path class="bm-s3" d="M104 33V115H150Z"/><line class="bm-line" x1="42" y1="125" x2="158" y2="125"/><g class="bm-refl"><path d="M50 157V130H86Z" fill-opacity=".5"/><path d="M76 164V130H118Z" fill-opacity=".75"/><path d="M104 171V130H150Z"/></g></svg><span class="brand-name">TreydView</span></div>
 
   <!-- Asset-Dropdown -->
   <div class="dropdown" id="assetDropdown">
@@ -116,7 +125,7 @@
     </div>
 
     <!-- Grid Bot -->
-    <button class="action-btn" id="gridBotBtn" title="Futures Grid Bot">
+    <button class="action-btn" id="gridBotBtn" title="Futures Grid Bot" aria-label="Futures Grid Bot">
       <svg viewBox="0 0 24 24" class="ab-icon">
         <rect x="5" y="8" width="14" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>
         <path d="M12 8V5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
@@ -128,7 +137,7 @@
       </svg>
     </button>
     <!-- Magnet -->
-    <button class="action-btn mobile-only" id="magnetBbBtn" title="Magnet ein/aus">
+    <button class="action-btn mobile-only" id="magnetBbBtn" title="Magnet ein/aus" aria-label="Magnet ein/aus">
       <!-- Hufeisen-Magnet mit Blitz. Die Farben stehen als Inline-style, weil
            .ab-icon { fill:none; stroke:currentColor } als CSS-Regel jedes
            Praesentations-Attribut am Element schlaegt. Die Kerben an den Polen
@@ -149,7 +158,7 @@
               style="fill:currentColor;stroke:none"/>
       </svg>
     </button>
-        <button class="action-btn" id="posToolTopBtn" title="Long / Short Position — Einstieg, Stop, Ziel klicken">
+        <button class="action-btn" id="posToolTopBtn" title="Long / Short Position — Einstieg, Stop, Ziel klicken" aria-label="Long / Short Position — Einstieg, Stop, Ziel klicken">
       <svg viewBox="0 0 24 24" class="ab-icon">
         <rect x="2.5" y="3.5" width="19" height="7" rx="1" fill="rgba(63,182,139,.22)" stroke="#3fb68b" stroke-width="1.6"/>
         <rect x="2.5" y="13.5" width="19" height="7" rx="1" fill="rgba(208,94,94,.22)" stroke="#d05e5e" stroke-width="1.6"/>
@@ -159,7 +168,7 @@
 
     <!-- Pattern-Erkennung -->
     <div class="dropdown" id="patternDropdown">
-      <button class="action-btn" id="patternTrigger" title="Chart-Muster erkennen">
+      <button class="action-btn" id="patternTrigger" title="Chart-Muster erkennen" aria-label="Chart-Muster erkennen">
         <!-- Zickzack zwischen zwei gestrichelten Kanallinien, mit
              Ausbruchspfeil. Deutlich anders als das EWT-Icon, das eine
              offene Impulslinie mit markierten Wendepunkten zeigt. -->
@@ -221,7 +230,7 @@
 
     <!-- Smart Money Concepts: FVG / Order Blocks -->
     <div class="dropdown" id="smcDropdown">
-      <button class="action-btn" id="smcTrigger" title="Fair Value Gaps &amp; Order Blocks">
+      <button class="action-btn" id="smcTrigger" title="Fair Value Gaps &amp; Order Blocks" aria-label="Fair Value Gaps &amp; Order Blocks">
         <svg viewBox="0 0 24 24" class="ab-icon" aria-hidden="true">
           <!-- Geldsack: Smart Money ist angesammelte Liquiditaet. Linienfassung
                passend zur uebrigen Garnitur. -->
@@ -265,7 +274,7 @@
 
     <!-- Elliott-Wellen-Scanner: Welle 3 / Golden Pocket -->
     <div class="dropdown" id="ewtDropdown">
-      <button class="action-btn" id="ewtTrigger" title="Elliott-Wellen">
+      <button class="action-btn" id="ewtTrigger" title="Elliott-Wellen" aria-label="Elliott-Wellen">
         <!-- Impulswelle mit markierten Wendepunkten. Die Punkte nehmen die
              Leistenfarbe als Fuellung und wirken so als Aussparung — gleiche
              Garnitur wie die Zeichenwerkzeuge. -->
@@ -307,7 +316,7 @@
         </div>
         <div class="pat-row">
           <label>Grad-Feinabstimmung</label>
-          <input type="number" id="ewtDegScale" value="1" min="0.3" max="3" step="0.1">
+          <input type="number" id="ewtDegScale" value="0.6" min="0.3" max="3" step="0.1">
         </div>
         <div class="pat-row">
           <label>Zählbasis</label>
@@ -365,7 +374,7 @@
 
     <!-- Layouts -->
     <div class="dropdown" id="layoutDropdown">
-      <button class="action-btn" id="layoutTrigger" title="Layouts">
+      <button class="action-btn" id="layoutTrigger" title="Layouts" aria-label="Layouts">
         <svg viewBox="0 0 24 24" class="ab-icon">
           <rect x="3" y="3" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/>
           <rect x="13" y="3" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/>
@@ -388,7 +397,7 @@
     </div>
 
     <!-- Watchlist (Auge) -->
-    <button class="action-btn" id="wlToggleBtn" title="Watchlist ein-/ausblenden">
+    <button class="action-btn" id="wlToggleBtn" title="Watchlist ein-/ausblenden" aria-label="Watchlist ein-/ausblenden">
       <svg viewBox="0 0 24 24" class="ab-icon">
         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/>
@@ -396,22 +405,22 @@
     </button>
 
     <!-- Theme -->
-    <button class="action-btn" id="themeBtn" title="Hell / Dunkel">
+    <button class="action-btn" id="themeBtn" title="Hell / Dunkel" aria-label="Hell / Dunkel">
       <svg viewBox="0 0 24 24" class="ab-icon" id="themeIcon">
         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
 
-    <button class="action-btn mobile-only" id="fullscreenBtn" title="Vollbild">
+    <button class="action-btn mobile-only" id="fullscreenBtn" title="Vollbild" aria-label="Vollbild">
         <svg viewBox="0 0 24 24" class="ab-icon" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
       </button>
-      <button class="action-btn" id="autoZoomBtn" title="Auto-Zoom auf sichtbaren Bereich">
+      <button class="action-btn" id="autoZoomBtn" title="Auto-Zoom auf sichtbaren Bereich" aria-label="Auto-Zoom auf sichtbaren Bereich">
       <svg viewBox="0 0 24 24" class="ab-icon">
         <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
 
-    <button class="action-btn" id="screenshotBtn" title="Screenshot speichern">
+    <button class="action-btn" id="screenshotBtn" title="Screenshot speichern" aria-label="Screenshot speichern">
       <svg viewBox="0 0 24 24" class="ab-icon">
         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
         <circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="2"/>
@@ -419,7 +428,7 @@
     </button>
 
     <!-- FAQ / Hilfe -->
-    <button class="action-btn" id="faqBtn" title="FAQ / Hilfe">
+    <button class="action-btn" id="faqBtn" title="FAQ / Hilfe" aria-label="FAQ / Hilfe">
       <svg viewBox="0 0 24 24" class="ab-icon">
         <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
         <path d="M9.5 9a2.5 2.5 0 0 1 5 .8c0 2-3 2.5-3 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
@@ -428,7 +437,7 @@
     </button>
 
     <!-- Sync / Login per Sync-Code (Punkt 8). Ganz rechts neben FAQ. -->
-    <button class="action-btn" id="syncBtn" title="Einstellungen synchronisieren (Sync-Code)">
+    <button class="action-btn" id="syncBtn" title="Einstellungen synchronisieren (Sync-Code)" aria-label="Einstellungen synchronisieren (Sync-Code)">
       <svg viewBox="0 0 24 24" class="ab-icon" fill="none" stroke="currentColor" stroke-width="1.8">
         <path d="M12 3a9 9 0 0 1 8.5 6" stroke-linecap="round"/>
         <path d="M12 21a9 9 0 0 1-8.5-6" stroke-linecap="round"/>
@@ -438,7 +447,7 @@
     </button>
 
     <!-- Zeichenstift-Icon (nur Mobile): öffnet Draw-Bottom-Sheet -->
-    <button class="action-btn mobile-only" id="drawSheetBtn" title="Zeichenwerkzeuge">
+    <button class="action-btn mobile-only" id="drawSheetBtn" title="Zeichenwerkzeuge" aria-label="Zeichenwerkzeuge">
       <svg viewBox="0 0 24 24" class="ab-icon" fill="none" stroke="currentColor" stroke-width="1.8">
         <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z" stroke-linecap="round" stroke-linejoin="round"/>
         <path d="M20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
@@ -473,15 +482,6 @@
   <aside class="drawbar" id="drawbar"></aside>
 
   <div class="chart-col">
-    <!-- Mobile Info-Bar: Asset, TF, Preis, Änderung als Tappable-Zeile -->
-    <div class="mobile-info-bar mobile-only">
-      <button class="mib-asset" id="mibAsset">BTC/USDT (Binance)</button>
-      <button class="mib-tf" id="mibTf">1h</button>
-      <button class="mib-compare" id="mibCompare">+</button>
-      <span class="mib-price" id="mibPrice">–</span>
-      <span class="mib-change" id="mibChange">–</span>
-    </div>
-
     <!-- Preis-Header -->
     <div class="price-header">
       <span class="ph-symbol" id="phSymbol">–</span>
@@ -491,16 +491,16 @@
 
     <!-- Chart-Legende (einklappbar) -->
     <div class="chart-legend" id="chartLegend">
-      <button class="legend-toggle" id="legendToggle" title="Beschriftung ein-/ausklappen">◂</button>
+      <button class="legend-toggle" id="legendToggle" title="Beschriftung ein-/ausklappen" aria-label="Beschriftung ein-/ausklappen">◂</button>
       <div class="legend-body" id="legendBody"></div>
     </div>
 
     <!-- Haupt-Chart (RSI/VOL laufen als synchronisierte Panes darin) -->
     <div class="draw-action-bar hidden" id="drawActionBar">
-      <button id="dabStyle" title="Stil ändern">
+      <button id="dabStyle" title="Stil ändern" aria-label="Stil ändern">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C22 6.012 17.461 2 12 2z"/></svg>
       </button>
-      <button id="dabDelete" title="Löschen">
+      <button id="dabDelete" title="Löschen" aria-label="Löschen">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
       </button>
     </div>
@@ -509,10 +509,10 @@
       <button id="lsShort" class="ls-short">Short</button>
     </div>
     <div class="draw-action-bar hidden" id="drawConfirmBar">
-      <button id="dcbAccept" title="Zeichnung abschliessen">
+      <button id="dcbAccept" title="Zeichnung abschliessen" aria-label="Zeichnung abschliessen">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="20 6 9 17 4 12"/></svg>
       </button>
-      <button id="dcbCancel" title="Verwerfen">
+      <button id="dcbCancel" title="Verwerfen" aria-label="Verwerfen">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
@@ -526,7 +526,7 @@
          Hoehe von #mainChart, damit der Knopf mitwandert, wenn sich die
          Grid-Bot-Leiste oeffnet. Default ist linear. -->
     <button id="logScaleBtn" class="log-scale-btn" type="button"
-            title="Preisskala: linear" aria-pressed="false">L</button>
+            title="Preisskala: linear" aria-pressed="false" aria-label="Preisskala: linear">L</button>
 
 
     <!-- Grid Bot: Flex-Kind, grenzt links an die Drawbar und rechts an die
@@ -535,23 +535,23 @@
     <div class="gb-bar hidden" id="gridBotBar">
       <div class="gb-status" id="gbStatus">
         <span class="gb-pill" id="gbHeadline">–</span>
-        <span class="gb-stat" id="gbRegime"></span>
+        <span class="gb-stat" id="gbMayer"></span>
+        <span class="gb-stat" id="gbEr"></span>
+        <span class="gb-stat" id="gbFngStat"></span>
         <span class="gb-stat" id="gbRsi"></span>
-        <span class="gb-stat" id="gbFunding"></span>
-        <span class="gb-stat" id="gbFng"></span>
         <span class="gb-sep-v"></span>
         <button class="gb-tab active" data-tab="strategy">Strategie</button>
         <button class="gb-tab" data-tab="data">Daten</button>
         <button class="gb-tab" data-tab="settings">Einstellungen</button>
         <span class="gb-spacer"></span>
         <span class="gb-stat gb-dim" id="gbUpdated"></span>
-        <button class="gb-icon" id="gbRefresh" title="Daten neu laden">
+        <button class="gb-icon" id="gbRefresh" title="Daten neu laden" aria-label="Daten neu laden">
           <svg viewBox="0 0 24 24" width="14" height="14"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <button class="gb-icon" id="gbToggle" title="Auf/Zuklappen">
+        <button class="gb-icon" id="gbToggle" title="Auf/Zuklappen" aria-label="Auf/Zuklappen">
           <svg viewBox="0 0 24 24" width="14" height="14" id="gbChev"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <button class="gb-icon" id="gbClose" title="Schliessen">
+        <button class="gb-icon" id="gbClose" title="Schliessen" aria-label="Schliessen">
           <svg viewBox="0 0 24 24" width="13" height="13"><path d="M5 5l14 14M19 5L5 19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
       </div>
@@ -585,17 +585,17 @@
   <aside class="watchlist" id="watchlist">
     <div class="wl-header">
       <select class="wl-select" id="wlSelect" title="Watchlist wählen"></select>
-      <button class="wl-icon" id="wlManageBtn" title="Listen verwalten">
+      <button class="wl-icon" id="wlManageBtn" title="Listen verwalten" aria-label="Listen verwalten">
         <svg viewBox="0 0 24 24" width="13" height="13"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>
       </button>
-      <button class="wl-add" id="wlAddBtn" title="Symbol hinzufügen">+</button>
+      <button class="wl-add" id="wlAddBtn" title="Symbol hinzufügen" aria-label="Symbol hinzufügen">+</button>
       <!-- Schliessen-Button: nur auf Mobile sichtbar -->
-      <button class="wl-close-btn mobile-only" id="wlCloseBtn" title="Watchlist schliessen">✕</button>
+      <button class="wl-close-btn mobile-only" id="wlCloseBtn" title="Watchlist schliessen" aria-label="Watchlist schliessen">✕</button>
     </div>
     <div class="wl-manage hidden" id="wlManage">
       <div class="wl-mrow">
         <input type="text" id="wlNewName" placeholder="Neue Liste…" autocomplete="off">
-        <button id="wlCreateBtn" title="Anlegen">+</button>
+        <button id="wlCreateBtn" title="Anlegen" aria-label="Anlegen">+</button>
       </div>
       <button class="wl-mdel" id="wlDeleteBtn">Aktuelle Liste löschen</button>
     </div>
@@ -609,10 +609,10 @@
 
 <!-- Indikator-Einstellungs-Panel -->
 <div class="settings-overlay hidden" id="settingsOverlay">
-  <div class="settings-panel" id="settingsPanel">
+  <div class="settings-panel" id="settingsPanel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="settings-header">
       <span id="settingsTitle">Einstellungen</span>
-      <button class="settings-close" id="settingsClose">✕</button>
+      <button class="settings-close" id="settingsClose" aria-label="Schliessen">✕</button>
     </div>
     <div class="settings-body" id="settingsBody"></div>
     <div class="settings-footer">
@@ -691,7 +691,7 @@
 
 <!-- ---------- Vergleich-starten-Hinweis (Punkt 8) ---------- -->
 <div class="confirm-modal hidden" id="comparePrompt">
-  <div class="confirm-box">
+  <div class="confirm-box" role="dialog" aria-modal="true" aria-label="Aktuelles Layout gespeichert?">
     <div class="confirm-title">Aktuelles Layout gespeichert?</div>
     <div class="confirm-sub">Beim Start eines Vergleichs werden alle Zeichnungen, Muster, Wellen und Overlays verworfen. Für späteres Wiederaufrufen zuerst als Layout speichern.</div>
     <div class="confirm-actions">
@@ -703,15 +703,17 @@
 
 <!-- ---------- Sync / Login (Punkt 8) ---------- -->
 <div class="sync-modal hidden" id="syncModal">
-  <div class="sync-box">
+  <div class="sync-box" role="dialog" aria-modal="true" aria-label="Einstellungen synchronisieren">
     <div class="sync-head">
       <span>Einstellungen synchronisieren</span>
-      <button class="sync-close" id="syncClose" type="button">✕</button>
+      <button class="sync-close" id="syncClose" type="button" aria-label="Schliessen">✕</button>
     </div>
     <div class="sync-body">
       <p class="sync-info">Mit einem persönlichen Sync-Code speicherst du deine
         TreydView-Einstellungen (Layouts, Indikatoren, Zeichnungen) und rufst sie
-        auf jedem Gerät wieder ab. Wähle einen eigenen, schwer zu erratenden Code.</p>
+        auf jedem Gerät wieder ab. Wähle einen eigenen, schwer zu erratenden Code
+        mit <b>mindestens 12 Zeichen</b> (bestehende kürzere Codes funktionieren weiter).
+        Laden ersetzt den Stand auf diesem Gerät — vorher wird eine Sicherung angelegt.</p>
       <label class="sync-label" for="syncCodeInput">Sync-Code</label>
       <input type="text" id="syncCodeInput" class="sync-input" autocomplete="off"
              spellcheck="false" placeholder="z. B. eine lange Passphrase">
@@ -720,16 +722,17 @@
         <button class="sync-act" id="syncLoadBtn"  type="button">Laden</button>
       </div>
       <div class="sync-status" id="syncStatus"></div>
+      <button class="sync-restore hidden" id="syncRestoreBtn" type="button">Stand vor dem letzten Laden wiederherstellen</button>
     </div>
   </div>
 </div>
 
 <!-- ---------- FAQ / Hilfe ---------- -->
 <div class="faq-modal hidden" id="faqModal">
-  <div class="faq-box">
+  <div class="faq-box" role="dialog" aria-modal="true" aria-label="TreydView — Hilfe">
     <div class="faq-head">
       <span>TreydView — Hilfe</span>
-      <button class="faq-close" id="faqClose">✕</button>
+      <button class="faq-close" id="faqClose" aria-label="Schliessen">✕</button>
     </div>
     <div class="faq-nav" id="faqNav">
       <button class="faq-navbtn active" data-sec="start">Erste Schritte</button>
@@ -750,16 +753,17 @@
         <h3>Erste Schritte</h3>
         <div class="faq-block"><h4>Asset, Exchange und Zeitrahmen</h4>
           <p>Oben links wählst du Asset und Intervall. Verfügbar sind Paare von <b>Binance, Coinbase, Kraken und Bybit</b> — alle in einem gemeinsamen Dropdown, erkennbar am Suffix in Klammern («BTC/USDT (Binance)», «BTC/USD (Coinbase)»). Beim Wechsel wird die Preisachse automatisch neu skaliert.</p>
-          <p>Kraken und Bybit haben keine Live-Streams — die Statusanzeige zeigt dann «Kraken» statt «Live». Coinbase steht nur bis Daily zur Verfügung (kein Weekly/Monthly).</p>
+          <p>Kraken, Coinbase und Bybit haben keine Live-Streams — die Statusanzeige zeigt dann den Börsennamen statt «Live».</p>
+          <p><b>Intervalle je Quelle:</b> Angeboten wird nur, was die Börse wirklich liefert. Ausgegraut sind deshalb Coinbase 4h (Coinbase kennt nur 6h), Coinbase 1W/1M, Kraken 1M und Bitstamp 15m; Gold, Silber, Indizes und BTC.D/USDT.D gibt es nur ab 1D. Wechselst du auf ein Asset, das dein Intervall nicht hat, springt der Chart auf 1D. 12D und das freie Tages-Intervall gehen überall, weil sie aus Tageskerzen gebildet werden.</p>
           <p>Neben Krypto gibt es <b>Gold (XAU/USD)</b> und <b>Silber (XAG/USD)</b> ab 1968 (LBMA-Fixing, ein Preis je Tag) sowie Indizes wie S&amp;P 500, Nasdaq und Dow. Diese Werte werden als <b>Linie</b> dargestellt statt als Kerzen. Der Magnet rastet bei Linien-Darstellung nur auf die Linie selbst ein, nicht auf unsichtbare OHLC-Punkte.</p></div>
         <div class="faq-block"><h4>Navigieren</h4>
           <p>Mausrad zoomt die Zeit-Achse, Ziehen verschiebt. Der Auto-Zoom-Knopf oben rechts holt die ganze Datenbreite zurück.<br>
           <b>Preis-Achse:</b> auf dem Desktop mit der Maus auf der rechten Skala ziehen — rein- oder rauszoomen. Auf dem Handy denselben Finger vertikal auf der Preisskala ziehen. Doppeltipp auf die Skala setzt automatisch zurück.</p></div>
         <div class="faq-block"><h4>Mobile</h4>
-          <p><b>Zwei Finger</b> zoomen horizontal (Zeit-Achse), <b>ein Finger</b> auf der Preisskala zoomt vertikal. <b>Langer Druck</b> (~0.5 s) öffnet das Kontextmenü — auf dem Desktop wäre das ein Rechtsklick. Menüs erscheinen auf kleinen Bildschirmen als Bottom-Sheet von unten.</p>
+          <p><b>Zwei Finger</b> zoomen horizontal (Zeit-Achse), <b>ein Finger</b> auf der Preisskala zoomt vertikal. Eine Zeichnung <b>antippen</b> wählt sie aus; der Balken, der dann erscheint, öffnet Stil und Löschen — auf dem Desktop wäre das ein Rechtsklick. Menüs erscheinen auf kleinen Bildschirmen als Bottom-Sheet von unten.</p>
           <p>Die Watchlist ist auf Handys standardmässig eingeklappt und öffnet sich als Overlay über den Chart, damit der Chart die volle Breite bekommt.</p></div>
         <div class="faq-block"><h4>Historie</h4>
-          <p>Beim Start werden 5'000 Kerzen geladen. Scrollst du weiter nach links, kommen automatisch ältere dazu — bei Binance bis zu den Anfängen des jeweiligen Paares, bei Kraken teils bis 2013.</p></div>
+          <p>Beim Start werden 5'000 Kerzen geladen. Scrollst du weiter nach links, kommen automatisch ältere dazu — bei Binance bis zu den Anfängen des jeweiligen Paares. <b>Kraken</b> liefert je Intervall nur die letzten 720 Kerzen, ältere gibt es dort nicht (auf 1D also rund zwei Jahre).</p></div>
       </section>
 
       <section class="faq-sec hidden" data-sec="chart">
@@ -769,7 +773,8 @@
         <div class="faq-block"><h4>Vergleich (+Vergleich)</h4>
           <p>Bis zu 15 Assets gleichzeitig, nur mit <b>gleicher Quote-Währung</b> (USDT mit USDT, USD mit USD — kein Äpfel-Birnen-Vergleich). Der Chart schaltet auf relative Darstellung: alle Linien starten bei 0 % am linken Rand des sichtbaren Bereichs. Scrollst du, verschiebt sich der Nullpunkt mit.</p>
           <p>Der Vergleich ist eine <b>eigene, saubere Ansicht</b>: beim Start werden Indikatoren, Muster, Wellen, Zonen und alle Zeichnungen <b>verworfen</b> (nicht nur versteckt). Deshalb fragt ein kurzes Pop-up «Aktuelles Layout gespeichert?» — mit <b>Ja</b> geht es zum Vergleich-Dropdown, mit <b>Nein</b> zum Layout-Dropdown, damit du vorher sichern kannst. Für spätere Wiederherstellung also zuerst als Layout speichern.</p>
-          <p>Im Dropdown steht je Vergleichsasset ein <b>Auge</b> (ein-/ausblenden), ein <b>Zahnrad</b> (Farbe, Deckkraft und Linienstärke der Linie) und ein <b>✕</b> (entfernen). Entfernst du das letzte Asset, schaltet der Chart automatisch in die normale Kerzenansicht zurück. Am rechten Rand steht je Linie ein ausgefülltes Etikett mit Kürzel und aktuellem Prozentwert, direkt links vor der Prozent-Achse.</p></div>
+          <p>Im Dropdown steht je Vergleichsasset ein <b>Auge</b> (ein-/ausblenden), ein <b>Zahnrad</b> (Farbe, Deckkraft und Linienstärke der Linie) und ein <b>✕</b> (entfernen). Entfernst du das letzte Asset, schaltet der Chart automatisch in die normale Kerzenansicht zurück. Am rechten Rand steht je Linie ein ausgefülltes Etikett mit Kürzel und aktuellem Prozentwert, direkt links vor der Prozent-Achse.</p>
+          <p>Die Vergleiche samt Farbe, Deckkraft und Linienstärke bleiben beim <b>Neuladen</b> der Seite erhalten und werden in Layouts mitgespeichert.</p></div>
         <div class="faq-block"><h4>Hell und Dunkel</h4>
           <p>Der Mond schaltet um, der Chart zieht mit. Die Einstellung bleibt erhalten.</p></div>
       </section>
@@ -778,23 +783,23 @@
         <h3>Zeichnen</h3>
         <div class="faq-block"><h4>Werkzeugleiste</h4>
           <p>Links (Desktop) resp. unten (Handy), nach Kategorien: Linien, Zonen &amp; Profile, Fibonacci, Messwerkzeuge, Annotationen.</p>
-          <p><b>Magnet</b> rastet an Kerzenpunkten ein (bei Linien-Assets nur auf die Linie). Beim Zeichnen von Fibonacci und Polylinie zeigt ein <b>blauer Punkt</b> in der Fadenkreuzmitte, wo die Marke landet. <b>Pin</b> hält ein Werkzeug aktiv, sonst schaltet es nach einer Zeichnung ab. <b>Papierkorb</b> löscht alles.</p></div>
+          <p><b>Magnet</b> rastet an Kerzenpunkten ein (bei Linien-Assets nur auf die Linie). Beim Zeichnen von Fibonacci und Polylinie zeigt ein <b>blauer Punkt</b> in der Fadenkreuzmitte, wo die Marke landet. <b>Pin</b> hält ein Werkzeug aktiv, sonst schaltet es nach einer Zeichnung ab. <b>Papierkorb</b> löscht nach Rückfrage alles — Zeichnungen, Muster, Wellen, Zonen und Grid-Bänder.</p></div>
         <div class="faq-block"><h4>Zeichnung bearbeiten</h4>
-          <p>Fährt der Zeiger über eine Zeichnung, wird aus dem Fadenkreuz ein Finger — dann ist sie anklickbar. Rechtsklick öffnet das Menü, Entf löscht die ausgewählte, Esc bricht ab. Deckkraftregler wirken sofort beim Verstellen.</p>
+          <p>Fährt der Zeiger über eine Zeichnung, wird aus dem Fadenkreuz ein Finger — dann ist sie anklickbar. Rechtsklick öffnet das Menü, Entf löscht die ausgewählte, Esc schliesst ein offenes Menü bzw. bricht das Zeichnen ab. Deckkraftregler wirken sofort beim Verstellen. Mit der Maus verschobene Zeichnungen behalten ihre neue Lage auch nach dem Neuladen.</p>
           <p>Bei <b>horizontaler Linie</b> und <b>Preislinie</b> gibt es im Menü ein Preisfeld für die genaue Platzierung, bei der <b>vertikalen Linie</b> ein Datumfeld.</p>
-          <p>Auf dem Handy ersetzt ein <b>langer Druck</b> auf der Zeichnung den Rechtsklick.</p></div>
+          <p>Auf dem Handy ersetzt <b>Antippen</b> der Zeichnung den Rechtsklick: der eingeblendete Balken führt zu Stil und Löschen.</p></div>
         <div class="faq-block"><h4>Polylinie</h4>
           <p>Mehrpunkt-Linie: jeder Linksklick setzt einen weiteren Punkt, die Linie wird dem Cursor als Gummiband nachgezogen. <b>Rechtsklick oder Doppelklick</b> schliesst ab. Esc bricht ab und verwirft.</p></div>
         <div class="faq-block"><h4>Fibonacci</h4>
           <p>Retracement braucht zwei Punkte (Anfang und Ende der Bewegung), Extension drei (Impuls A→B, dann Korrekturende C).</p>
           <p>Rechtsklick öffnet die Einstellungen: jedes Level einzeln an- und abwählbar, Flächenfüllung mit Deckkraft, Beschriftung mit Level und/oder Preis, Verlängerung nach rechts.</p></div>
         <div class="faq-block"><h4>Fixed Range Volume Profile (FRVP)</h4>
-          <p>Zwei Punkte aufziehen → zeigt, bei welchen Preisen im markierten Bereich tatsächlich gehandelt wurde. Orange durchgezogen: Value Area High/Low (70 % des Volumens). Weiss gestrichelt: Point of Control.</p>
+          <p>Zwei Punkte aufziehen → zeigt, bei welchen Preisen im markierten Bereich tatsächlich gehandelt wurde. Orange durchgezogen: Value Area High/Low (70 % des Volumens). Gestrichelt: Point of Control (im dunklen Theme weiss, im hellen dunkel).</p>
           <p>Rechtsklick öffnet Einstellungen. <b>«Nach rechts verlängern»</b> zieht VAH, VAL und POC als durchgehende Linien bis zum Chartrand — so bleiben die Niveaus auch ausserhalb des markierten Bereichs sichtbar.</p></div>
         <div class="faq-block"><h4>Anchored VWAP</h4>
           <p>Unter «Zonen &amp; Profile». Ein Klick setzt den Ankerpunkt — ab diesem Bar berechnet sich der volumengewichtete Durchschnittspreis kumulativ bis heute. Nützlich um zu sehen, ob Käufer seit einem wichtigen Ereignis im Gewinn oder Verlust sind. Rechtsklick auf die <b>ganze Kurve</b> öffnet Stil und Löschen. Ohne Volumen (Gold, Silber, Indizes) gibt es keine Kurve.</p></div>
         <div class="faq-block"><h4>Messwerkzeuge</h4>
-          <p>Drei Werkzeuge unter «Messwerkzeuge»: <b>Preisspanne</b> zeigt die Preisänderung (absolut und in Prozent), <b>Zeitspanne</b> die Dauer (Tage/Stunden), und <b>Preis- und Zeitspanne</b> beides zugleich. Rechtsklick stellt die Deckkraft ein (bei der Zeitspanne auch die Farbe).</p></div>
+          <p>Drei Werkzeuge unter «Messwerkzeuge»: <b>Preisspanne</b> zeigt die Preisänderung (absolut und in Prozent), <b>Zeitspanne</b> die Dauer (Minuten, Stunden oder Tage) samt Anzahl Kerzen, und <b>Preis- und Zeitspanne</b> beides zugleich. Rechtsklick stellt die Deckkraft ein (bei der Zeitspanne auch die Farbe).</p></div>
         <div class="faq-block"><h4>Freihand und Notizen</h4>
           <p>Freihand zeichnet bei gedrückter Maus. Das Textfeld fragt nach dem Setzen nach dem Text — brichst du ab, verschwindet es wieder.</p></div>
       </section>
@@ -802,12 +807,12 @@
       <section class="faq-sec hidden" data-sec="ind">
         <h3>Indikatoren</h3>
         <div class="faq-block"><h4>Bedienung</h4>
-          <p>14 Indikatoren, über das Menü oben zuschaltbar. Das Zahnrad je Zeile öffnet Parameter, Farben und Sichtbarkeit einzelner Linien. Alles bleibt pro Indikator gespeichert.</p>
+          <p>17 Indikatoren, über das Menü oben zuschaltbar. Das Zahnrad je Zeile öffnet Parameter, Farben und Sichtbarkeit einzelner Linien. Alles bleibt pro Indikator gespeichert.</p>
           <p><b>Im Hauptchart:</b> Money Noodle, BMSB, SMA, EMA, Bollinger, Gaussian Channel, Hull, RVWAP, VRVP.<br>
-          <b>Eigene Fläche darunter:</b> RSI, Stoch RSI, Volumen, MACD, ATR.</p>
+          <b>Eigene Fläche darunter:</b> RSI, Global M2, Stoch RSI, Volumen, MACD, ATR, ATR %, Bollinger Band Width.</p>
           <p>Jede untere Fläche hat oben einen Kopf mit Name und aktuellem Wert. Rechts sitzen drei Icons: <b>Einklappen</b> (fährt die Fläche auf Kopfhöhe ein), <b>Zahnrad</b> (Einstellungen; dort auch «Indikator entfernen», das die Fläche schliesst und den Indikator abwählt) und ein <b>Ziehgriff</b> zum Umsortieren mehrerer Flächen per Ziehen. Der Einklapp-Zustand bleibt auch beim Asset-Wechsel erhalten.</p>
           <p><b>Eigenes Intervall bei SMA und EMA:</b> Im Zahnrad unter <i>Inputs</i> lässt sich das Intervall des Durchschnitts getrennt vom Chart wählen. So zeigt man den 200-Wochen-SMA im Tageschart, ohne den Zeitrahmen zu wechseln. Steht es nicht auf <i>Chart-Intervall</i>, erscheint das gewählte Intervall in der Legende.</p>
-          <p>Gerechnet wird dabei nicht mit einer umgerechneten Periode: die Chartkerzen werden zum Zielintervall zusammengefasst, und der Durchschnitt läuft über <i>diese</i> Schlusskurse. Das ergibt exakt den Wert, den man auf dem Wochenchart sähe. Eine SMA(1400) auf Tagesbasis wäre etwas anderes — sie mittelt 1400 Tagesschlüsse statt 200 Wochenschlüsse.</p>
+          <p>Gerechnet wird dabei nicht mit einer umgerechneten Periode: die Chartkerzen werden zum Zielintervall zusammengefasst, und der Durchschnitt läuft über <i>diese</i> Schlusskurse. Abgeschlossene Wochen zählen mit ihrem Schlusskurs, die <b>laufende</b> Woche mit dem Kurs der jeweiligen Tageskerze — wie auf dem Wochenchart, wo sich die letzte Kerze bis Sonntag bewegt. Jeder Tag sieht also nur, was an diesem Tag bekannt war (kein Blick in die Zukunft). Am Ende einer Woche entspricht der Wert genau dem des Wochencharts. Eine SMA(1400) auf Tagesbasis wäre etwas anderes — sie mittelt 1400 Tagesschlüsse statt 200 Wochenschlüsse.</p>
           <p>Reicht die geladene Historie nicht für die Periode auf dem gewählten Intervall, bleibt die Linie leer, statt aus zu wenigen Werten gezeichnet zu werden. Für 200 Wochen braucht es rund 1400 Tageskerzen.</p>
           <p><b>Hinweis EMA 21:</b> Money Noodle (Medium EMA 21), BMSB (21 EMA) und EMA (Periode 1 = 21) zeigen alle dieselbe Linie. Sie stehen in drei verschiedenen Kontexten — als Band-Mittellinie, als Zyklus-Unterstützung und als Einzellinie — und sind bewusst nicht als drei unabhängige Bestätigungen zu lesen.</p></div>
 
@@ -829,7 +834,7 @@
 
         <div class="faq-block"><h4>Bollinger-Bänder</h4>
           <p><b>Aussage:</b> ein Band, das sich mit der Volatilität weitet und verengt. Enge Bänder („Squeeze") gehen oft grösseren Bewegungen voraus; Berührungen der Ränder zeigen Extreme relativ zur jüngsten Spanne.</p>
-          <p><b>Berechnung:</b> 20er-SMA als Mitte, Ränder bei ± 2 Standardabweichungen der letzten 20 Kurse.</p></div>
+          <p><b>Berechnung:</b> 20er-SMA als Mitte, Ränder bei ± 2 Standardabweichungen der letzten 20 Kurse (wie bei TradingView immer um den SMA gemessen, auch wenn die Mitte EMA oder WMA ist). <b>Offset</b> verschiebt das ganze Band um so viele Kerzen nach rechts (positiv) oder links (negativ).</p></div>
 
         <div class="faq-block"><h4>Gaussian Channel</h4>
           <p><b>Aussage:</b> ein stark geglätteter Trendkanal mit sehr wenig Fehlsignalen — dafür träge. Farbe/Lage des Kanals zeigt das übergeordnete Regime, gut für Positionstrades.</p>
@@ -841,15 +846,15 @@
 
         <div class="faq-block"><h4>RVWAP — Rolling VWAP 365 T</h4>
           <p><b>Aussage:</b> der volumengewichtete Durchschnittspreis des letzten Jahres — der Kurs, zu dem im Schnitt tatsächlich gehandelt wurde. Ein fairer-Wert-Anker: Preis darüber/darunter zeigt, ob die Mehrheit im Gewinn oder Verlust sitzt.</p>
-          <p><b>Berechnung:</b> Summe(Preis × Volumen) / Summe(Volumen) über ein rollendes 365-Tage-Fenster. Anders als ein normaler VWAP ohne fixen Startpunkt.</p></div>
+          <p><b>Berechnung:</b> Summe(Preis × Volumen) / Summe(Volumen) über ein rollendes Fenster von 365 Kalendertagen (nach Zeit, nicht nach Kerzenzahl — bei Aktien und Indizes ohne Wochenend-Kerzen bleibt es so ein Jahr). Anders als ein normaler VWAP ohne fixen Startpunkt.</p></div>
 
         <div class="faq-block"><h4>VRVP — Visible Range Volume Profile</h4>
           <p><b>Aussage:</b> <b>wo</b> gehandelt wurde, nicht wann. Waagrechte Balken zeigen das Volumen je Preisniveau im sichtbaren Bereich. Lange Balken = akzeptierte Preise (Widerstand/Unterstützung), Lücken = Zonen, durch die der Preis schnell durchläuft.</p>
-          <p><b>Berechnung:</b> das Volumen aller sichtbaren Kerzen wird in Preis-Bins einsortiert. Rein gemessen, kein Modell.</p></div>
+          <p><b>Berechnung:</b> das Volumen aller sichtbaren Kerzen wird in Preis-Bins einsortiert. Rein gemessen, kein Modell. Eingezeichnet sind zudem die <b>Value Area</b> (Band, Standard 70 % des Volumens, einstellbar), ihre Grenzen <b>VAH</b>/<b>VAL</b> und der <b>POC</b> (gestrichelt, Preis mit dem meisten Volumen).</p></div>
 
         <div class="faq-block"><h4>RSI</h4>
           <p><b>Aussage:</b> Momentum auf einer Skala 0–100. Über 70 gilt als überkauft, unter 30 als überverkauft. Divergenzen zum Preis sind oft aussagekräftiger als die Absolutwerte.</p>
-          <p><b>Berechnung:</b> Verhältnis aus durchschnittlichem Gewinn zu durchschnittlichem Verlust über 14 Perioden, Wilder-geglättet.</p></div>
+          <p><b>Berechnung:</b> Verhältnis aus durchschnittlichem Gewinn zu durchschnittlichem Verlust über 14 Perioden, Wilder-geglättet (Start mit einem einfachen Durchschnitt, wie bei TradingView).</p></div>
 
         <div class="faq-block"><h4>Stochastic RSI</h4>
           <p><b>Aussage:</b> ein RSI des RSI — empfindlicher und schneller. Gut für Timing in Ranges, produziert aber mehr Fehlsignale als der RSI.</p>
@@ -867,11 +872,23 @@
           <p><b>Aussage:</b> wie weit sich der Preis pro Bar im Schnitt bewegt — reines Volatilitätsmass, richtungsneutral. Grundlage für Stop-Abstände und die Grid-Breite im Grid Bot.</p>
           <p><b>Berechnung:</b> Durchschnitt der „True Range" (grösster Abstand aus Hoch/Tief/Vorschlusskurs) über 14 Perioden, RMA-geglättet.</p></div>
 
+        <div class="faq-block"><h4>ATR % </h4>
+          <p><b>Aussage:</b> die ATR in Prozent des Kurses — damit lassen sich Schwankungsbreiten verschiedener Assets und Jahre direkt vergleichen.</p>
+          <p><b>Berechnung:</b> True Range × 100 / Vortagesschluss, als einfacher Durchschnitt über die eingestellte Länge.</p></div>
+
+        <div class="faq-block"><h4>Bollinger Band Width (BBW)</h4>
+          <p><b>Aussage:</b> wie breit die Bollinger-Bänder relativ zur Mitte sind. Ein neues Minimum über das Vergleichsfenster markiert einen <b>Squeeze</b> (Volatilitäts-Kompression).</p>
+          <p><b>Berechnung:</b> (oberes − unteres Band) / Mitte, Standard Länge 20, 2 Standardabweichungen, Squeeze-Fenster 125 Kerzen.</p></div>
+
+        <div class="faq-block"><h4>Global M2</h4>
+          <p><b>Aussage:</b> die weltweite Geldmenge M2 (USA, Euroraum, Japan, China) in Milliarden USD — ein Liquiditätsmass, das oft mit Krypto- und Aktientrends verglichen wird.</p>
+          <p><b>Berechnung:</b> Monatswerte von FRED, mit festen Wechselkursen in USD umgerechnet und summiert. Dargestellt als Treppe (ein Wert je Monat), nichts wird dazwischen erfunden.</p></div>
+
         <div class="faq-block"><h4>Fair Value Gaps &amp; Order Blocks (SMC)</h4>
-          <p>Der Rechteck-Knopf in der Toolbar öffnet das SMC-Panel. <b>Kontext, kein Signal</b> — kein Stop, kein Ziel, keine Bestätigung.</p>
+          <p>Der Geldsack-Knopf in der Toolbar öffnet das SMC-Panel. <b>Kontext, kein Signal</b> — kein Stop, kein Ziel, keine Bestätigung.</p>
           <p><b>Fair Value Gap (FVG):</b> Drei aufeinanderfolgende Kerzen, bei denen das Hoch der ersten unter dem Tief der dritten liegt (bullisch) oder umgekehrt (bärisch). Die Lücke wurde im schnellen Impuls nicht gehandelt — sie wirkt oft als Magnet bei Rückläufen.</p>
           <p><b>Order Block (OB):</b> Die <em>letzte</em> Gegenkerze vor einem impulsiven Move mit Displacement (&gt; 1.5× ATR). Nur die letzte — mehrere aufeinanderfolgende Gegenkerzen ergeben einen einzigen OB, nicht mehrere.</p>
-          <p><b>Gefüllte Zonen einblenden</b> ist Standard — so siehst du, wie viele Zonen tatsächlich getestet wurden und kannst die Trefferquote selbst beurteilen.</p>
+          <p><b>Gefüllte Zonen einblenden</b> ist Standard — so siehst du, wie viele Zonen tatsächlich getestet wurden und kannst die Trefferquote selbst beurteilen. Die Häkchen im SMC- und im Muster-Panel bleiben gespeichert.</p>
           <p>Der Lückenschwellenwert ist ATR-relativ: bei ruhigem und bewegtem Markt gleich sensitiv. In der Browser-Konsole (F12): <code>SMC.nullTest(chart.getDataList(), {}).then(r => console.log(r))</code> — zeigt p-Wert und ob die Zonen statistisch über Rauschen liegen.</p></div>
 
         <div class="faq-block"><h4>Anchored VWAP (AVWAP)</h4>
@@ -961,7 +978,7 @@
           <p>Die <b>Grad-Feinabstimmung</b> skaliert alle Fenster gemeinsam. Bewusst ein einziger Wert und nicht vier Einzelzahlen: das Verhältnis von rund 3.3× zwischen den Graden folgt aus der Selbstähnlichkeit — verschiebt man die Grade einzeln, zerstört man genau die Hierarchie, die den Namen rechtfertigt. Krypto läuft schneller als Aktien; für BTC passt oft ein Wert um 0.5 bis 0.7.</p>
           <p><b>Skip-Tiefe</b> erlaubt jeder Teilwelle, Zwischenextrema zu überspringen. Ohne das müsste ein ganzer Wellenzug in einer Auflösung liegen. Gemessen brauchen 73 % der gefundenen Impulse einen Skip über 0 — meist Welle 3, die als verlängerte Welle eigene Unterkorrekturen enthält. Auf 0 gestellt findet der Scanner nur rund ein Viertel.</p>
           <p><b>Min. Pivot-Bewegung</b> räumt Rauschen beim Aufbau der Pivot-Kette weg. Zu hoch eingestellt zerfallen grosse Strukturen.</p>
-          <p>Der Wellengrad ist die wirksamste Stellschraube. Ein Grad von&nbsp;2 macht das Fraktal-Fenster nur zwei Kerzen breit und erzeugt sehr viele Rauschpivots; 5 ist für die meisten Zeitrahmen ein guter Ausgangspunkt.</p></div>
+          <p>Die Grad-Feinabstimmung ist die wirksamste Stellschraube. Kleine Werte machen die Fraktal-Fenster schmal und erzeugen viele Rauschpivots, grosse übersehen kleinere Strukturen. Standard ist <b>0.6</b> (Krypto); für Gold und Indizes darf es höher sein.</p></div>
 
         <div class="faq-block"><h4>Beschriftung und Anzeigegrenze</h4>
           <p><b>Beschriftung</b> steuert, wie ausführlich die Etiketten sind: <i>voll</i> mit allen Kennzahlen, <i>kurz</i> nur mit Richtung, Grad und Form-Zahl, <i>aus</i> zeigt nur die Wellenzüge. Auf dichten Zeitrahmen ist <i>kurz</i> meist die richtige Wahl — zwanzig ausführliche Etiketten überdecken einander.</p>
@@ -1008,7 +1025,8 @@
           <p>Projiziert wird nur aus Setups, die noch laufen. Widerspricht die eigene Projektion Regel 3, erscheint eine Warnung.</p></div>
 
         <div class="faq-block"><h4>Kein Repainting</h4>
-          <p>Ein Fraktal bei Kerze i ist erst bei i + Wellengrad bestätigt — vorher weiss niemand, dass es ein Extrempunkt war. Eine Struktur wird deshalb erst ausgegeben, wenn ihr letzter Punkt bestätigt ist. Was einmal gezeichnet wurde, ändert sich nicht mehr rückwirkend.</p></div>
+          <p>Ein Fraktal bei Kerze i ist erst bei i + Fenster bestätigt — vorher weiss niemand, dass es ein Extrempunkt war. Ein <b>einzelnes</b> bestätigtes Fraktal ändert sich nicht mehr.</p>
+          <p>Die <b>Zählung</b> kann sich dagegen mit neuen Kerzen noch ändern: macht der Kurs ein höheres Hoch, wandert der letzte Pivot dorthin (Welle 5 rückt nach), und gewinnt eine andere Zählung mit kleinerem Fehler, wird sie gezeigt. Das ist fachlich richtig — eine laufende Welle ist erst mit ihrem Ende fertig —, heisst aber: eine heute gezeichnete Zählung ist nicht in Stein gemeisselt.</p></div>
 
         <div class="faq-block"><h4>Logarithmische Preisskala</h4>
           <p>Der Knopf <b>L</b> unten an der Preisskala schaltet zwischen linear und logarithmisch. Das ändert <b>nichts</b> an der Rechnung — die Fibonacci-Niveaus hängen an Kurswerten und sind ohnehin geometrisch berechnet. Es macht sie nur sichtbar: auf der Log-Skala liegt das 0.5-Retracement optisch mittig in der Welle, auf der linearen erscheint dieselbe korrekte Box nach unten verschoben. Bei weit gelaufenen Bewegungen lohnt der Blick auf beide Skalen.</p></div>
@@ -1027,9 +1045,9 @@
       <section class="faq-sec hidden" data-sec="pos">
         <h3>Position und Grid Bot</h3>
         <div class="faq-block"><h4>Long/Short-Werkzeug</h4>
-          <p>Der Knopf rechts vom Roboter. Drei Klicks: Einstieg, Stop, Ziel. Daraus fallen CRV und Positionsgrösse. Die Grösse kommt aus Kapital und Risiko% — dieselben Felder wie im Grid Bot, eine Quelle für beide.</p></div>
+          <p>Der Knopf rechts vom Roboter. Ein Klick setzt den Einstieg; Stop und Ziel erscheinen mit 1 % bzw. 2 % Abstand und lassen sich danach ziehen (Position anklicken bzw. antippen, dann Stop oder Ziel verschieben). Daraus fallen CRV und Positionsgrösse. Die Grösse kommt aus Kapital und Risiko% — dieselben Felder wie im Grid Bot, eine Quelle für beide.</p></div>
         <div class="faq-block"><h4>Grid Bot</h4>
-          <p>Der Roboter öffnet die Leiste unten. Sie hat ein eigenes FAQ im vierten Tab — dort steht, wie Bias, Hebel und Grössen zustande kommen.</p></div>
+          <p>Der Roboter öffnet die Leiste unten. Wie Bias, Hebel und Grössen zustande kommen, steht hier im Reiter <b>«Grid Bot»</b>.</p></div>
         <div class="faq-block"><h4>Warum Stop zuerst</h4>
           <p>Der Stop ist die einzige Zahl, die du wirklich kontrollierst. Er steht am Anfang, die Positionsgrösse folgt daraus. Umgekehrt — erst Grösse, dann Stop — bestimmt der Markt dein Risiko.</p></div>
       </section>
@@ -1042,6 +1060,7 @@
           <h4>Was der Bot beantwortet</h4>
           <p>Nicht „Long oder Short", sondern: <b>Wo stehen wir im Zyklus, und ist ein Grid überhaupt das richtige Werkzeug?</b></p>
           <p>Zwei Zahlen entscheiden das. Alles andere rechnet im Hintergrund.</p>
+          <p><b>Andere Assets:</b> Der Bot rechnet immer auf <b>Tageskerzen</b> der jeweiligen Quelle, egal welches Intervall der Chart zeigt, und mit Preisen auf die Genauigkeit des Assets (auch bei Kursen unter 1). Die Schwellen (Mayer 0.9/2.0, Fear &amp; Greed) sind an <b>BTC</b> geeicht: bei anderen Krypto-Assets steht deshalb der Hinweis «Schwellen auf BTC geeicht», bei Gold, Silber und Indizes «Kein Krypto-Asset» — dort fehlen auch die Futures-Daten (Funding, Open Interest).</p>
         </div>
 
         <div class="faq-block">
@@ -1096,7 +1115,7 @@
           <h4>Netto-Erwartung</h4>
           <p><code>Grid-Ertrag − Funding-Kosten</code></p>
           <p>Ertrag = Füllungen/Monat × Laufzeit × (Ziel-Profit − Gebühr) × Hebel.<br>
-          Funding = Hebel × Ø-Rate × Tage × 3 (Binance zahlt alle 8 h).</p>
+          Funding = Hebel × Ø-Rate × Tage × Zahlungen pro Tag. Binance rechnet BTC/ETH alle 8 h ab (3× täglich), viele Altcoins alle 4 h und manche Paare stündlich — der Bot liest den Takt aus den echten Zahlungszeitpunkten.</p>
           <p>Ein Neutral-Bot zahlt netto kein Funding. Wird die Zahl rot, frisst die Finanzierung den Ertrag — dann läuft der Bot, aber du verdienst nichts.</p>
         </div>
 
@@ -1180,7 +1199,7 @@
 
         <div class="faq-block">
           <h4><span style="color:var(--accent)">Fund</span> — Funding Rate 8h (%)</h4>
-          <p>Ausgleichszahlung zwischen Long- und Short-Seite bei Perpetual-Futures. Positive Rate: Longs zahlen Shorts. Negative Rate: Shorts zahlen Longs.</p>
+          <p>Ausgleichszahlung zwischen Long- und Short-Seite bei Perpetual-Futures. Positive Rate: Longs zahlen Shorts. Negative Rate: Shorts zahlen Longs. Bei Paaren mit 4-h- oder 1-h-Takt wird die Rate auf 8 h umgerechnet, damit die Schwellen vergleichbar bleiben.</p>
           <table class="faq-table">
             <tr><td><span style="color:var(--up)">● &lt; −0.01 %</span></td><td><b>Shorts zahlen</b> — contrarian bullisch. Markt ist zu short positioniert.</td></tr>
             <tr><td><span style="color:var(--accent)">● −0.01 bis +0.05 %</span></td><td><b>Normal</b> — kein Funding-Stress.</td></tr>
@@ -1214,17 +1233,19 @@
         <div class="faq-block"><h4>Watchlisten</h4>
           <p>Das Auge blendet die Liste rechts ein. Über das Dropdown wechselst du zwischen Listen, das Drei-Punkte-Menü legt neue an oder löscht. Preise laufen live über eine gemeinsame Verbindung.</p></div>
         <div class="faq-block"><h4>Layouts</h4>
-          <p>Ein Layout speichert die ganze Arbeitsfläche: Asset, Intervall, Indikatoren, Zeichnungen, Muster, Wellen, Vergleiche, Theme und Grid-Bot-Einstellungen.</p>
-          <p>Der Kreispfeil neben einem Layout überschreibt es mit der aktuellen Ansicht — der Name bleibt. Das Feld darüber legt ein neues an. Da ein Asset-Wechsel und der Vergleich alle Zeichnungen und Overlays <b>verwerfen</b>, ist das Layout der Weg, um einen Stand für später zu sichern. Bei ungespeicherten Änderungen an einem offenen Layout warnt der Browser vor dem Schliessen des Tabs.</p></div>
+          <p>Ein Layout speichert die ganze Arbeitsfläche: Asset, Intervall, Indikatoren samt Reihenfolge, Zeichnungen, Muster, Wellen, Vergleiche (mit Stil), Theme, Preisskala (linear/log), FRVP- und Fibonacci-Vorgaben und die Grid-Bot-Einstellungen. <b>Nicht</b> im Layout sind die Watchlisten — sie gelten für alle Layouts und bleiben beim Laden unverändert.</p>
+          <p>Der Kreispfeil neben einem Layout überschreibt es mit der aktuellen Ansicht — der Name bleibt. Das Feld darüber legt ein neues an. Da ein Asset-Wechsel und der Vergleich alle Zeichnungen und Overlays <b>verwerfen</b>, ist das Layout der Weg, um einen Stand für später zu sichern. Bei ungespeicherten Änderungen an einem offenen Layout warnt der Browser vor dem Schliessen des Tabs. Löschen fragt vorher nach.</p></div>
         <div class="faq-block"><h4>Synchronisieren (Sync-Code)</h4>
-          <p>Das Sync-Icon in der oberen Leiste öffnet ein Feld für einen persönlichen <b>Sync-Code</b> (eine frei gewählte, möglichst lange Passphrase). <b>Speichern</b> legt deine Einstellungen (Layouts und Arbeitsfläche) unter diesem Code ab, <b>Laden</b> holt sie auf einem anderen Gerät wieder. Der Code wird nur als Hash abgelegt, nicht im Klartext — wähle ihn trotzdem schwer erratbar und bewahre ihn auf, denn ohne ihn gibt es keinen Zugriff.</p></div>
+          <p>Das Sync-Icon in der oberen Leiste öffnet ein Feld für einen persönlichen <b>Sync-Code</b> (eine frei gewählte, möglichst lange Passphrase). <b>Speichern</b> legt deine Einstellungen (Layouts und Arbeitsfläche) unter diesem Code ab, <b>Laden</b> holt sie auf einem anderen Gerät wieder. Der Code wird nur als Hash abgelegt, nicht im Klartext — wähle ihn trotzdem schwer erratbar und bewahre ihn auf, denn ohne ihn gibt es keinen Zugriff.</p>
+          <p>Neue Codes brauchen <b>mindestens 12 Zeichen</b>; bestehende kürzere funktionieren weiter. <b>Laden</b> fragt vorher nach und legt eine Sicherung des bisherigen Stands an — im Sync-Fenster holt «Stand vor dem letzten Laden wiederherstellen» ihn zurück. Mitgespeichert werden auch die Indikator-Einstellungen.</p></div>
       </section>
 
       <section class="faq-sec hidden" data-sec="limits">
         <h3>Grenzen</h3>
         <div class="faq-block"><h4>Kerzenhistorie und Datenquellen</h4>
           <p><b>BTC/USDT (Binance)</b> beginnt im August&nbsp;2017 — weiter zurück gibt es dort nichts. Für längere Historie steht <b>BTC/USD (Bitstamp)</b> bereit: eine durchgehende Reihe seit 2011, ohne zusammengeklebte Nahtstellen. Bewusst ein eigenes Symbol, denn USD und USDT sind verschiedene Märkte mit eigenen Preisen.</p>
-          <p>Bitstamp liefert 1h-, 4h- und Tageskerzen. Wochen und Monate werden im Browser aus Tageskerzen zusammengefasst; Wochen beginnen Montag&nbsp;00:00&nbsp;UTC.</p>
+          <p>Bitstamp liefert 1h-, 4h- und Tageskerzen. Wochen und Monate werden im Browser aus Tageskerzen zusammengefasst; Wochen beginnen Montag&nbsp;00:00&nbsp;UTC. 15m gibt es bei Bitstamp nicht.</p>
+          <p><b>Kraken</b> gibt je Intervall nur die letzten 720 Kerzen heraus; Zurückscrollen lädt dort nichts nach.</p>
           <p><b>Wie die Historie geladen wird:</b> Die Altdaten liegen als statische Datei im Repo und kommen vom CDN — rund 62&nbsp;KB für BTC, 109&nbsp;KB für Gold, vom Browser zwischengespeichert. Vom Server kommt nur noch, was seit der letzten gespeicherten Kerze dazugekommen ist. Fällt der Server oder die Quelle aus, zeigt der Chart die gespeicherte Historie trotzdem; fehlt die Datei, wird alles wie zuvor vollständig geladen.</p>
           <p><b>Gold</b> kommt neu vom LBMA-Direktfeed und reicht bis <b>1968</b> zurück. Wichtig zur Einordnung: das sind <i>Auktionspreise</i>, zwei je Handelstag (AM und PM), keine fortlaufenden Kurse. Die Tageskerze wird daraus gebildet — Eröffnung&nbsp;=&nbsp;AM, Schluss&nbsp;=&nbsp;PM, Hoch und Tief das Extrem der beiden. Das sind <b>keine echten Tagesextreme</b>: der Kurs schwankte dazwischen mehr. Für Trend- und Strukturbetrachtung über Jahrzehnte reicht es, für Docht-Analyse nicht. Volumen gibt es nicht.</p>
           <p><b>Silber (XAG/USD)</b> kommt ebenfalls von der LBMA, hier mit <b>einem</b> Fixing je Handelstag ab 1968 — also flache Tageswerte, als Linie dargestellt. Wie bei Gold gibt es kein Volumen (Anchored VWAP bleibt daher leer).</p></div>
@@ -1288,7 +1309,7 @@
 
 <!-- Generisches Overlay-Kontextmenü (Einzellöschen) -->
 <div class="overlay-menu hidden" id="overlayMenu">
-  <button class="om-close" id="omClose" title="Schliessen">✕</button>
+  <button class="om-close" id="omClose" title="Schliessen" aria-label="Schliessen">✕</button>
   <div class="om-row" id="omPriceRow" style="display:none">
     <label>Preis</label>
     <input type="number" id="omPrice" step="any" class="om-numfield">
@@ -1328,7 +1349,7 @@
 
 <!-- Menü für eine Vergleichslinie (Punkt 5a): Farbe, Deckkraft, Linienstärke. -->
 <div class="overlay-menu hidden" id="compareStyleMenu">
-  <button class="om-close" id="csClose" title="Schliessen">✕</button>
+  <button class="om-close" id="csClose" title="Schliessen" aria-label="Schliessen">✕</button>
   <div class="om-row">
     <label>Farbe</label>
     <input type="color" id="csColor" value="#5aa9e6">
@@ -1352,7 +1373,7 @@
 <!-- Menü für Preisspanne / Zeitspanne (Punkt 4/5). Preisspanne: nur Deckkraft
      (Farbe bleibt richtungsabhängig). Zeitspanne: Farbe + Deckkraft. -->
 <div class="overlay-menu hidden" id="rangeMenu">
-  <button class="om-close" id="rmClose" title="Schliessen">✕</button>
+  <button class="om-close" id="rmClose" title="Schliessen" aria-label="Schliessen">✕</button>
   <div class="om-row" id="rmColorRow">
     <label>Farbe</label>
     <input type="color" id="rmColor" value="#5aa9e6">
@@ -1370,7 +1391,7 @@
 
 <!-- Textfeld-Kontextmenü (simpleAnnotation): Text, Farbe, Grösse, Löschen -->
 <div class="overlay-menu hidden" id="textMenu">
-  <button class="om-close" id="tmClose" title="Schliessen">✕</button>
+  <button class="om-close" id="tmClose" title="Schliessen" aria-label="Schliessen">✕</button>
   <label class="om-text-label">Text</label>
   <input type="text" id="tmText" class="om-text-input" placeholder="Notiz…">
   <div class="om-row">
@@ -1400,7 +1421,7 @@
      Linie im üblichen Sinn, sondern zwei Flächen. -->
 <div class="frvp-menu hidden" id="posMenu">
   <div class="frvp-menu-header">Long / Short</div>
-  <button class="fib-close" id="posMenuClose" title="Schliessen">&times;</button>
+  <button class="fib-close" id="posMenuClose" title="Schliessen" aria-label="Schliessen">&times;</button>
   <div class="frvp-row">
     <label>Stop-Bereich</label>
     <input type="color" id="posStopColor" value="#d05e5e">

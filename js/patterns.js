@@ -86,10 +86,18 @@
       // Bestätigung: schliesst der Kurs nach P3 unter der Neckline?
       const neckline = p2.price;
       let confirmedAt = null;
+      // Gesamtpruefung A22: laeuft der Kurs VOR dem Neckline-Bruch per
+      // Schlusskurs ueber/unter das Extrem (siehe FAQ "Ungueltig"), ist das
+      // Muster gescheitert und wird verworfen — vorher galt es spaeter
+      // trotzdem als bestaetigt und bekam ein Kursziel.
       const searchEnd = Math.min(data.length - 1, p3.index + maxSpan);
+      const topMax = Math.max(p1.price, p3.price);
+      let invalid = false;
       for (let k = p3.index + 1; k <= searchEnd; k++) {
+        if (data[k].close > topMax) { invalid = true; break; }
         if (data[k].close < neckline) { confirmedAt = k; break; }
       }
+      if (invalid) continue;
 
       found.push({
         type: "doubleTop",
@@ -125,10 +133,18 @@
 
       const neckline = p2.price;
       let confirmedAt = null;
+      // Gesamtpruefung A22: laeuft der Kurs VOR dem Neckline-Bruch per
+      // Schlusskurs ueber/unter das Extrem (siehe FAQ "Ungueltig"), ist das
+      // Muster gescheitert und wird verworfen — vorher galt es spaeter
+      // trotzdem als bestaetigt und bekam ein Kursziel.
       const searchEnd = Math.min(data.length - 1, p3.index + maxSpan);
+      const botMin = Math.min(p1.price, p3.price);
+      let invalid = false;
       for (let k = p3.index + 1; k <= searchEnd; k++) {
+        if (data[k].close < botMin) { invalid = true; break; }
         if (data[k].close > neckline) { confirmedAt = k; break; }
       }
+      if (invalid) continue;
 
       found.push({
         type: "doubleBottom",
@@ -177,10 +193,17 @@
       if (valleyDiff > tolerance * 2.5) continue;
 
       let confirmedAt = null;
+      // Gesamtpruefung A22: laeuft der Kurs VOR dem Neckline-Bruch per
+      // Schlusskurs ueber/unter das Extrem (siehe FAQ "Ungueltig"), ist das
+      // Muster gescheitert und wird verworfen — vorher galt es spaeter
+      // trotzdem als bestaetigt und bekam ein Kursziel.
       const searchEnd = Math.min(data.length - 1, p5.index + maxSpan);
+      let invalid = false;
       for (let k = p5.index + 1; k <= searchEnd; k++) {
+        if (data[k].close > maxTop) { invalid = true; break; }
         if (data[k].close < Math.min(p2.price, p4.price)) { confirmedAt = k; break; }
       }
+      if (invalid) continue;
 
       found.push({
         type: "tripleTop",
@@ -221,10 +244,17 @@
       if (peakDiff > tolerance * 2.5) continue;
 
       let confirmedAt = null;
+      // Gesamtpruefung A22: laeuft der Kurs VOR dem Neckline-Bruch per
+      // Schlusskurs ueber/unter das Extrem (siehe FAQ "Ungueltig"), ist das
+      // Muster gescheitert und wird verworfen — vorher galt es spaeter
+      // trotzdem als bestaetigt und bekam ein Kursziel.
       const searchEnd = Math.min(data.length - 1, p5.index + maxSpan);
+      let invalid = false;
       for (let k = p5.index + 1; k <= searchEnd; k++) {
+        if (data[k].close < minB) { invalid = true; break; }
         if (data[k].close > Math.max(p2.price, p4.price)) { confirmedAt = k; break; }
       }
+      if (invalid) continue;
 
       found.push({
         type: "tripleBottom",
@@ -276,10 +306,17 @@
       if (necklineRise > shoulderTol * 2) continue;
 
       let confirmedAt = null;
+      // Gesamtpruefung A22: laeuft der Kurs VOR dem Neckline-Bruch per
+      // Schlusskurs ueber/unter das Extrem (siehe FAQ "Ungueltig"), ist das
+      // Muster gescheitert und wird verworfen — vorher galt es spaeter
+      // trotzdem als bestaetigt und bekam ein Kursziel.
       const searchEnd = Math.min(data.length - 1, p5.index + maxSpan);
+      let invalid = false;
       for (let k = p5.index + 1; k <= searchEnd; k++) {
+        if (data[k].close > p5.price) { invalid = true; break; }   // ueber die rechte Schulter
         if (data[k].close < necklineAt(k)) { confirmedAt = k; break; }
       }
+      if (invalid) continue;
 
       const neckAtHead = necklineAt(p3.index);
       const symmetry = 1 - Math.min(1, shoulderDiff / shoulderTol);
@@ -326,10 +363,17 @@
       if (necklineRise > shoulderTol * 2) continue;
 
       let confirmedAt = null;
+      // Gesamtpruefung A22: laeuft der Kurs VOR dem Neckline-Bruch per
+      // Schlusskurs ueber/unter das Extrem (siehe FAQ "Ungueltig"), ist das
+      // Muster gescheitert und wird verworfen — vorher galt es spaeter
+      // trotzdem als bestaetigt und bekam ein Kursziel.
       const searchEnd = Math.min(data.length - 1, p5.index + maxSpan);
+      let invalid = false;
       for (let k = p5.index + 1; k <= searchEnd; k++) {
+        if (data[k].close < p5.price) { invalid = true; break; }   // unter die rechte Schulter
         if (data[k].close > necklineAt(k)) { confirmedAt = k; break; }
       }
+      if (invalid) continue;
 
       const neckAtHead = necklineAt(p3.index);
       const symmetry = 1 - Math.min(1, shoulderDiff / shoulderTol);

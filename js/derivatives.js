@@ -15,6 +15,7 @@
 // auslösen und irgendwann ins Rate Limit laufen.
 // ============================================================
 
+/* global tvFetch */
 const Derivatives = (function () {
   "use strict";
 
@@ -22,6 +23,9 @@ const Derivatives = (function () {
   const FNG  = "https://api.alternative.me/fng";
 
   const CACHE_MS = 5 * 60 * 1000;   // 5 Minuten
+
+  // Abruf mit Zeitlimit (tvFetch aus data.js); in Node-Tests faellt es auf fetch zurueck.
+  const get = (url) => (typeof tvFetch === "function" ? tvFetch(url) : fetch(url));
   const _cache = {};                // { key: { t, data } }
 
   async function cached(key, fn) {
@@ -38,24 +42,48 @@ const Derivatives = (function () {
   }
 
   // ---------- Funding ----------
-  // Binance zahlt alle 8 Stunden -> 3 Zahlungen/Tag, ~90/Monat.
-  // Das Cockpit rechnet: täglich = 8h × 3, monatlich = 8h × 90.
+  // Standard bei Binance: alle 8 Stunden -> 3 Zahlungen/Tag, ~90/Monat.
+  // ABER: viele Alt-Perpetuals rechnen alle 4 h ab, und seit 2025-05 stellt
+  // Binance jedes Paar auf 1 h um, sobald Cap/Floor erreicht wird
+  // (Gesamtpruefung A20). Das Intervall wird deshalb aus den tatsaechlichen
+  // Abstaenden der letzten Zahlungen bestimmt, nicht fest angenommen.
+  //
+  // Rueckgabe-Felder bleiben in "je Zahlung" bzw. hochgerechnet; zusaetzlich
+  // perDay = Zahlungen pro Tag. fundingAvg30 bleibt "auf den Monat
+  // hochgerechnet", jetzt mit dem echten Takt.
+  function paymentsPerDay(raw) {
+    const ts = raw.map(r => +r.fundingTime).filter(t => isFinite(t) && t > 0);
+    const d = [];
+    for (let i = Math.max(1, ts.length - 12); i < ts.length; i++) {
+      const x = ts[i] - ts[i - 1];
+      if (x > 0) d.push(x);
+    }
+    if (!d.length) return 3;
+    d.sort((a, b) => a - b);
+    const hours = Math.round(d[Math.floor(d.length / 2)] / 3600000);
+    return [1, 2, 4, 8].includes(hours) ? 24 / hours : 3;
+  }
+
   async function fetchFunding(symbol) {
     return cached("funding:" + symbol, async () => {
-      // 270 Einträge ≈ 90 Tage à 3 Zahlungen
-      const res = await fetch(`${FAPI}/fapi/v1/fundingRate?symbol=${symbol}&limit=270`);
+      // Bis zu 1000 Eintraege: deckt 90 Tage auch bei 4h-Takt (540) ab.
+      const res = await get(`${FAPI}/fapi/v1/fundingRate?symbol=${symbol}&limit=1000`);
       if (!res.ok) throw new Error(`Funding HTTP ${res.status}`);
       const raw = await res.json();
+      if (!Array.isArray(raw) || !raw.length) throw new Error("Funding leer");
+      const perDay = paymentsPerDay(raw);
       const rates = raw.map(r => parseFloat(r.fundingRate) * 100);   // in %
       const now = rates.at(-1);
-      const last30d = rates.slice(-90);    // 30 Tage × 3
-      const last90d = rates;
+      const last30d = rates.slice(-Math.round(30 * perDay));
+      const last90d = rates.slice(-Math.round(90 * perDay));
       return {
         fundingNow:     now,
-        fundingDaily:   now * 3,
-        fundingMonthly: now * 90,
-        fundingAvg30:   mean(last30d) * 90,   // auf Monat hochgerechnet
-        fundingAvg90:   mean(last90d) * 90,
+        perDay,
+        intervalHours:  24 / perDay,
+        fundingDaily:   now * perDay,
+        fundingMonthly: now * perDay * 30,
+        fundingAvg30:   mean(last30d) * perDay * 30,   // auf Monat hochgerechnet
+        fundingAvg90:   mean(last90d) * perDay * 30,
         history: raw.map(r => ({ t: r.fundingTime, rate: parseFloat(r.fundingRate) * 100 })),
       };
     });
@@ -64,22 +92,27 @@ const Derivatives = (function () {
   // ---------- Open Interest ----------
   async function fetchOpenInterest(symbol) {
     return cached("oi:" + symbol, async () => {
-      const res = await fetch(`${FAPI}/futures/data/openInterestHist?symbol=${symbol}&period=1d&limit=90`);
+      // Binance liefert hier laut Doku nur den letzten Monat (~30 Tageswerte).
+      // Eine 90-Tage-Aenderung ist damit NICHT berechenbar (Gesamtpruefung
+      // A19) — oiChange90 bleibt deshalb leer statt eine 30-Tage-Zahl
+      // unter falschem Namen zu zeigen.
+      const res = await get(`${FAPI}/futures/data/openInterestHist?symbol=${symbol}&period=1d&limit=30`);
       if (!res.ok) throw new Error(`OI HTTP ${res.status}`);
       const raw = await res.json();
       if (!raw.length) throw new Error("OI leer");
       const series = raw.map(r => ({
         t: r.timestamp,
-        oi: parseFloat(r.sumOpenInterest),          // in BTC
+        oi: parseFloat(r.sumOpenInterest),          // in Basiswaehrung (BTC, ETH …)
         oiValue: parseFloat(r.sumOpenInterestValue) // in USDT
       }));
       const cur  = series.at(-1).oi;
-      const d30  = series.length >= 30 ? series.at(-30).oi : series[0].oi;
-      const d90  = series[0].oi;
+      const d30  = series[0].oi;                       // aeltester verfuegbarer Wert (~30 T)
+      const days = Math.round((series.at(-1).t - series[0].t) / 86400000);
       return {
         oiNow: cur,
-        oiChange30: ((cur - d30) / d30) * 100,
-        oiChange90: ((cur - d90) / d90) * 100,
+        oiChange30: d30 ? ((cur - d30) / d30) * 100 : null,
+        oiChange90: null,
+        oiDays: days,
         history: series,
       };
     });
@@ -90,7 +123,7 @@ const Derivatives = (function () {
   // Das Cockpit nutzt Schwellen 0.45 / 0.55.
   async function fetchLongShort(symbol) {
     return cached("ls:" + symbol, async () => {
-      const res = await fetch(`${FAPI}/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=1d&limit=30`);
+      const res = await get(`${FAPI}/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=1d&limit=30`);
       if (!res.ok) throw new Error(`L/S HTTP ${res.status}`);
       const raw = await res.json();
       if (!raw.length) throw new Error("L/S leer");
@@ -104,7 +137,7 @@ const Derivatives = (function () {
   // Nicht BTC-spezifisch — gilt für den Gesamtmarkt.
   async function fetchFearGreed() {
     return cached("fng", async () => {
-      const res = await fetch(`${FNG}/?limit=90`);
+      const res = await get(`${FNG}/?limit=90`);
       if (!res.ok) throw new Error(`F&G HTTP ${res.status}`);
       const json = await res.json();
       const arr = (json.data || []).map(d => ({
@@ -129,11 +162,15 @@ const Derivatives = (function () {
   // Einzelne Ausfälle dürfen den Rest nicht mitreissen: Promise.allSettled
   // statt all. Fehlende Blöcke werden als null gemeldet, das Panel zeigt
   // dann "–" statt gar nichts.
+  // symbol === null: Asset ohne Perpetual (Gold, Indizes) — dann nur
+  // Fear & Greed holen, statt drei Anfragen mit "symbol=null" (HTTP 400).
   async function fetchAll(symbol = "BTCUSDT") {
+    const none = Promise.reject(new Error("kein Perpetual für dieses Asset"));
+    none.catch(() => {});
     const [f, oi, ls, fng] = await Promise.allSettled([
-      fetchFunding(symbol),
-      fetchOpenInterest(symbol),
-      fetchLongShort(symbol),
+      symbol ? fetchFunding(symbol) : none,
+      symbol ? fetchOpenInterest(symbol) : none,
+      symbol ? fetchLongShort(symbol) : none,
       fetchFearGreed(),
     ]);
     const val = (r) => r.status === "fulfilled" ? r.value : null;
@@ -143,7 +180,10 @@ const Derivatives = (function () {
       oi:      val(oi),
       ls:      val(ls),
       fng:     val(fng),
-      errors: [err(f), err(oi), err(ls), err(fng)].filter(Boolean),
+      errors: symbol
+        ? [err(f), err(oi), err(ls), err(fng)].filter(Boolean)
+        : [err(fng)].filter(Boolean),
+      noPerp: !symbol,
       fetchedAt: Date.now(),
     };
   }

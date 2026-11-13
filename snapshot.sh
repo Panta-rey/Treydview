@@ -160,8 +160,11 @@ PYEOF
 via_worker  "BTC/USD (Bitstamp)" "$WORKER/bitstamp?pair=btcusd&step=86400" "$OUT/btcusd-bitstamp.json" 4000
 via_worker  "ETH/USD (Bitstamp)" "$WORKER/bitstamp?pair=ethusd&step=86400" "$OUT/ethusd-bitstamp.json" 2000
 via_worker  "Gold (LBMA)"        "$WORKER/goldhistory"                     "$OUT/gold-lbma.json"       10000
-via_binance "BTC/USDT (Binance)" "BTCUSDT" "$OUT/btcusdt-binance.json" 2500
-via_binance "ETH/USDT (Binance)" "ETHUSDT" "$OUT/ethusdt-binance.json" 2500
+via_worker  "Silber (LBMA)"      "$WORKER/silverhistory"                   "$OUT/silver-lbma.json"     10000
+# Binance-Momentaufnahmen werden von config.js bewusst NICHT genutzt (siehe
+# HISTORY_SNAPSHOTS) — die Aufrufe sind deshalb entfernt (Gesamtpruefung C3).
+# via_binance bleibt fuer den Fall erhalten, dass sie wieder gebraucht werden:
+# via_binance "BTC/USDT (Binance)" "BTCUSDT" "$OUT/btcusdt-binance.json" 2500
 
 echo
 if [ "$fehler" -eq 0 ]; then
