@@ -793,6 +793,7 @@ input[type=color].settings-input{padding:2px;height:30px;cursor:pointer;}
 .li-upd{background:transparent;border:none;color:var(--text-dim);cursor:pointer;padding:2px 4px;display:flex;align-items:center;border-radius:2px;}
 .li-upd:hover{color:var(--accent);background:var(--bg-hover);}
 .li-name.li-open{color:var(--accent);}
+.li-saved{font-size:11px;color:var(--up);white-space:nowrap;flex:none;}
 .pat-group{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin:6px 0 2px;padding-top:5px;border-top:1px solid var(--border);}
 
 /* ============ FAQ ============ */

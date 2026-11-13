@@ -7579,7 +7579,9 @@ async function applyNamedLayout(name) {
   setStatus(`Layout "${name}" geladen`);
 }
 
-function renderLayoutList() {
+// flashName: Layout, das eben ueberschrieben wurde — seine Zeile zeigt kurz
+// "✓ gespeichert" (die Statuszeile unten wurde leicht uebersehen).
+function renderLayoutList(flashName) {
   const list = document.getElementById("layoutList");
   if (!list) return;
   list.innerHTML = "";
@@ -7593,7 +7595,9 @@ function renderLayoutList() {
     const item = document.createElement("div");
     item.className = "layout-item";
     const isOpen = state.currentLayout === name;
+    const flash = typeof flashName === "string" && flashName === name;
     item.innerHTML = `<span class="li-name${isOpen ? " li-open" : ""}">${escapeHtml(name)}</span>`
+      + (flash ? `<span class="li-saved">✓ gespeichert</span>` : "")
       + `<button class="li-upd" title="Mit aktueller Ansicht überschreiben">`
       + `<svg viewBox="0 0 24 24" width="12" height="12"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`
       + `<button class="li-del" title="Löschen">✕</button>`;
@@ -7603,14 +7607,20 @@ function renderLayoutList() {
     });
     item.querySelector(".li-upd").addEventListener("click", (e) => {
       e.stopPropagation();
+      // Rueckfrage vor jedem Ueberschreiben (User-Wunsch): der bisherige
+      // Stand des Layouts ist danach weg.
+      if (!confirm(`Layout "${name}" mit der aktuellen Ansicht überschreiben?\n\nDer bisherige Stand dieses Layouts geht verloren.`)) return;
       const l = loadLayouts();
       l[name] = currentLayoutSnapshot();
       saveLayouts(l);
       state.currentLayout = name;
       state.overlaysDirty = false;   // aktualisiert = sauber (Punkt 8)
       saveWorkspace();
-      renderLayoutList();
+      renderLayoutList(name);
       setStatus(`Layout "${name}" überschrieben`);
+      setTimeout(() => {
+        document.querySelectorAll("#layoutList .li-saved").forEach((el) => el.remove());
+      }, 1600);
     });
     item.querySelector(".li-del").addEventListener("click", (e) => {
       e.stopPropagation();
