@@ -1462,6 +1462,7 @@ function initDropdowns() {
       }
       if (id === "compareDropdown" && !wasOpen) {
         renderCompareActive();
+        _syncCompareTyping();
         setTimeout(() => document.getElementById("compareSearch").focus(), 30);
       }
       if (id === "layoutDropdown" && !wasOpen) renderLayoutList();
@@ -2034,14 +2035,55 @@ function renderCompareList(filter = "") {
     if (f) return s.id.toUpperCase().includes(f) || s.label.toUpperCase().includes(f);
     return true;
   });
-  items.slice(0, 80).forEach(sym => {
+  // Mobil (m89): Vorschlaege erst beim Tippen, hoechstens 8 Treffer — sonst
+  // verdeckt die Liste die aktiven Vergleiche bzw. liegt unter der Tastatur.
+  // Desktop unveraendert (80, scrollbare Liste mit 96px Hoehe).
+  const mobil = _compareMobile();
+  const limit = mobil ? 8 : 80;
+  items.slice(0, limit).forEach(sym => {
     const item = document.createElement("div");
     item.className = "dd-item";
     item.textContent = sym.label;
-    item.addEventListener("click", () => addCompareAsset(sym));
+    item.addEventListener("click", () => {
+      addCompareAsset(sym);
+      // Mobil: Suchfeld leeren → volle Liste der aktiven Vergleiche (inkl.
+      // dem neuen) ist wieder sichtbar. Desktop behaelt den Suchtext.
+      if (mobil) _clearCompareSearch();
+    });
     list.appendChild(item);
   });
   if (items.length === 0) list.innerHTML = '<div class="dd-empty">Kein Symbol mit gleicher Quote-Währung</div>';
+  else if (mobil && items.length > limit) {
+    const more = document.createElement("div");
+    more.className = "dd-empty";
+    more.textContent = `+${items.length - limit} weitere — genauer tippen`;
+    list.appendChild(more);
+  }
+  _syncCompareTyping();
+}
+
+// ── Mobil: Vergleich-Panel (m89) ─────────────────────────────────────────
+// Suchfeld leer  → nur die aktiven Vergleiche (Vorschlagsliste per CSS aus).
+// Suchfeld belegt → Treffer direkt unter dem Suchfeld, aktive Vergleiche auf
+//                   eine Zusammenfassungszeile eingeklappt (Tastatur!).
+// Gesteuert ueber die Klasse .cmp-typing am Panel; die CSS-Regeln dazu stehen
+// nur im Mobil-Block — am Desktop hat die Klasse keine Wirkung.
+// Bewusst nur Funktionsdeklarationen (gehoistet): renderCompareList kann
+// beim Start vor dieser Stelle laufen.
+function _compareMobile() {
+  return window.matchMedia("(max-width: 720px), (pointer: coarse)").matches;
+}
+function _syncCompareTyping() {
+  const panel = document.getElementById("comparePanel");
+  const inp = document.getElementById("compareSearch");
+  if (!panel || !inp) return;
+  panel.classList.toggle("cmp-typing", inp.value.trim() !== "");
+}
+function _clearCompareSearch() {
+  const inp = document.getElementById("compareSearch");
+  if (!inp) return;
+  inp.value = "";
+  renderCompareList("");
 }
 
 function renderCompareActive() {
@@ -2052,6 +2094,23 @@ function renderCompareActive() {
     box.innerHTML = '<div class="dd-empty">Noch keine Vergleiche</div>';
     return;
   }
+  // Zusammenfassungszeile (m89, nur mobil sichtbar, solange getippt wird):
+  // "Aktiv (13) · ETH, TAO, NEAR, FET, HYPE …". Antippen leert die Suche und
+  // zeigt wieder die volle Liste. Basis-CSS: display:none.
+  const kurz = state.compareAssets.map(a => {
+    const lm = /^(.*?)\s*\(([^()]+)\)\s*$/.exec(a.label || "");
+    return ((lm ? lm[1] : (a.label || a.id)).split("/")[0] || "").trim();
+  });
+  const sum = document.createElement("div");
+  sum.className = "cc-summary";
+  sum.innerHTML = `<span class="ccs-count">Aktiv (${state.compareAssets.length})</span>`
+    + `<span class="ccs-list">${escapeHtml(kurz.slice(0, 6).join(", "))}${kurz.length > 6 ? " …" : ""}</span>`
+    + `<span class="ccs-chev" aria-hidden="true">▾</span>`;
+  sum.addEventListener("click", (e) => {
+    e.stopPropagation();   // Panel liegt mobil an document.body (QF3)
+    _clearCompareSearch();
+  });
+  box.appendChild(sum);
   state.compareAssets.forEach(a => {
     const chip = document.createElement("div");
     chip.className = "compare-chip" + (a.hidden ? " hidden-asset" : "");
@@ -2163,6 +2222,7 @@ function markDirty() { state.overlaysDirty = true; }
     document.getElementById("comparePrompt").classList.add("hidden");
     openDropdown("compareDropdown", () => {
       renderCompareActive();
+      _syncCompareTyping();
       setTimeout(() => document.getElementById("compareSearch")?.focus(), 30);
     });
   });
@@ -8533,7 +8593,7 @@ document.getElementById("autoZoomBtn").addEventListener("click", autoZoom);
 // aktiv ist — gewollt, damit der Klick nicht den Chart verschiebt).
 // ════════════════════════════════════════════════════════════════════
 
-const TV_BUILD = "m88";
+const TV_BUILD = "m89";
 
 window.__tvBuild = TV_BUILD;
 

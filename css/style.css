@@ -947,10 +947,11 @@ input, textarea, select, [contenteditable="true"] {
   -webkit-user-select: text; user-select: text;
 }
 
-:root { --tv-build: "m88"; }
+:root { --tv-build: "m89"; }
 
 /* Nur neue Elemente. Auf dem Desktop unsichtbar; die Mobile-Schicht
    unten blendet sie bei Bedarf ein. */
+.cc-summary        { display: none; }
 .om-close          { display: none; }
 .frvp-guide        { display: none; }
 .crosshair-canvas  { display: none; }
@@ -1599,6 +1600,24 @@ input, textarea, select, [contenteditable="true"] {
   /* M3: Zahnrad-Glyph leicht kleiner als Auge/Kreuz (Mobil-Wunsch),
      Tap-Ziel bleibt 30x30 wie die Geschwister. */
   .cc-gear { font-size: 14px; }
+
+  /* m89: Vergleich-Panel. Suchfeld oben, darunter direkt die aktiven
+     Vergleiche. Vorschlaege erst beim Tippen (.cmp-typing, app.js
+     _syncCompareTyping); dann klappen die aktiven auf eine Zeile ein, damit
+     die Treffer nicht unter der Tastatur liegen. Vorher stand die ganze
+     Vorschlagsliste (unbegrenzt hoch, s. .dd-anchored .dd-list) VOR den
+     aktiven Vergleichen → langes Scrollen. */
+  #comparePanel:not(.cmp-typing) #compareList { display: none; }
+  #comparePanel:not(.cmp-typing) .compare-active { border-top: none; }
+  #comparePanel.cmp-typing .compare-chip { display: none; }
+  #comparePanel.cmp-typing .cc-summary {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 10px; min-height: 40px; border-radius: 4px;
+    background: var(--bg); font-size: 12px; color: var(--text-dim); cursor: pointer;
+  }
+  .ccs-count { color: var(--text); white-space: nowrap; flex: none; }
+  .ccs-list  { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ccs-chev  { flex: none; font-size: 12px; }
 
   .settings-panel, .frvp-menu, .fib-menu {
     max-width: calc(100vw - 16px) !important;
